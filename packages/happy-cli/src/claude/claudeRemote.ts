@@ -176,6 +176,33 @@ export async function claudeRemote(opts: {
         options: sdkOptions,
     });
 
+    // Steering: keep feeding user messages into the live query while Claude
+    // works, like typing into Claude Code mid-turn. The SDK applies a message
+    // that arrives mid-turn at the next tool boundary. nextMessage returns null
+    // when the caller needs a relaunch (mode change, isolated command) or the
+    // session is ending; closing the input still lets the current turn finish.
+    // The caller must make a pending nextMessage resolve to null once this
+    // function returns, so no message is taken from its queue after that.
+    let queryClosed = false;
+    const pumpMessages = async () => {
+        while (!queryClosed) {
+            const next = await opts.nextMessage();
+            if (!next) break;
+            if (queryClosed) {
+                logger.debug('[claudeRemote] Message arrived after the query closed; it was not delivered');
+                break;
+            }
+            mode = next.mode;
+            messages.push({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: next.message } });
+            updateThinking(true);
+        }
+        messages.end();
+    };
+    pumpMessages().catch((e) => {
+        logger.debug('[claudeRemote] nextMessage failed, closing input', e);
+        messages.end();
+    });
+
     // Expose query control methods to permission handler
     if (opts.onQueryReady) {
         opts.onQueryReady({
@@ -358,20 +385,12 @@ export async function claudeRemote(opts: {
                     await opts.onReady();
                 }
                 providerAuthFailed = false;
+            }
 
-                // Wait for next user message without blocking the message loop.
-                // Background task messages (task_started, task_progress, task_notification)
-                // continue flowing through while we wait for user input.
-                opts.nextMessage().then((next) => {
-                    if (!next) {
-                        messages.end();
-                    } else {
-                        mode = next.mode;
-                        messages.push({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: next.message } });
-                    }
-                }).catch(() => {
-                    messages.end();
-                });
+            // A steering message pushed just before a result can start a new
+            // turn after it; show the session as busy again when it does.
+            if (message.type === 'assistant' && message.parent_tool_use_id === null) {
+                updateThinking(true);
             }
 
             // Handle tool result
@@ -395,6 +414,7 @@ export async function claudeRemote(opts: {
             throw e;
         }
     } finally {
+        queryClosed = true;
         updateThinking(false);
     }
 }

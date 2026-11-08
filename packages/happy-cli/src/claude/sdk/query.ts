@@ -8,6 +8,7 @@ import type { QueryOptions, QueryPrompt, SDKMessage } from './types'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { ensureLocalProxyBypass } from '../utils/proxyBypass'
 import { resolveHappyEntrypoint } from './happyEntrypoint'
+import { resolveLatestModel } from './latestModel'
 
 /**
  * Wraps the official SDK query() with our QueryOptions adapter
@@ -32,8 +33,8 @@ export function query(params: { prompt: QueryPrompt; options?: QueryOptions }): 
         cwd: opts?.cwd,
         resume: opts?.resume,
         continue: opts?.continue,
-        model: opts?.model,
-        fallbackModel: opts?.fallbackModel,
+        model: resolveLatestModel(opts?.model),
+        fallbackModel: resolveLatestModel(opts?.fallbackModel),
         maxTurns: opts?.maxTurns,
         permissionMode: opts?.permissionMode,
         allowedTools: opts?.allowedTools,

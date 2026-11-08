@@ -134,7 +134,8 @@ describe('claudeRemote', () => {
             canCallTool: async () => ({ behavior: 'allow', updatedInput: {} }),
             isAborted: () => false, onSessionFound: vi.fn(), onMessage: vi.fn(),
         })).rejects.toBe(failure);
-        expect(nextMessage).toHaveBeenCalledOnce();
+        // The steering pump may hold one call in flight (it resolves null here); nothing beyond that.
+        expect(nextMessage.mock.calls.length).toBeLessThanOrEqual(2);
     });
 
     it('does not report successful compaction after a provider auth failure', async () => {
@@ -243,5 +244,122 @@ describe('claudeRemote', () => {
             type: 'assistant',
             isCompactSummary: true,
         }));
+    });
+
+    describe('steering', () => {
+        const assistant = (text: string) => ({
+            type: 'assistant',
+            parent_tool_use_id: null,
+            message: { role: 'assistant', content: [{ type: 'text', text }] },
+        });
+        const success = { type: 'result', subtype: 'success', is_error: false, result: 'ok' };
+        const notYet = Symbol('not delivered before result');
+        const baseOpts = {
+            sessionId: null, path: '/fixture/project', allowedTools: [], hookSettingsPath: '/fixture/settings.json',
+            canCallTool: async () => ({ behavior: 'allow', updatedInput: {} }) as any,
+            isAborted: () => false, onSessionFound: vi.fn(), onMessage: vi.fn(),
+        };
+
+        it('delivers a message sent mid-turn to Claude before the turn ends', async () => {
+            const received: unknown[] = [];
+            vi.mocked(query).mockImplementation(({ prompt }) => ({
+                async *[Symbol.asyncIterator]() {
+                    const input = (prompt as AsyncIterable<any>)[Symbol.asyncIterator]();
+                    received.push((await input.next()).value);
+                    yield assistant('working');
+                    // Claude is still mid-turn here; the steering message must already be on its way.
+                    const steer = await Promise.race([
+                        input.next().then((r) => r.value),
+                        new Promise((resolve) => setTimeout(() => resolve(notYet), 200)),
+                    ]);
+                    received.push(steer);
+                    yield success;
+                    expect((await input.next()).done).toBe(true);
+                },
+            } as any));
+            const nextMessage = vi.fn()
+                .mockResolvedValueOnce({ message: 'Original prompt', mode })
+                .mockResolvedValueOnce({ message: 'Also add tests', mode })
+                .mockResolvedValue(null);
+            const onReady = vi.fn();
+
+            await claudeRemote({ ...baseOpts, nextMessage, onReady });
+
+            expect(received).toEqual([
+                expect.objectContaining({ message: { role: 'user', content: 'Original prompt' } }),
+                expect.objectContaining({ message: { role: 'user', content: 'Also add tests' } }),
+            ]);
+            expect(onReady).toHaveBeenCalledOnce();
+            expect(query).toHaveBeenCalledOnce();
+        });
+
+        it('stops asking for messages once nextMessage returns null', async () => {
+            vi.mocked(query).mockImplementation(({ prompt }) => ({
+                async *[Symbol.asyncIterator]() {
+                    const input = (prompt as AsyncIterable<any>)[Symbol.asyncIterator]();
+                    await input.next();
+                    yield assistant('working');
+                    // Ending the input mid-turn (mode change pending) still lets the turn finish.
+                    expect((await input.next()).done).toBe(true);
+                    yield success;
+                },
+            } as any));
+            const nextMessage = vi.fn()
+                .mockResolvedValueOnce({ message: 'Original prompt', mode })
+                .mockResolvedValue(null);
+            const onReady = vi.fn();
+
+            await claudeRemote({ ...baseOpts, nextMessage, onReady });
+
+            expect(nextMessage).toHaveBeenCalledTimes(2);
+            expect(onReady).toHaveBeenCalledOnce();
+        });
+
+        it('does not request another message after the query exits early', async () => {
+            vi.mocked(query).mockImplementation(({ prompt }) => ({
+                async *[Symbol.asyncIterator]() {
+                    const input = (prompt as AsyncIterable<any>)[Symbol.asyncIterator]();
+                    await input.next();
+                    throw new Error('claude process crashed');
+                },
+            } as any));
+            let releaseSecond: (value: null) => void = () => {};
+            const nextMessage = vi.fn()
+                .mockResolvedValueOnce({ message: 'Original prompt', mode })
+                .mockImplementationOnce(() => new Promise((resolve) => { releaseSecond = resolve; }))
+                .mockResolvedValue({ message: 'must stay queued', mode });
+
+            await expect(claudeRemote({ ...baseOpts, nextMessage, onReady: vi.fn() })).rejects.toThrow('claude process crashed');
+            releaseSecond(null);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            expect(nextMessage).toHaveBeenCalledTimes(2);
+        });
+
+        it('marks the session as thinking again when a message arrives after the result', async () => {
+            vi.mocked(query).mockImplementation(({ prompt }) => ({
+                async *[Symbol.asyncIterator]() {
+                    const input = (prompt as AsyncIterable<any>)[Symbol.asyncIterator]();
+                    await input.next();
+                    yield success;
+                    await input.next();
+                    yield assistant('second turn');
+                    yield success;
+                    expect((await input.next()).done).toBe(true);
+                },
+            } as any));
+            let releaseSecond: (value: unknown) => void = () => {};
+            const nextMessage = vi.fn()
+                .mockResolvedValueOnce({ message: 'Original prompt', mode })
+                .mockImplementationOnce(() => new Promise((resolve) => { releaseSecond = resolve; }))
+                .mockResolvedValue(null);
+            const onThinkingChange = vi.fn();
+            const onReady = vi.fn(() => { releaseSecond({ message: 'Follow-up', mode }); });
+
+            await claudeRemote({ ...baseOpts, nextMessage, onReady, onThinkingChange });
+
+            expect(onThinkingChange.mock.calls).toEqual([[true], [false], [true], [false]]);
+            expect(onReady).toHaveBeenCalledTimes(2);
+        });
     });
 });

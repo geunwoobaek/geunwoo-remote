@@ -306,6 +306,12 @@ export async function claudeRemoteLauncher(session: Session): Promise<'switch' |
 
             previousSessionId = session.sessionId;
             const controller = new AbortController();
+            // claudeRemote keeps a nextMessage call in flight for steering.
+            // Abort that wait the moment claudeRemote settles so a message
+            // arriving afterwards stays queued for the next launch. Separate
+            // from `controller`, whose abort means "cancelled by the user".
+            const queueWait = new AbortController();
+            const queueSignal = AbortSignal.any([controller.signal, queueWait.signal]);
             abortController = controller;
             abortFuture = new Future<void>();
             let modeHash: string | null = null;
@@ -330,7 +336,13 @@ export async function claudeRemoteLauncher(session: Session): Promise<'switch' |
                             return p;
                         }
 
-                        let msg = await session.queue.waitForMessagesAndGetAsString(controller.signal);
+                        let msg = await session.queue.waitForMessagesAndGetAsString(queueSignal);
+
+                        // Taken off the queue just as this launch ended: hand it to the next one.
+                        if (msg && queueSignal.aborted) {
+                            pending = msg;
+                            return null;
+                        }
 
                         // Check if mode has changed
                         if (msg) {
@@ -447,7 +459,7 @@ export async function claudeRemoteLauncher(session: Session): Promise<'switch' |
                         }
                     },
                     signal: abortController.signal,
-                });
+                }).finally(() => queueWait.abort());
                 
                 // Consume one-time Claude flags after spawn
                 session.consumeOneTimeFlags();
