@@ -1,4 +1,5 @@
 <resources>
-    <string name="page_card_subtitle">Page · on your computer</string>
-    <string name="page_card_open">Open page %1$s</string>
+    <!-- Fork-only: English only, so each string is translatable="false" (AndroidStringsTranslatedTest skips those). -->
+    <string name="page_card_subtitle" translatable="false">Page · on your computer</string>
+    <string name="page_card_open" translatable="false">Open page %1$s</string>
 </resources>

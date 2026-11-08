@@ -8,6 +8,7 @@
     <string name="session_capture_failed">Couldn’t capture the screen. On the Mac, allow Screen Recording for the app running happy (System Settings → Privacy &amp; Security).</string>
     <string name="session_capture_ask">Ask Claude about it</string>
     <string name="session_capture_ask_message">Look at this capture of my screen: %1$s</string>
-    <string name="files_in_worktrees_title">In these worktrees</string>
-    <string name="files_in_worktrees_footer">The file isn’t in the session’s folder; the agent wrote it in a worktree. Most recently changed first.</string>
+    <!-- Fork-only: English only (AndroidStringsTranslatedTest skips translatable="false"). -->
+    <string name="files_in_worktrees_title" translatable="false">In these worktrees</string>
+    <string name="files_in_worktrees_footer" translatable="false">The file isn’t in the session’s folder; the agent wrote it in a worktree. Most recently changed first.</string>
 </resources>

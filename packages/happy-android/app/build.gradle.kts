@@ -199,6 +199,12 @@ android {
         }
     }
 
+    // -Phappy.releaseRes=<dir>: resources (an icon, say) laid over the release build's,
+    // kept outside the repository, for a build published under another identity.
+    providers.gradleProperty("happy.releaseRes").orNull?.takeIf { it.isNotBlank() }?.let { dir ->
+        sourceSets.getByName("release").res.srcDir(dir)
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -295,6 +301,11 @@ androidComponents {
         val applicationId = providers.gradleProperty("happy.applicationId").orNull
             ?: applicationIds[variant.buildType] ?: applicationIds.getValue("bench")
         variant.applicationId.set(applicationId)
+        // -Phappy.appName=<name>: the launcher label of a build published under another
+        // identity (with -Phappy.applicationId), replacing the build type's own.
+        providers.gradleProperty("happy.appName").orNull?.takeIf { it.isNotBlank() }?.let { name ->
+            variant.resValues.put(variant.makeResValueKey("string", "app_name"), com.android.build.api.variant.ResValue(name))
+        }
         // The system doesn't compile a debuggable app on install: it runs from the APK, and with
         // the dex deflated, every cold start first inflated all of it, about 200 ms on the Fold.
         // Stored, it is mapped from the APK as it is (research/cold-start.md).
