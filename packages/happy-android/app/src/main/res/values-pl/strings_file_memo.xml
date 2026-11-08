@@ -1,0 +1,11 @@
+<resources>
+    <string name="file_memo">Notatka</string>
+    <string name="file_memo_on_selection">Notatka do zaznaczenia</string>
+    <string name="file_memo_title">Notatka dla agenta</string>
+    <string name="file_memo_placeholder">Co zmienić?</string>
+    <string name="file_memo_send">Wyślij</string>
+    <string name="file_memo_sent">Wysłano do sesji</string>
+    <string name="file_memo_failed">Nie wysłano notatki: %1$s</string>
+    <string name="file_memo_message">Notatka do %1$s:\n%2$s\n\nZmień plik zgodnie z nią.</string>
+    <string name="file_memo_message_quoted">Notatka do %1$s, o „%2$s”:\n%3$s\n\nZmień plik zgodnie z nią.</string>
+</resources>

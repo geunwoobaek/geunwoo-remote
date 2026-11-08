@@ -2,6 +2,9 @@ package com.slopus.happy.ui.files
 
 import com.slopus.happy.ui.page
 import android.content.ClipData
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import com.slopus.happy.sync.SendResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -191,7 +194,33 @@ private fun FileRouteScreen(graph: AppGraph, route: SessionFileRoute, onBack: ()
         if (sync == null || !loaded) return@produceState
         SyncSessionFileOps(sync).fileLoads(sync.fileCache, route.id, filePath, sessionPath, gitDiffPath).collect { value = it }
     }
-    FileScreen(load, filePath, onBack, route.line, route.column)
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val ops = remember(sync) { sync?.let(::SyncSessionFileOps) }
+    FileScreen(
+        load, filePath, onBack, route.line, route.column,
+        readAsset = ops?.let { files -> { path -> files.readBytes(route.id, path) } },
+        // A page in the session's folder reads anywhere in it (`../style.css`); one outside, only beside itself.
+        assetRoot = sessionPath?.takeIf { resolved?.withinSessionRoot == true },
+        onMemo = sync?.let { account ->
+            { quote, note ->
+                val text = memoMessage(context.resources, filePath, quote, note)
+                scope.launch {
+                    val said = when (val result = account.sender.send(route.id, text)) {
+                        is SendResult.Accepted -> context.getString(R.string.file_memo_sent)
+                        is SendResult.NotSent -> context.getString(R.string.file_memo_failed, result.message.orEmpty())
+                    }
+                    Toast.makeText(context, said, Toast.LENGTH_SHORT).show()
+                }
+            }
+        },
+    )
+}
+
+/** [path]'s bytes from the computer, or null when it can't be read. */
+private suspend fun SessionFileOps.readBytes(sessionId: String, path: String): ByteArray? {
+    val read = runCatching { readFile(sessionId, path) }.getOrNull()?.takeIf { it.success } ?: return null
+    return runCatching { java.util.Base64.getMimeDecoder().decode(read.content.orEmpty()) }.getOrNull()
 }
 
 /** The message and the nested sub-agent messages under it, by id. */

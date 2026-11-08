@@ -1,0 +1,11 @@
+<resources>
+    <string name="file_memo">メモ</string>
+    <string name="file_memo_on_selection">選択範囲にメモ</string>
+    <string name="file_memo_title">エージェントへのメモ</string>
+    <string name="file_memo_placeholder">何を変更しますか？</string>
+    <string name="file_memo_send">送信</string>
+    <string name="file_memo_sent">セッションに送信しました</string>
+    <string name="file_memo_failed">メモを送信できませんでした: %1$s</string>
+    <string name="file_memo_message">%1$s へのメモ:\n%2$s\n\nこれに沿ってファイルを更新してください。</string>
+    <string name="file_memo_message_quoted">%1$s の「%2$s」へのメモ:\n%3$s\n\nこれに沿ってファイルを更新してください。</string>
+</resources>

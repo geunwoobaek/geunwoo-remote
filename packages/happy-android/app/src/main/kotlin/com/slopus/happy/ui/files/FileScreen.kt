@@ -283,6 +283,12 @@ fun FileScreen(
     title: String? = null,
     /** More of the bar's actions, after the save. */
     actions: @Composable RowScope.() -> Unit = {},
+    /** An HTML file's own pictures, styles and scripts, read from the computer; null shows the page without them. */
+    readAsset: (suspend (String) -> ByteArray?)? = null,
+    /** The folder an HTML page may read under ([htmlAssetPath]); its own folder when not given. */
+    assetRoot: String? = null,
+    /** A note on a shown HTML page, for the agent to change the file; null offers no Memo. */
+    onMemo: ((quote: String?, note: String) -> Unit)? = null,
 ) {
     val colors = HappyTheme.colors
     val fileName = filePath.substringAfterLast('/').ifEmpty { filePath }
@@ -303,7 +309,7 @@ fun FileScreen(
                 }
             }
             FileLoad.Binary -> Centered(stringResource(R.string.files_binary_file), colors.textSecondary, stringResource(R.string.files_cannot_display_binary), fileName)
-            is FileLoad.Loaded -> LoadedFile(load, filePath, line, column)
+            is FileLoad.Loaded -> LoadedFile(load, filePath, line, column, HtmlPage(readAsset, assetRoot ?: filePath.substringBeforeLast('/', ""), onMemo))
             is FileLoad.Picture -> PictureFile(load, filePath)
         }
     }
@@ -330,6 +336,13 @@ private fun Centered(title: String, titleColor: Color, message: String, footnote
 
 private enum class Mode { Diff, Rendered, File }
 
+/** What an HTML file's page gets beyond its text: see [FileScreen]'s parameters of these names. */
+private class HtmlPage(
+    val readAsset: (suspend (String) -> ByteArray?)?,
+    val root: String,
+    val onMemo: ((quote: String?, note: String) -> Unit)?,
+)
+
 /** Where 1-based [line] of [text] starts; past its last line, its end. */
 internal fun offsetOfLine(text: String, line: Int): Int {
     var at = 0
@@ -342,7 +355,7 @@ internal fun offsetOfLine(text: String, line: Int): Int {
 }
 
 @Composable
-private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, column: Int?) {
+private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, column: Int?, page: HtmlPage) {
     val colors = HappyTheme.colors
     var staleShown by remember(load) { mutableStateOf(load.stale != null) }
     if (staleShown && load.stale != null) {
@@ -354,16 +367,19 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
     val border = glassBorder(colors.dark)
     val requested = line?.takeIf { it > 0 }
     val markdown = isMarkdownPath(filePath) && load.content.isNotEmpty()
-    var mode by rememberSaveable(load.diff != null, requested, markdown) {
+    val html = isHtmlPath(filePath) && load.content.isNotEmpty()
+    val renderable = markdown || html
+    var mode by rememberSaveable(load.diff != null, requested, renderable) {
         mutableStateOf(
             when {
                 requested != null -> Mode.File
                 load.diff != null -> Mode.Diff
-                markdown -> Mode.Rendered
+                renderable -> Mode.Rendered
                 else -> Mode.File
             },
         )
     }
+    val showPage = html && mode == Mode.Rendered
     val scroll = rememberScrollState()
     val density = LocalDensity.current
     val inset = with(density) { 16.dp.toPx() }
@@ -378,6 +394,8 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
     var jumped by rememberSaveable { mutableStateOf(false) }
     var restored by remember { mutableStateOf(false) }
     LaunchedEffect(mode, load.content) {
+        // A shown page scrolls itself.
+        if (showPage) return@LaunchedEffect
         val source = mode == Mode.File && load.content.isNotEmpty()
         val asked = source && requested != null && !jumped
         val kept = !restored && (if (source) topChar > 0 else topFraction > 0f)
@@ -415,7 +433,7 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
             val label = if (requested != null) "$filePath:$requested${column?.takeIf { it > 0 }?.let { ":$it" }.orEmpty()}" else filePath
             Text(label, style = happyTextStyle(fontSize = 14, family = AppMono), color = colors.textSecondary, modifier = Modifier.padding(start = 8.dp).weight(1f))
         }
-        if (load.diff != null || markdown) {
+        if (load.diff != null || renderable) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -426,11 +444,15 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
             ) {
                 val tabs = buildList {
                     if (load.diff != null) add(Mode.Diff to Segment(stringResource(R.string.files_diff), FileTags.DIFF_TAB))
-                    if (markdown) add(Mode.Rendered to Segment(stringResource(R.string.workspace_rendered), FileTags.RENDERED_TAB))
-                    add(Mode.File to Segment(stringResource(if (markdown) R.string.workspace_source else R.string.files_file), FileTags.FILE_TAB))
+                    if (renderable) add(Mode.Rendered to Segment(stringResource(R.string.workspace_rendered), FileTags.RENDERED_TAB))
+                    add(Mode.File to Segment(stringResource(if (renderable) R.string.workspace_source else R.string.files_file), FileTags.FILE_TAB))
                 }
                 SegmentedTabs(tabs.map { it.second }, tabs.indexOfFirst { it.first == mode }, onPick = { mode = tabs[it].first })
             }
+        }
+        if (showPage) {
+            HtmlFilePage(load.content, filePath, page.root, page.readAsset, page.onMemo, Modifier.weight(1f).fillMaxWidth().testTag(FileTags.RENDERED))
+            return@Column
         }
         // The bars span the screen; the body is held to layout.maxWidth.
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).testTag(FileTags.SCROLL).contentMaxWidth(LocalWindowLayout.current).padding(16.dp)) {

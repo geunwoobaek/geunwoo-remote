@@ -1,0 +1,11 @@
+<resources>
+    <string name="file_memo">Memo</string>
+    <string name="file_memo_on_selection">Memo on selection</string>
+    <string name="file_memo_title">Memo for the agent</string>
+    <string name="file_memo_placeholder">What should change?</string>
+    <string name="file_memo_send">Send</string>
+    <string name="file_memo_sent">Sent to the session</string>
+    <string name="file_memo_failed">The memo wasn’t sent: %1$s</string>
+    <string name="file_memo_message">Memo on %1$s:\n%2$s\n\nUpdate the file to address it.</string>
+    <string name="file_memo_message_quoted">Memo on %1$s, about “%2$s”:\n%3$s\n\nUpdate the file to address it.</string>
+</resources>

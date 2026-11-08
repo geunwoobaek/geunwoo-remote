@@ -1,0 +1,11 @@
+<resources>
+    <string name="file_memo">Nota</string>
+    <string name="file_memo_on_selection">Nota sobre la selección</string>
+    <string name="file_memo_title">Nota para el agente</string>
+    <string name="file_memo_placeholder">¿Qué hay que cambiar?</string>
+    <string name="file_memo_send">Enviar</string>
+    <string name="file_memo_sent">Enviado a la sesión</string>
+    <string name="file_memo_failed">No se envió la nota: %1$s</string>
+    <string name="file_memo_message">Nota sobre %1$s:\n%2$s\n\nActualiza el archivo para tenerla en cuenta.</string>
+    <string name="file_memo_message_quoted">Nota sobre %1$s, acerca de «%2$s»:\n%3$s\n\nActualiza el archivo para tenerla en cuenta.</string>
+</resources>

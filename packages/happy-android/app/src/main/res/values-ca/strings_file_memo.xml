@@ -1,0 +1,11 @@
+<resources>
+    <string name="file_memo">Nota</string>
+    <string name="file_memo_on_selection">Nota sobre la selecció</string>
+    <string name="file_memo_title">Nota per a l’agent</string>
+    <string name="file_memo_placeholder">Què cal canviar?</string>
+    <string name="file_memo_send">Envia</string>
+    <string name="file_memo_sent">Enviat a la sessió</string>
+    <string name="file_memo_failed">No s’ha enviat la nota: %1$s</string>
+    <string name="file_memo_message">Nota sobre %1$s:\n%2$s\n\nActualitza el fitxer per tenir-la en compte.</string>
+    <string name="file_memo_message_quoted">Nota sobre %1$s, sobre «%2$s»:\n%3$s\n\nActualitza el fitxer per tenir-la en compte.</string>
+</resources>

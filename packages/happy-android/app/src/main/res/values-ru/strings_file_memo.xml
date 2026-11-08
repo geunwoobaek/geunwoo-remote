@@ -1,0 +1,11 @@
+<resources>
+    <string name="file_memo">Заметка</string>
+    <string name="file_memo_on_selection">Заметка к выделенному</string>
+    <string name="file_memo_title">Заметка для агента</string>
+    <string name="file_memo_placeholder">Что изменить?</string>
+    <string name="file_memo_send">Отправить</string>
+    <string name="file_memo_sent">Отправлено в сессию</string>
+    <string name="file_memo_failed">Заметка не отправлена: %1$s</string>
+    <string name="file_memo_message">Заметка к %1$s:\n%2$s\n\nИзмени файл с учётом этого.</string>
+    <string name="file_memo_message_quoted">Заметка к %1$s, о «%2$s»:\n%3$s\n\nИзмени файл с учётом этого.</string>
+</resources>

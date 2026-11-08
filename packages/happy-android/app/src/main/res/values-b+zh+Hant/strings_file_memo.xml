@@ -1,0 +1,11 @@
+<resources>
+    <string name="file_memo">備註</string>
+    <string name="file_memo_on_selection">為所選內容備註</string>
+    <string name="file_memo_title">給代理的備註</string>
+    <string name="file_memo_placeholder">需要改什麼？</string>
+    <string name="file_memo_send">傳送</string>
+    <string name="file_memo_sent">已傳送到工作階段</string>
+    <string name="file_memo_failed">備註未傳送：%1$s</string>
+    <string name="file_memo_message">關於 %1$s 的備註：\n%2$s\n\n請據此更新檔案。</string>
+    <string name="file_memo_message_quoted">關於 %1$s 中「%2$s」的備註：\n%3$s\n\n請據此更新檔案。</string>
+</resources>

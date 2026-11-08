@@ -1,0 +1,11 @@
+<resources>
+    <string name="file_memo">备注</string>
+    <string name="file_memo_on_selection">为所选内容备注</string>
+    <string name="file_memo_title">给代理的备注</string>
+    <string name="file_memo_placeholder">需要改什么？</string>
+    <string name="file_memo_send">发送</string>
+    <string name="file_memo_sent">已发送到会话</string>
+    <string name="file_memo_failed">备注未发送：%1$s</string>
+    <string name="file_memo_message">关于 %1$s 的备注：\n%2$s\n\n请据此更新文件。</string>
+    <string name="file_memo_message_quoted">关于 %1$s 中“%2$s”的备注：\n%3$s\n\n请据此更新文件。</string>
+</resources>
