@@ -111,7 +111,7 @@
     <string name="settings_developer">开发者</string>
     <string name="settings_developer_tools">开发者工具</string>
     <string name="settings_about">关于</string>
-    <string name="settings_about_footer">Happy Coder 是一个 Codex 和 Claude Code 移动客户端。它采用端到端加密，您的账户仅存储在本地设备上。与 Anthropic 无关联。</string>
+    <string name="settings_about_footer">Jarvis Remote 是一个 Codex 和 Claude Code 移动客户端。它采用端到端加密，您的账户仅存储在本地设备上。与 Anthropic 无关联。</string>
     <string name="settings_whats_new">更新日志</string>
     <string name="settings_whats_new_subtitle">查看最新更新和改进</string>
     <string name="settings_report_issue">报告问题</string>
@@ -339,9 +339,9 @@
     <string name="session_info_kill_session_confirm">您确定要终止此会话吗？</string>
     <string name="session_info_archive_session">归档会话</string>
     <string name="session_info_archive_session_confirm">您确定要归档此会话吗？</string>
-    <string name="session_info_happy_session_id_copied">Happy 会话 ID 已复制到剪贴板</string>
-    <string name="session_info_failed_to_copy_session_id">复制 Happy 会话 ID 失败</string>
-    <string name="session_info_happy_session_id">Happy 会话 ID</string>
+    <string name="session_info_happy_session_id_copied">Jarvis 会话 ID 已复制到剪贴板</string>
+    <string name="session_info_failed_to_copy_session_id">复制 Jarvis 会话 ID 失败</string>
+    <string name="session_info_happy_session_id">Jarvis 会话 ID</string>
     <string name="session_info_claude_code_session_id">Claude Code 会话 ID</string>
     <string name="session_info_claude_code_session_id_copied">Claude Code 会话 ID 已复制到剪贴板</string>
     <string name="session_info_codex_thread_id">Codex 线程 ID</string>
@@ -376,7 +376,7 @@
     <string name="session_info_path">路径</string>
     <string name="session_info_operating_system">操作系统</string>
     <string name="session_info_process_id">进程 ID</string>
-    <string name="session_info_happy_home">Happy 主目录</string>
+    <string name="session_info_happy_home">Jarvis 主目录</string>
     <string name="session_info_copy_metadata">复制元数据</string>
     <string name="session_info_agent_state">Agent 状态</string>
     <string name="session_info_controlled_by_user">用户控制</string>
@@ -403,9 +403,9 @@
     <string name="components_empty_main_screen_desktop_setup_instructions">Install Happy Desktop from happy.engineering. In desktop setup, choose “I have the app open,” then scan the device-linking QR code here.</string>
     <string name="components_empty_main_screen_harness_description">Use Claude Code or Codex, or try Happy Harness. Your account stays linked across your computer and phone.</string>
     <string name="components_empty_main_screen_get_desktop">Get Happy Desktop</string>
-    <string name="components_empty_main_screen_terminal_alternative">Prefer the terminal? Set up Happy CLI</string>
+    <string name="components_empty_main_screen_terminal_alternative">Prefer the terminal? Set up Jarvis CLI</string>
     <string name="components_empty_main_screen_ready_to_code">准备开始编程？</string>
-    <string name="components_empty_main_screen_install_cli">安装 Happy CLI</string>
+    <string name="components_empty_main_screen_install_cli">安装 Jarvis CLI</string>
     <string name="components_empty_main_screen_run_it">运行它</string>
     <string name="components_empty_main_screen_scan_qr_code">扫描二维码</string>
     <string name="components_empty_main_screen_open_camera">打开相机</string>
@@ -488,14 +488,14 @@
     <string name="agent_question_submit_failed">无法发送你的回答</string>
     <string name="agent_question_dismiss">忽略</string>
     <string name="agent_question_unsupported_title">不支持的请求</string>
-    <string name="agent_question_unsupported_description">此版本的 Happy 无法显示「%1$s」请求。请更新应用后回复。</string>
+    <string name="agent_question_unsupported_description">此版本的 Jarvis 无法显示「%1$s」请求。请更新应用后回复。</string>
     <plurals name="agent_question_more_questions">
         <item quantity="other">%1$d 个问题</item>
     </plurals>
     <string name="agent_question_more_questions_n0">0 个问题</string>
     <string name="agent_question_more_questions_n1">还有 1 个问题</string>
 
-    <string name="sidebar_sessions_title">Happy</string>
+    <string name="sidebar_sessions_title">Jarvis</string>
     <string name="sidebar_show_archived">显示已归档</string>
     <string name="sidebar_hide_archived">隐藏已归档</string>
     <string name="sidebar_new_session">新建会话</string>
@@ -701,7 +701,7 @@
     <string name="settings_account_secret_key_copied">密钥已复制到剪贴板。请将其保存在安全的地方！</string>
     <string name="settings_account_secret_key_copy_failed">复制密钥失败</string>
     <string name="settings_account_privacy">隐私</string>
-    <string name="settings_account_privacy_description">分享使用数据（例如您使用的功能和设备类型），帮助我们改进 Happy。绝不包括您的消息或代码。</string>
+    <string name="settings_account_privacy_description">分享使用数据（例如您使用的功能和设备类型），帮助我们改进 Jarvis。绝不包括您的消息或代码。</string>
     <string name="settings_account_analytics">分析</string>
     <string name="settings_account_analytics_disabled">不分享数据</string>
     <string name="settings_account_analytics_enabled">分享使用数据</string>
@@ -740,7 +740,7 @@
     <string name="terminal_invalid_connection_link">无效的连接链接</string>
     <string name="terminal_invalid_connection_link_description">连接链接缺失或无效。请检查 URL 并重试。</string>
     <string name="terminal_connect_terminal">连接终端</string>
-    <string name="terminal_terminal_request_description">有终端正在请求连接到您的 Happy Coder 账户。这将允许终端安全地发送和接收消息。</string>
+    <string name="terminal_terminal_request_description">有终端正在请求连接到您的 Jarvis 账户。这将允许终端安全地发送和接收消息。</string>
     <string name="terminal_connection_details">连接详情</string>
     <string name="terminal_public_key">公钥</string>
     <string name="terminal_encryption">加密</string>
@@ -798,7 +798,7 @@
     <string name="onboarding_install_body_suffix">.</string>
     <string name="onboarding_terminal_comment"># Prefer the terminal?</string>
     <string name="onboarding_terminal_install">npm install -g happy</string>
-    <string name="onboarding_terminal_run">happy</string>
+    <string name="onboarding_terminal_run">jarvis</string>
     <string name="onboarding_open_step">Open Happy and choose Link\u00A0Mobile\u00A0App</string>
     <string name="onboarding_open_body">It’s the last step of setup on your computer. A QR code appears there.</string>
     <string name="onboarding_scan_step">Scan the QR code</string>
@@ -813,8 +813,8 @@
     <string name="onboarding_offline_title_many">Your computers are offline</string>
     <string name="onboarding_offline_linked_step">Linked %1$s</string>
     <string name="onboarding_offline_linked_step_many">Linked %1$d computers</string>
-    <string name="onboarding_offline_open_step">Open Happy on your computer</string>
-    <string name="onboarding_offline_open_body">Open Happy Desktop, or run happy in a terminal. This screen updates as soon as it connects.</string>
+    <string name="onboarding_offline_open_step">Open Jarvis on your computer</string>
+    <string name="onboarding_offline_open_body">Open Happy Desktop, or run jarvis in a terminal. This screen updates as soon as it connects.</string>
     <string name="onboarding_offline_troubleshoot">Troubleshoot</string>
     <string name="onboarding_link_another">Link another computer</string>
     <string name="onboarding_get_help">Get help</string>
@@ -832,18 +832,18 @@
     <string name="onboarding_logout_confirm_body">You will go back to Create account. Nothing on your computer changes.</string>
     <string name="onboarding_restore_title">Restore Account</string>
     <string name="onboarding_restore_scan">Scan this code with your other phone.</string>
-    <string name="onboarding_restore_scan_path">Happy › Settings › Account › Link New Device</string>
+    <string name="onboarding_restore_scan_path">Jarvis › Settings › Account › Link New Device</string>
     <string name="onboarding_restore_use_key">Use a secret key instead</string>
     <string name="onboarding_secret_key_title">Secret Key</string>
-    <string name="onboarding_secret_key_body">Paste your secret key. It is in Happy › Settings › Account on your other device.</string>
+    <string name="onboarding_secret_key_body">Paste your secret key. It is in Jarvis › Settings › Account on your other device.</string>
     <string name="onboarding_restore_button">Restore</string>
 
     <string name="troubleshoot_banner_title_one">%1$s is offline</string>
     <string name="troubleshoot_banner_title_many">All machines offline</string>
     <string name="troubleshoot_banner_subtitle">Troubleshoot</string>
     <string name="troubleshoot_title">Troubleshoot</string>
-    <string name="troubleshoot_heading">Happy is not running on your computer</string>
-    <string name="troubleshoot_intro">Your phone talks to Happy on your computer. When nothing is running there, everything here is offline.</string>
+    <string name="troubleshoot_heading">Jarvis is not running on your computer</string>
+    <string name="troubleshoot_intro">Your phone talks to Jarvis on your computer. When nothing is running there, everything here is offline.</string>
     <string name="troubleshoot_awake_step">Is the computer awake and online?</string>
     <string name="troubleshoot_awake_body">Sleep and a dropped connection are the usual causes.</string>
     <string name="troubleshoot_desktop_step">Is Happy Desktop open?</string>
@@ -851,7 +851,7 @@
     <string name="troubleshoot_desktop_body_link">happy.engineering</string>
     <string name="troubleshoot_desktop_body_suffix">. We recommend it.</string>
     <string name="troubleshoot_terminal_step">Using the terminal?</string>
-    <string name="troubleshoot_terminal_body">Run happy again. The computer comes back online as soon as it starts.</string>
+    <string name="troubleshoot_terminal_body">Run jarvis again. The computer comes back online as soon as it starts.</string>
     <string name="troubleshoot_terminal_comment"># Not using Happy Desktop?</string>
     <string name="troubleshoot_machines">Machines</string>
     <string name="troubleshoot_machine_offline">Offline</string>
@@ -869,7 +869,7 @@
 
     <string name="machine_launch_new_session_in_directory">在目录中启动新会话</string>
     <string name="machine_offline_unable_to_spawn">设备离线时无法启动</string>
-    <string name="machine_offline_help">• 确保您的计算机在线\n• 运行 `happy daemon status` 进行诊断\n• 您是否在运行最新的 CLI 版本？请使用 `npm install -g happy@latest` 升级</string>
+    <string name="machine_offline_help">• 确保您的计算机在线\n• 运行 `jarvis daemon status` 进行诊断\n• 您是否在运行最新的 CLI 版本？请使用 `npm install -g happy@latest` 升级</string>
     <string name="machine_daemon">守护进程</string>
     <string name="machine_status">状态</string>
     <string name="machine_stop_daemon">停止守护进程</string>

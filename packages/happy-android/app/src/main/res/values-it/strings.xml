@@ -119,7 +119,7 @@
     <string name="settings_developer">Sviluppatore</string>
     <string name="settings_developer_tools">Strumenti sviluppatore</string>
     <string name="settings_about">Informazioni</string>
-    <string name="settings_about_footer">Happy Coder è un client mobile per Codex e Claude Code. È completamente cifrato end-to-end e il tuo account è memorizzato solo sul tuo dispositivo. Non affiliato con Anthropic.</string>
+    <string name="settings_about_footer">Jarvis Remote è un client mobile per Codex e Claude Code. È completamente cifrato end-to-end e il tuo account è memorizzato solo sul tuo dispositivo. Non affiliato con Anthropic.</string>
     <string name="settings_whats_new">Novità</string>
     <string name="settings_whats_new_subtitle">Scopri gli ultimi aggiornamenti e miglioramenti</string>
     <string name="settings_report_issue">Segnala un problema</string>
@@ -355,9 +355,9 @@
     <string name="session_info_kill_session_confirm">Sei sicuro di voler terminare questa sessione?</string>
     <string name="session_info_archive_session">Archivia sessione</string>
     <string name="session_info_archive_session_confirm">Sei sicuro di voler archiviare questa sessione?</string>
-    <string name="session_info_happy_session_id_copied">ID sessione Happy copiato negli appunti</string>
-    <string name="session_info_failed_to_copy_session_id">Impossibile copiare l\'ID sessione Happy</string>
-    <string name="session_info_happy_session_id">ID sessione Happy</string>
+    <string name="session_info_happy_session_id_copied">ID sessione Jarvis copiato negli appunti</string>
+    <string name="session_info_failed_to_copy_session_id">Impossibile copiare l\'ID sessione Jarvis</string>
+    <string name="session_info_happy_session_id">ID sessione Jarvis</string>
     <string name="session_info_claude_code_session_id">ID sessione Claude Code</string>
     <string name="session_info_claude_code_session_id_copied">ID sessione Claude Code copiato negli appunti</string>
     <string name="session_info_codex_thread_id">ID thread Codex</string>
@@ -392,7 +392,7 @@
     <string name="session_info_path">Percorso</string>
     <string name="session_info_operating_system">Sistema operativo</string>
     <string name="session_info_process_id">ID processo</string>
-    <string name="session_info_happy_home">Happy Home</string>
+    <string name="session_info_happy_home">Jarvis Home</string>
     <string name="session_info_copy_metadata">Copia metadati</string>
     <string name="session_info_agent_state">Stato agente</string>
     <string name="session_info_controlled_by_user">Controllato dall\'utente</string>
@@ -419,9 +419,9 @@
     <string name="components_empty_main_screen_desktop_setup_instructions">Install Happy Desktop from happy.engineering. In desktop setup, choose “I have the app open,” then scan the device-linking QR code here.</string>
     <string name="components_empty_main_screen_harness_description">Use Claude Code or Codex, or try Happy Harness. Your account stays linked across your computer and phone.</string>
     <string name="components_empty_main_screen_get_desktop">Get Happy Desktop</string>
-    <string name="components_empty_main_screen_terminal_alternative">Prefer the terminal? Set up Happy CLI</string>
+    <string name="components_empty_main_screen_terminal_alternative">Prefer the terminal? Set up Jarvis CLI</string>
     <string name="components_empty_main_screen_ready_to_code">Pronto a programmare?</string>
-    <string name="components_empty_main_screen_install_cli">Installa la CLI Happy</string>
+    <string name="components_empty_main_screen_install_cli">Installa la CLI Jarvis</string>
     <string name="components_empty_main_screen_run_it">Avviala</string>
     <string name="components_empty_main_screen_scan_qr_code">Scansiona il codice QR</string>
     <string name="components_empty_main_screen_open_camera">Apri fotocamera</string>
@@ -506,7 +506,7 @@
     <string name="agent_question_submit_failed">Impossibile inviare la risposta</string>
     <string name="agent_question_dismiss">Ignora</string>
     <string name="agent_question_unsupported_title">Richiesta non supportata</string>
-    <string name="agent_question_unsupported_description">Questa versione di Happy non può mostrare una richiesta «%1$s». Aggiorna l\'app per rispondere.</string>
+    <string name="agent_question_unsupported_description">Questa versione di Jarvis non può mostrare una richiesta «%1$s». Aggiorna l\'app per rispondere.</string>
     <plurals name="agent_question_more_questions">
         <item quantity="one">%1$d altra domanda</item>
         <item quantity="many">%1$d altre domande</item>
@@ -515,7 +515,7 @@
     <string name="agent_question_more_questions_n0">0 altre domande</string>
     <string name="agent_question_more_questions_n1">1 altra domanda</string>
 
-    <string name="sidebar_sessions_title">Happy</string>
+    <string name="sidebar_sessions_title">Jarvis</string>
     <string name="sidebar_show_archived">Mostra archiviate</string>
     <string name="sidebar_hide_archived">Nascondi archiviate</string>
     <string name="sidebar_new_session">Nuova sessione</string>
@@ -737,7 +737,7 @@
     <string name="settings_account_secret_key_copied">Chiave segreta copiata negli appunti. Conservala in un luogo sicuro!</string>
     <string name="settings_account_secret_key_copy_failed">Impossibile copiare la chiave segreta</string>
     <string name="settings_account_privacy">Privacy</string>
-    <string name="settings_account_privacy_description">Condivide dati di utilizzo, come le funzioni che usi e il tipo del tuo dispositivo, per aiutarci a migliorare Happy. Mai i tuoi messaggi o il tuo codice.</string>
+    <string name="settings_account_privacy_description">Condivide dati di utilizzo, come le funzioni che usi e il tipo del tuo dispositivo, per aiutarci a migliorare Jarvis. Mai i tuoi messaggi o il tuo codice.</string>
     <string name="settings_account_analytics">Analytics</string>
     <string name="settings_account_analytics_disabled">Nessun dato condiviso</string>
     <string name="settings_account_analytics_enabled">I dati di utilizzo sono condivisi</string>
@@ -776,7 +776,7 @@
     <string name="terminal_invalid_connection_link">Link di connessione non valido</string>
     <string name="terminal_invalid_connection_link_description">Il link di connessione è mancante o non valido. Controlla l\'URL e riprova.</string>
     <string name="terminal_connect_terminal">Connetti terminale</string>
-    <string name="terminal_terminal_request_description">Un terminale richiede di connettersi al tuo account Happy Coder. Questo consentirà al terminale di inviare e ricevere messaggi in modo sicuro.</string>
+    <string name="terminal_terminal_request_description">Un terminale richiede di connettersi al tuo account Jarvis. Questo consentirà al terminale di inviare e ricevere messaggi in modo sicuro.</string>
     <string name="terminal_connection_details">Dettagli connessione</string>
     <string name="terminal_public_key">Chiave pubblica</string>
     <string name="terminal_encryption">Cifratura</string>
@@ -834,7 +834,7 @@
     <string name="onboarding_install_body_suffix">.</string>
     <string name="onboarding_terminal_comment"># Prefer the terminal?</string>
     <string name="onboarding_terminal_install">npm install -g happy</string>
-    <string name="onboarding_terminal_run">happy</string>
+    <string name="onboarding_terminal_run">jarvis</string>
     <string name="onboarding_open_step">Open Happy and choose Link\u00A0Mobile\u00A0App</string>
     <string name="onboarding_open_body">It’s the last step of setup on your computer. A QR code appears there.</string>
     <string name="onboarding_scan_step">Scan the QR code</string>
@@ -849,8 +849,8 @@
     <string name="onboarding_offline_title_many">Your computers are offline</string>
     <string name="onboarding_offline_linked_step">Linked %1$s</string>
     <string name="onboarding_offline_linked_step_many">Linked %1$d computers</string>
-    <string name="onboarding_offline_open_step">Open Happy on your computer</string>
-    <string name="onboarding_offline_open_body">Open Happy Desktop, or run happy in a terminal. This screen updates as soon as it connects.</string>
+    <string name="onboarding_offline_open_step">Open Jarvis on your computer</string>
+    <string name="onboarding_offline_open_body">Open Happy Desktop, or run jarvis in a terminal. This screen updates as soon as it connects.</string>
     <string name="onboarding_offline_troubleshoot">Troubleshoot</string>
     <string name="onboarding_link_another">Link another computer</string>
     <string name="onboarding_get_help">Get help</string>
@@ -868,18 +868,18 @@
     <string name="onboarding_logout_confirm_body">You will go back to Create account. Nothing on your computer changes.</string>
     <string name="onboarding_restore_title">Restore Account</string>
     <string name="onboarding_restore_scan">Scan this code with your other phone.</string>
-    <string name="onboarding_restore_scan_path">Happy › Settings › Account › Link New Device</string>
+    <string name="onboarding_restore_scan_path">Jarvis › Settings › Account › Link New Device</string>
     <string name="onboarding_restore_use_key">Use a secret key instead</string>
     <string name="onboarding_secret_key_title">Secret Key</string>
-    <string name="onboarding_secret_key_body">Paste your secret key. It is in Happy › Settings › Account on your other device.</string>
+    <string name="onboarding_secret_key_body">Paste your secret key. It is in Jarvis › Settings › Account on your other device.</string>
     <string name="onboarding_restore_button">Restore</string>
 
     <string name="troubleshoot_banner_title_one">%1$s is offline</string>
     <string name="troubleshoot_banner_title_many">All machines offline</string>
     <string name="troubleshoot_banner_subtitle">Troubleshoot</string>
     <string name="troubleshoot_title">Troubleshoot</string>
-    <string name="troubleshoot_heading">Happy is not running on your computer</string>
-    <string name="troubleshoot_intro">Your phone talks to Happy on your computer. When nothing is running there, everything here is offline.</string>
+    <string name="troubleshoot_heading">Jarvis is not running on your computer</string>
+    <string name="troubleshoot_intro">Your phone talks to Jarvis on your computer. When nothing is running there, everything here is offline.</string>
     <string name="troubleshoot_awake_step">Is the computer awake and online?</string>
     <string name="troubleshoot_awake_body">Sleep and a dropped connection are the usual causes.</string>
     <string name="troubleshoot_desktop_step">Is Happy Desktop open?</string>
@@ -887,7 +887,7 @@
     <string name="troubleshoot_desktop_body_link">happy.engineering</string>
     <string name="troubleshoot_desktop_body_suffix">. We recommend it.</string>
     <string name="troubleshoot_terminal_step">Using the terminal?</string>
-    <string name="troubleshoot_terminal_body">Run happy again. The computer comes back online as soon as it starts.</string>
+    <string name="troubleshoot_terminal_body">Run jarvis again. The computer comes back online as soon as it starts.</string>
     <string name="troubleshoot_terminal_comment"># Not using Happy Desktop?</string>
     <string name="troubleshoot_machines">Machines</string>
     <string name="troubleshoot_machine_offline">Offline</string>
@@ -905,7 +905,7 @@
 
     <string name="machine_launch_new_session_in_directory">Avvia nuova sessione nella directory</string>
     <string name="machine_offline_unable_to_spawn">Avvio disabilitato quando la macchina è offline</string>
-    <string name="machine_offline_help">• Assicurati che il tuo computer sia online\n• Esegui `happy daemon status` per diagnosticare\n• Stai usando l\'ultima versione della CLI? Aggiorna con `npm install -g happy@latest`</string>
+    <string name="machine_offline_help">• Assicurati che il tuo computer sia online\n• Esegui `jarvis daemon status` per diagnosticare\n• Stai usando l\'ultima versione della CLI? Aggiorna con `npm install -g happy@latest`</string>
     <string name="machine_daemon">Daemon</string>
     <string name="machine_status">Stato</string>
     <string name="machine_stop_daemon">Arresta daemon</string>
