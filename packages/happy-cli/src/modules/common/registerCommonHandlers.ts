@@ -10,6 +10,8 @@ import { RpcHandlerManager } from '../../api/rpc/RpcHandlerManager';
 import { validatePath, PathValidationResult } from './pathSecurity';
 import { captureScreen, captureStatus, mediaReadPolicy, readFileChunk, CaptureKind, CaptureResult, FileChunk } from './mediaFiles';
 import { screenFrame, startScreenStream, stopScreenStream, ScreenFrame, ScreenStreamStart } from './screenStream';
+import { listSavedWorkflows, ListWorkflowsResponse } from './workflows';
+import { homedir } from 'os';
 
 const execAsync = promisify(exec);
 
@@ -457,6 +459,17 @@ export function registerCommonHandlers(rpcHandlerManager: RpcHandlerManager, wor
         } catch (error) {
             logger.debug('Failed to list directory:', error);
             return { success: false, error: error instanceof Error ? error.message : 'Failed to list directory' };
+        }
+    });
+
+    // Saved Claude Code workflows: the session folder's (and its git root's), then the user's.
+    // Each script's `export const meta` is read as text; nothing is run.
+    rpcHandlerManager.registerHandler<Record<string, never>, ListWorkflowsResponse>('listWorkflows', async () => {
+        try {
+            return { success: true, workflows: await listSavedWorkflows(workingDirectory, homedir()) };
+        } catch (error) {
+            logger.debug('Failed to list workflows:', error);
+            return { success: false, error: error instanceof Error ? error.message : 'Failed to list workflows' };
         }
     });
 
