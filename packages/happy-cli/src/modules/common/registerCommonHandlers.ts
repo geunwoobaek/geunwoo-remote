@@ -8,6 +8,7 @@ import { run as runRipgrep } from '@/modules/ripgrep/index';
 import { run as runDifftastic } from '@/modules/difftastic/index';
 import { RpcHandlerManager } from '../../api/rpc/RpcHandlerManager';
 import { validatePath, PathValidationResult } from './pathSecurity';
+import { captureScreen, captureStatus, mediaReadPolicy, readFileChunk, CaptureKind, CaptureResult, FileChunk } from './mediaFiles';
 
 const execAsync = promisify(exec);
 
@@ -33,6 +34,18 @@ interface ReadFileResponse {
     success: boolean;
     content?: string; // base64 encoded
     error?: string;
+}
+
+interface ReadFileChunkRequest {
+    path: string;
+    offset: number;
+    length: number;
+}
+
+interface CaptureScreenRequest {
+    kind: CaptureKind;
+    /** A recording's length; ignored for a screenshot. */
+    seconds?: number;
 }
 
 interface WriteFileRequest {
@@ -277,6 +290,34 @@ export function registerCommonHandlers(rpcHandlerManager: RpcHandlerManager, wor
             return { success: false, error: error instanceof Error ? error.message : 'Failed to read file' };
         }
     });
+
+    // Chunked read for pictures and recordings larger than one relay message.
+    // Inside the working directory as readFile; outside it, media files only.
+    rpcHandlerManager.registerHandler<ReadFileChunkRequest, FileChunk>('readFileChunk', async (data) => {
+        const validation = await mediaReadPolicy(data.path, checkPath);
+        if (!validation.valid) {
+            return { success: false, error: validation.error };
+        }
+        try {
+            return await readFileChunk(validation.resolvedPath!, data.offset, data.length);
+        } catch (error) {
+            logger.debug('Failed to read file chunk:', error);
+            return { success: false, error: error instanceof Error ? error.message : 'Failed to read file' };
+        }
+    });
+
+    // Screenshot or short recording of this computer's screen, asked for from the phone.
+    rpcHandlerManager.registerHandler<CaptureScreenRequest, CaptureResult>('captureScreen', async (data) => {
+        try {
+            return await captureScreen(data.kind === 'video' ? 'video' : 'image', data.seconds ?? 10);
+        } catch (error) {
+            logger.debug('Failed to capture the screen:', error);
+            return { success: false, error: error instanceof Error ? error.message : 'Failed to capture the screen' };
+        }
+    });
+
+    // Whether a recording started by captureScreen has been written.
+    rpcHandlerManager.registerHandler<{ path: string }, CaptureResult>('captureStatus', async (data) => captureStatus(data.path));
 
     // Write file handler - with hash verification
     rpcHandlerManager.registerHandler<WriteFileRequest, WriteFileResponse>('writeFile', async (data) => {
