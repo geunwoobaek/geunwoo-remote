@@ -13,6 +13,7 @@ import com.slopus.happy.testing.FakeHappyServer
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -80,14 +81,32 @@ class AccountLinkingTest {
     }
 
     @Test
-    fun aFailedPollEndsTheWait() = runBlocking {
+    fun anUnreachableServerDoesNotEndTheWait() = runBlocking {
+        // Android cuts a backgrounded app's network while the other phone's
+        // app (on this same phone) scans the code; the wait outlasts that.
         val newPhone = AccountLinkRequest(api)
         server.close()
-        try {
+        val ended = withTimeoutOrNull(300) {
             newPhone.awaitApproval(pollInterval = 10.milliseconds)
-            fail("expected the poll to fail")
-        } catch (_: java.io.IOException) {
+            true
         }
+        assertNull(ended)
+    }
+
+    @Test
+    fun aRefusedPollEndsTheWait() = runBlocking {
+        val newPhone = AccountLinkRequest(api)
+        newPhone.start()
+        server.failAccountRequests += listOf(500)
+        val waiting = async {
+            try {
+                newPhone.awaitApproval(pollInterval = 10.milliseconds)
+                fail("a refusal should end the wait")
+            } catch (e: HttpStatusException) {
+                assertEquals(500, e.status)
+            }
+        }
+        withTimeout(5_000) { waiting.await() }
     }
 
     @Test

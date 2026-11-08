@@ -8,7 +8,9 @@ import com.slopus.happy.crypto.SecureRandomSource
 import com.slopus.happy.crypto.Sodium
 import com.slopus.happy.crypto.decodeBase64
 import com.slopus.happy.crypto.encryptBox
+import com.slopus.happy.net.HttpStatusException
 import kotlinx.coroutines.delay
+import java.io.IOException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -37,11 +39,21 @@ class AccountLinkRequest(
     /**
      * authQRWait: asks again until the request is authorized, at once and
      * then every [pollInterval]. Null when the answer doesn't open with this
-     * key pair; throws when a request fails, as authQRWait gives up then too.
+     * key pair; throws when the server refuses a request, as authQRWait gives
+     * up then too. A request that gets no answer at all is asked again:
+     * Android cuts a backgrounded app's network, and linking from another
+     * account app on this same phone puts this one behind it while it scans.
      */
     suspend fun awaitApproval(pollInterval: Duration = 1.seconds): LinkedAccount? {
         while (true) {
-            val state = api.requestAccountLink(keyPair.publicKey)
+            val state = try {
+                api.requestAccountLink(keyPair.publicKey)
+            } catch (e: HttpStatusException) {
+                throw e
+            } catch (_: IOException) {
+                delay(pollInterval)
+                continue
+            }
             if (state.state == "authorized") {
                 val token = state.token ?: return null
                 val response = state.response?.let {
