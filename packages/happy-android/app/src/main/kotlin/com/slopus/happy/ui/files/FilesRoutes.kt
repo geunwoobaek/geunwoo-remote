@@ -42,6 +42,13 @@ import com.slopus.happy.text.Words
 import com.slopus.happy.ui.components.Alert
 import com.slopus.happy.ui.components.AlertButton
 import com.slopus.happy.ui.components.HappyAlert
+import com.slopus.happy.ui.components.Item
+import com.slopus.happy.ui.components.ItemGroup
+import com.slopus.happy.ui.components.ItemList
+import com.slopus.happy.ui.components.Screen
+import com.slopus.happy.ui.components.StackHeader
+import android.text.format.DateUtils
+import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -237,13 +244,31 @@ private fun FileRouteScreen(graph: AppGraph, route: SessionFileRoute, onBack: ()
     val (loaded, metadata) = rememberMetadata(graph, route.id)
     val sessionPath = metadata?.path
     val resolved = remember(route.path, sessionPath) { SessionFilePaths.resolve(route.path, sessionPath) }
-    val filePath = resolved?.absolutePath ?: route.path
-    val gitDiffPath = resolved?.takeIf { it.withinSessionRoot }?.relativePath
+    val named = resolved?.absolutePath ?: route.path
     val sync = account
     val context = LocalContext.current
-    val load by produceState<FileLoad>(FileLoad.Loading, sync, loaded, filePath, gitDiffPath) {
+    // The chat names the path in the session's folder; the agent may have written it in a worktree.
+    val located by produceState<WorktreeLookup.Located?>(null, sync, loaded, named, sessionPath) {
         if (sync == null || !loaded) return@produceState
-        SyncSessionFileOps(sync).fileLoads(sync.fileCache, route.id, filePath, sessionPath, gitDiffPath, context.cacheDir).collect { value = it }
+        value = WorktreeLookup.locate(sessionPath, named) { dir -> sync.sessionOps.listDirectory(route.id, dir) }
+    }
+    var picked by rememberSaveable(route.path) { mutableStateOf<String?>(null) }
+    val copies = (located as? WorktreeLookup.Located.InWorktrees)?.copies
+    if (copies != null && copies.size > 1 && picked == null) {
+        WorktreeChoiceScreen(named.substringAfterLast('/'), copies, onBack) { picked = it }
+        return
+    }
+    val found = picked ?: when (val where = located) {
+        null -> null
+        is WorktreeLookup.Located.Here -> where.path
+        is WorktreeLookup.Located.InWorktrees -> where.copies.first().path
+    }
+    val filePath = found ?: named
+    // A copy in a worktree isn't the session folder's file, so the folder's git diff doesn't apply to it.
+    val gitDiffPath = resolved?.takeIf { it.withinSessionRoot && found == named }?.relativePath
+    val load by produceState<FileLoad>(FileLoad.Loading, sync, loaded, found, gitDiffPath) {
+        if (sync == null || !loaded || found == null) return@produceState
+        SyncSessionFileOps(sync).fileLoads(sync.fileCache, route.id, found, sessionPath, gitDiffPath, context.cacheDir).collect { value = it }
     }
     val scope = rememberCoroutineScope()
     val ops = remember(sync) { sync?.let(::SyncSessionFileOps) }
@@ -265,6 +290,28 @@ private fun FileRouteScreen(graph: AppGraph, route: SessionFileRoute, onBack: ()
             }
         },
     )
+}
+
+/**
+ * The file the chat named is in several of the session's worktrees and not
+ * in its folder: one row per worktree, the most recently changed first, and
+ * a tap opens that copy.
+ */
+@Composable
+private fun WorktreeChoiceScreen(name: String, copies: List<WorktreeLookup.Copy>, onBack: () -> Unit, onPick: (String) -> Unit) {
+    Screen(header = { StackHeader(name, onBack) }) {
+        ItemList {
+            ItemGroup(title = stringResource(R.string.files_in_worktrees_title), footer = stringResource(R.string.files_in_worktrees_footer)) {
+                copies.forEach { copy ->
+                    Item(
+                        title = copy.worktree,
+                        subtitle = copy.modified?.let { DateUtils.getRelativeTimeSpanString(it.toLong()).toString() },
+                        onClick = { onPick(copy.path) },
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** [path]'s bytes from the computer a slice at a time ([readMediaBytes]), or null when it can't be read. */
