@@ -9,7 +9,7 @@
     <string name="browser_problem_offline_title">你已離線</string>
     <string name="browser_problem_offline_message">此手機未連線到網際網路。連線後即可開啟網頁。</string>
     <string name="browser_problem_unreachable_title">無法連線到 %1$s</string>
-    <string name="browser_problem_unreachable_message">網頁透過 %1$s 開啟，但它沒有回應。請確認它未進入睡眠且正在執行 Happy。</string>
+    <string name="browser_problem_unreachable_message">網頁透過 %1$s 開啟，但它沒有回應。請確認它未進入睡眠且正在執行 Jarvis。</string>
     <string name="browser_problem_unavailable_title">無法開啟此網頁</string>
     <string name="browser_problem_unavailable_message">網頁透過執行 Happy Agent 的電腦開啟，但沒有可用來開啟此網頁的連線。</string>
     <string name="browser_problem_host_not_found_title">找不到伺服器</string>

@@ -13,10 +13,10 @@
     <string name="attach_unpick">Deselect</string>
     <string name="attach_access_title">Your photos and videos</string>
     <string name="attach_access_message">Allow access to show your recent photos and videos here.</string>
-    <string name="attach_access_blocked">Access to photos and videos is off. Turn it on for Happy in Settings.</string>
+    <string name="attach_access_blocked">Access to photos and videos is off. Turn it on for Jarvis in Settings.</string>
     <string name="attach_access_allow">Allow access</string>
     <string name="attach_access_settings">Open Settings</string>
-    <string name="attach_partial_message">Happy can see only the photos and videos you chose.</string>
+    <string name="attach_partial_message">Jarvis can see only the photos and videos you chose.</string>
     <string name="attach_partial_manage">Manage</string>
     <string name="attach_gallery_empty">No photos or videos yet</string>
     <string name="attach_files_browse">Browse</string>

@@ -58,11 +58,11 @@ fun buildOfflineMachineTroubleshooting(
     val machineName = choice?.name?.trim()?.ifEmpty { null } ?: "this machine"
     val projectName = session?.projectName?.trim()?.ifEmpty { null }
         ?: projectNameFromPath(session?.path)
-        ?: "Happy"
+        ?: "Jarvis"
     val happyHomeDir = choice?.happyHomeDir?.trim()?.ifEmpty { null }
         ?: session?.happyHomeDir?.trim()?.ifEmpty { null }
         ?: "~/.happy"
-    val aiPrompt = "In $happyHomeDir, diagnose why Happy cannot reach \"$machineName\" for project \"$projectName\"."
+    val aiPrompt = "In $happyHomeDir, diagnose why Jarvis cannot reach \"$machineName\" for project \"$projectName\"."
     return OfflineMachineTroubleshooting(
         machineName = machineName,
         projectName = projectName,
@@ -70,8 +70,8 @@ fun buildOfflineMachineTroubleshooting(
         aiPrompt = aiPrompt,
         message = listOf(
             "1. Wake the machine and check internet.",
-            "2. Run `happy` again.",
-            "3. Reopen Happy.",
+            "2. Run `jarvis` again.",
+            "3. Reopen Jarvis.",
             "",
             "AI prompt:",
             aiPrompt,

@@ -127,7 +127,7 @@ class SettingsSearchTest {
         assertTrue("no sign out in $titles", titles.none { it == "Logout" })
         // Each says its kind by its product: Happy Agent, or Happy CLI for a Happy account (iOS 64edb6a34).
         rule.onNodeWithText("Happy Agent", useUnmergedTree = true).assertExists()
-        rule.onAllNodesWithText("Happy CLI", useUnmergedTree = true).assertCountEquals(2)
+        rule.onAllNodesWithText("Jarvis CLI", useUnmergedTree = true).assertCountEquals(2)
         rule.node(SettingsSearchTags.profile("fedcba9876543210")).performClick()
         assertEquals(listOf("switch:fedcba9876543210"), done)
         // The search closed: the page is back.

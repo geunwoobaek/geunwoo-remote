@@ -87,10 +87,10 @@
     <string name="home_dock_bot_not_now">暫不</string>
     <string name="home_dock_bot_try_again">重試</string>
     <string name="home_start_no_machine">請選擇裝置</string>
-    <string name="home_start_unknown_machine">這個工作階段所在的電腦未註冊到此帳號，因此無法在其上開始工作階段。請確認 Happy 正在那台電腦上執行並已登入此帳號。</string>
+    <string name="home_start_unknown_machine">這個工作階段所在的電腦未註冊到此帳號，因此無法在其上開始工作階段。請確認 Jarvis 正在那台電腦上執行並已登入此帳號。</string>
     <string name="home_start_happy_agent_missing">這台電腦上沒有執行 Happy Agent</string>
-    <string name="home_start_happy_cli_missing">你的電腦上沒有可用的 Happy CLI。請在電腦上執行 `happy daemon start`，然後重試。</string>
-    <string name="home_start_happy_cli_offline">你電腦上的 Happy CLI 處於離線狀態。請在電腦上執行 `happy daemon start`，然後重試。</string>
+    <string name="home_start_happy_cli_missing">你的電腦上沒有可用的 Jarvis CLI。請在電腦上執行 `jarvis daemon start`，然後重試。</string>
+    <string name="home_start_happy_cli_offline">你電腦上的 Jarvis CLI 處於離線狀態。請在電腦上執行 `jarvis daemon start`，然後重試。</string>
     <string name="home_start_cannot_start_happy_agent">這台裝置無法開始 Happy Agent 工作階段</string>
     <string name="home_start_project_needs_happy_agent">只有 Happy Agent 知道這個專案在哪裡，其他執行環境無法開啟它。請把執行環境切回 Happy Agent，或選擇專案的資料夾。</string>
     <string name="home_start_workspace_unavailable">所選的 Happy Agent 工作區已無法使用。</string>

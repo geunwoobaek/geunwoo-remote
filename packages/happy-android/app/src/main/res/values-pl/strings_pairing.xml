@@ -16,7 +16,7 @@
     <string name="pairing_failed">Nie udało się połączyć</string>
     <string name="pairing_done">Gotowe</string>
     <string name="pairing_error_invalid_code">Ten kod jest nieprawidłowy. Wygeneruj nowy w Happy Agent.</string>
-    <string name="pairing_error_update_required">Zaktualizuj Happy, aby użyć tego kodu.</string>
+    <string name="pairing_error_update_required">Zaktualizuj Jarvis, aby użyć tego kodu.</string>
     <string name="pairing_error_expired">Ten kod wygasł. Wygeneruj nowy w Happy Agent.</string>
     <string name="pairing_error_rejected">Połączenie zostało odrzucone. Wygeneruj nowy kod i ponownie porównaj emoji.</string>
     <string name="pairing_error_invalid_proof">Nie udało się zweryfikować agenta. Wygeneruj nowy kod.</string>

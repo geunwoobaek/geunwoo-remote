@@ -57,7 +57,7 @@ class GuestChatScreenTest {
     @Test
     fun aNewGuestIsAskedOnlyTheirNameAndToldWhoSeesTheChat() {
         show(GuestChatState(status = GuestStatus.EnterName, naming = true))
-        rule.onNodeWithText("Join a Happy bot").assertExists()
+        rule.onNodeWithText("Join a Jarvis bot").assertExists()
         rule.onNodeWithText("Enter your name to start chatting.").assertExists()
         rule.onNodeWithText("Everyone who joins this link can see this chat, including earlier messages. Names are chosen by members and aren’t verified.").assertExists()
         val name = rule.node(GuestChatTags.NAME).bounds

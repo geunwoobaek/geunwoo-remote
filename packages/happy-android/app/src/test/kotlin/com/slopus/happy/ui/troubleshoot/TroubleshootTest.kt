@@ -43,7 +43,7 @@ class TroubleshootTest {
             listOf(computer("mac", "Kirill’s Mac", 10, "/Users/kirill/.happy")),
             listOf(TroubleshootSession(updatedAt = 20, machineId = "mac", projectName = "Happy", path = "/Users/kirill/Developer/happy")),
         )
-        assertEquals("In /Users/kirill/.happy, diagnose why Happy cannot reach \"Kirill’s Mac\" for project \"Happy\".", guide.aiPrompt)
+        assertEquals("In /Users/kirill/.happy, diagnose why Jarvis cannot reach \"Kirill’s Mac\" for project \"Happy\".", guide.aiPrompt)
         assertTrue(guide.message.contains("1. Wake the machine and check internet."))
         assertTrue(guide.message.endsWith(guide.aiPrompt))
     }
@@ -65,7 +65,7 @@ class TroubleshootTest {
     @Test
     fun stillUsefulBeforeAnySessionExists() {
         val guide = buildOfflineMachineTroubleshooting(listOf(computer("mac", "Mac", 10)), emptyList())
-        assertEquals("Happy", guide.projectName)
+        assertEquals("Jarvis", guide.projectName)
         assertEquals("~/.happy", guide.happyHomeDir)
         assertEquals("Mac", guide.machineName)
         assertEquals("this machine", buildOfflineMachineTroubleshooting(emptyList(), emptyList()).machineName)

@@ -7,7 +7,7 @@
     <string name="push_background_send_pending_title">Wiadomość nie została wysłana</string>
     <string name="push_background_send_pending_body">Wiadomość wciąż jest wysyłana w tle. Jeśli nie zostanie dostarczona w ciągu 30 sekund, wysyłanie się nie powiedzie.</string>
     <string name="push_background_send_failed_title">Wysyłanie wiadomości nie powiodło się</string>
-    <string name="push_background_send_failed_body">Nie udało się wysłać wiadomości, gdy aplikacja działała w tle. Otwórz Happy i spróbuj ponownie.</string>
+    <string name="push_background_send_failed_body">Nie udało się wysłać wiadomości, gdy aplikacja działała w tle. Otwórz Jarvis i spróbuj ponownie.</string>
     <string name="push_permission">Uprawnienie</string>
     <string name="push_request_again">Poproś ponownie o uprawnienie</string>
     <string name="push_reregister">Zarejestruj to urządzenie ponownie</string>
@@ -41,7 +41,7 @@
     <string name="push_android_device">urządzenie z Androidem</string>
     <string name="push_load_failed">Nie udało się wczytać ustawień powiadomień push.</string>
     <string name="push_enabled">Powiadomienia push są włączone na tym urządzeniu.</string>
-    <string name="push_opened_settings">System nie wyświetli już pytania o uprawnienie, więc Happy otworzył ustawienia.</string>
+    <string name="push_opened_settings">System nie wyświetli już pytania o uprawnienie, więc Jarvis otworzył ustawienia.</string>
     <string name="push_not_granted">Nie przyznano uprawnień do powiadomień push.</string>
     <string name="push_request_failed">Nie udało się poprosić o uprawnienia do powiadomień push.</string>
     <string name="push_refreshed">Token push tego urządzenia został odświeżony.</string>

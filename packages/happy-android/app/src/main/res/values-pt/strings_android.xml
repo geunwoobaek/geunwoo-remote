@@ -21,7 +21,7 @@
     <string name="chat_scroll_to_bottom">Rolar até o fim</string>
     <string name="voice_clear_search">Limpar busca</string>
     <string name="scan_unavailable">O leitor de QR não está disponível neste dispositivo. Cole o link em vez disso.</string>
-    <string name="scan_not_happy_code">Este código QR não é do Happy.</string>
+    <string name="scan_not_happy_code">Este código QR não é do Jarvis.</string>
     <string name="scan_terminal_code_elsewhere">Este código conecta um terminal. Escaneie-o em Configurações › Escaneie o código QR para autenticar.</string>
     <string name="scan_account_code_elsewhere">Este código vincula um novo dispositivo. Escaneie-o em Configurações › Backup e restauração › Vincular novo dispositivo.</string>
     <string name="scan_pairing_unavailable">Este código conecta o Happy Agent. Use Adicionar no menu de contas da tela inicial.</string>
@@ -34,6 +34,6 @@
     <string name="scan_no_camera">Este dispositivo não tem câmera. Cole o link.</string>
     <string name="scan_camera_failed">Não foi possível iniciar a câmera. Tente de novo ou cole o link.</string>
     <string name="voice_microphone_title">Acesso ao microfone necessário</string>
-    <string name="voice_microphone_ask">O Happy precisa de acesso ao microfone para o chat de voz. Conceda a permissão quando for solicitado.</string>
-    <string name="voice_microphone_settings">O Happy precisa de acesso ao microfone para o chat de voz. Ative o acesso ao microfone nas configurações do dispositivo.</string>
+    <string name="voice_microphone_ask">O Jarvis precisa de acesso ao microfone para o chat de voz. Conceda a permissão quando for solicitado.</string>
+    <string name="voice_microphone_settings">O Jarvis precisa de acesso ao microfone para o chat de voz. Ative o acesso ao microfone nas configurações do dispositivo.</string>
 </resources>

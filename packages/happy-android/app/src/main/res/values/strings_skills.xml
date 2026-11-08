@@ -32,7 +32,7 @@
     <string name="skills_none_reported" translatable="false">Claude reported no skills, commands or tools.</string>
     <string name="skills_workflows_loading" translatable="false">Looking for workflows…</string>
     <string name="skills_workflows_new_session" translatable="false">Start a new session to see workflows</string>
-    <string name="skills_workflows_new_session_subtitle" translatable="false">This session’s happy can’t list them yet.</string>
+    <string name="skills_workflows_new_session_subtitle" translatable="false">This session’s jarvis can’t list them yet.</string>
     <string name="skills_workflows_failed" translatable="false">Couldn’t list workflows</string>
     <string name="skills_workflows_retry" translatable="false">Tap to try again</string>
     <string name="skills_workflows_none" translatable="false">No saved workflows</string>

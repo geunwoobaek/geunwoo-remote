@@ -574,7 +574,7 @@ class SessionInfoScreenTest {
         rule.onNodeWithText("session-...9-abcdef").assertExists()
         rule.node(SessionInfoTags.SESSION_ID).performScrollTo().performClick()
         assertEquals(listOf("session-0123456789-abcdef"), copied)
-        rule.onNodeWithText("Happy Session ID copied to clipboard").assertExists()
+        rule.onNodeWithText("Jarvis Session ID copied to clipboard").assertExists()
     }
 
     /** info.tsx: a clipboard that refuses says so (sessionInfo.failedToCopy*), not "copied". */
@@ -583,8 +583,8 @@ class SessionInfoScreenTest {
         clipboardWorks = false
         show(claudeSession())
         rule.node(SessionInfoTags.SESSION_ID).performScrollTo().performClick()
-        rule.onNodeWithText("Failed to copy Happy Session ID").assertExists()
-        rule.onNodeWithText("Happy Session ID copied to clipboard").assertDoesNotExist()
+        rule.onNodeWithText("Failed to copy Jarvis Session ID").assertExists()
+        rule.onNodeWithText("Jarvis Session ID copied to clipboard").assertDoesNotExist()
     }
 
     @Test

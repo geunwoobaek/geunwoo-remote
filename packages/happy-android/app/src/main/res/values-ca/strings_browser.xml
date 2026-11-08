@@ -9,7 +9,7 @@
     <string name="browser_problem_offline_title">No tens connexió</string>
     <string name="browser_problem_offline_message">Aquest telèfon no està connectat a internet. Les pàgines s’obriran quan ho estigui.</string>
     <string name="browser_problem_unreachable_title">No es pot contactar amb %1$s</string>
-    <string name="browser_problem_unreachable_message">Les pàgines s’obren a través de %1$s, i no respon. Assegura’t que estigui engegat i que Happy s’hi executi.</string>
+    <string name="browser_problem_unreachable_message">Les pàgines s’obren a través de %1$s, i no respon. Assegura’t que estigui engegat i que Jarvis s’hi executi.</string>
     <string name="browser_problem_unavailable_title">No es pot obrir aquesta pàgina</string>
     <string name="browser_problem_unavailable_message">Les pàgines s’obren a través d’un ordinador amb Happy Agent, i no hi ha cap connexió per obrir aquesta.</string>
     <string name="browser_problem_host_not_found_title">No es troba el servidor</string>

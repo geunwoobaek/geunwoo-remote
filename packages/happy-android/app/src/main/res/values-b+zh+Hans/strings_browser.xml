@@ -9,7 +9,7 @@
     <string name="browser_problem_offline_title">你已离线</string>
     <string name="browser_problem_offline_message">此手机未连接到互联网。连接后页面即可打开。</string>
     <string name="browser_problem_unreachable_title">无法连接 %1$s</string>
-    <string name="browser_problem_unreachable_message">页面通过 %1$s 打开，但它没有响应。请确认它未休眠且正在运行 Happy。</string>
+    <string name="browser_problem_unreachable_message">页面通过 %1$s 打开，但它没有响应。请确认它未休眠且正在运行 Jarvis。</string>
     <string name="browser_problem_unavailable_title">无法打开此页面</string>
     <string name="browser_problem_unavailable_message">页面通过运行 Happy Agent 的电脑打开，但没有可用于打开此页面的连接。</string>
     <string name="browser_problem_host_not_found_title">找不到服务器</string>

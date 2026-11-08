@@ -9,7 +9,7 @@
     <string name="browser_problem_offline_title">Jesteś offline</string>
     <string name="browser_problem_offline_message">Ten telefon nie ma połączenia z internetem. Strony otworzą się, gdy je odzyska.</string>
     <string name="browser_problem_unreachable_title">Nie można połączyć się z %1$s</string>
-    <string name="browser_problem_unreachable_message">Strony otwierają się przez %1$s, a on nie odpowiada. Upewnij się, że nie śpi i działa na nim Happy.</string>
+    <string name="browser_problem_unreachable_message">Strony otwierają się przez %1$s, a on nie odpowiada. Upewnij się, że nie śpi i działa na nim Jarvis.</string>
     <string name="browser_problem_unavailable_title">Nie można otworzyć tej strony</string>
     <string name="browser_problem_unavailable_message">Strony otwierają się przez komputer z Happy Agent, a nie ma połączenia, przez które można otworzyć tę.</string>
     <string name="browser_problem_host_not_found_title">Nie można znaleźć serwera</string>

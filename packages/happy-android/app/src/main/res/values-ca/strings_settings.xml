@@ -29,7 +29,7 @@
     <string name="settings_agents_custom_model">Model personalitzat…</string>
     <string name="settings_agents_enter_model_id">Escriu l\'ID exacte del model</string>
     <string name="settings_agents_no_machines">No hi ha màquines connectades</string>
-    <string name="settings_agents_no_machines_subtitle">Executa Happy en un ordinador per connectar-lo</string>
+    <string name="settings_agents_no_machines_subtitle">Executa Jarvis en un ordinador per connectar-lo</string>
     <string name="settings_agents_defaults">Valors per defecte</string>
     <string name="settings_agents_clear_overrides">Esborra les personalitzacions</string>
     <string name="settings_agents_clear_overrides_subtitle">Torna tots els agents als valors del codi</string>
@@ -55,6 +55,6 @@
     <string name="agent_settings_default_access">Accés predeterminat</string>
     <string name="agent_settings_default_access_description">El que una sessió nova pot fer sense preguntar. Es desa al teu compte, així que t’acompanya a tots els dispositius.</string>
     <string name="agent_settings_new_sessions_unreadable">No s’han pogut llegir els models. Comprova la connexió i torna a obrir aquesta pàgina.</string>
-    <string name="settings_analytics_not_saved">Les analítiques estan desactivades de moment, però no s’ha pogut desar el paràmetre. Es tornaran a activar la propera vegada que s’iniciï Happy.</string>
+    <string name="settings_analytics_not_saved">Les analítiques estan desactivades de moment, però no s’ha pogut desar el paràmetre. Es tornaran a activar la propera vegada que s’iniciï Jarvis.</string>
     <string name="settings_analytics_not_turned_on">No s’han pogut activar les analítiques. Torna-ho a provar més tard.</string>
 </resources>

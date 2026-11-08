@@ -9,7 +9,7 @@
     <string name="call_close">关闭</string>
     <string name="call_listening">正在聆听</string>
     <string name="call_user_speaking">你正在说话</string>
-    <string name="call_agent_speaking">Happy 正在说话</string>
+    <string name="call_agent_speaking">Jarvis 正在说话</string>
     <string name="call_not_set_up">此连接尚未设置语音</string>
     <string name="call_microphone">麦克风访问已关闭</string>
     <string name="call_subscription">语音需要订阅</string>
@@ -40,5 +40,5 @@
     <string name="call_restore_done">你的订阅已恢复。</string>
     <string name="call_restore_none">此商店账户中没有找到语音订阅。</string>
     <string name="call_restore_failed">无法连接商店，请稍后再试。</string>
-    <string name="call_purchase_unconfirmed">你的购买尚未确认。下次回到 Happy 时会再次检查。</string>
+    <string name="call_purchase_unconfirmed">你的购买尚未确认。下次回到 Jarvis 时会再次检查。</string>
 </resources>

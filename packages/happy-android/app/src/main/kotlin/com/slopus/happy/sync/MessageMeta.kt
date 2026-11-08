@@ -20,8 +20,8 @@ import com.slopus.happy.model.settings.Versions
  * another mode would silently change what the agent may do.
  */
 class UnsupportedPermissionModeException(val mode: String, val cliVersion: String) : IllegalStateException(
-    "This session's Happy CLI (v$cliVersion) does not support the '$mode' permission mode. " +
-        "Pick a different mode for this session, or update the Happy CLI on that machine.",
+    "This session's Jarvis CLI (v$cliVersion) does not support the '$mode' permission mode. " +
+        "Pick a different mode for this session, or update the Jarvis CLI on that machine.",
 )
 
 /** messageMeta.ts: the meta a sent message carries about delivery and the picks it runs with. */

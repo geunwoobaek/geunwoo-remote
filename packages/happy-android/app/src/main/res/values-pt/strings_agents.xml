@@ -10,13 +10,13 @@
     <string name="compose_task_placeholder">O que esta tarefa deve fazer?</string>
     <string name="compose_loading_computers">Carregando computadores…</string>
     <string name="compose_still_loading">Seus computadores ainda estão carregando. Tente de novo em instantes.</string>
-    <string name="compose_offline_computer">Este computador está offline. Inicie o Happy nele ou escolha outro.</string>
+    <string name="compose_offline_computer">Este computador está offline. Inicie o Jarvis nele ou escolha outro.</string>
     <string name="compose_offline_happy_agent">Happy Agent está offline neste computador. Inicie-o ou escolha outro computador.</string>
-    <string name="compose_offline_happy_cli">O Happy CLI neste computador está offline. Execute `happy daemon start` nele ou escolha outro computador.</string>
+    <string name="compose_offline_happy_cli">O Jarvis CLI neste computador está offline. Execute `jarvis daemon start` nele ou escolha outro computador.</string>
     <string name="compose_machines_bots">Computadores cujo Happy Agent cria bots</string>
     <string name="compose_machines_tasks">Computadores cujo Happy Agent cria tarefas</string>
     <string name="compose_chip_happy_agent_offline">Happy Agent offline</string>
-    <string name="compose_chip_happy_cli_offline">Happy CLI offline</string>
+    <string name="compose_chip_happy_cli_offline">Jarvis CLI offline</string>
     <string name="compose_ago_now">agora</string>
     <string name="compose_ago_minutes">%1$d min</string>
     <string name="compose_ago_hours">%1$d h</string>

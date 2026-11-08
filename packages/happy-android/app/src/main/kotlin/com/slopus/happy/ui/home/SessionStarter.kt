@@ -59,13 +59,13 @@ import kotlinx.coroutines.launch
 enum class StartRefusal(val message: String, @StringRes val text: Int) {
     NoMachine("Please select a machine", R.string.home_start_no_machine),
     UnknownMachine(
-        "This session’s computer is not registered with this account, so nothing can start a session on it. Check that Happy is running there and signed in to this account.",
+        "This session’s computer is not registered with this account, so nothing can start a session on it. Check that Jarvis is running there and signed in to this account.",
         R.string.home_start_unknown_machine,
     ),
     HappyAgentMissing("Happy Agent is not running on this computer", R.string.home_start_happy_agent_missing),
-    HappyCliMissing("Happy CLI is not available on your computer. Run `happy daemon start` on your computer, then try again.", R.string.home_start_happy_cli_missing),
+    HappyCliMissing("Jarvis CLI is not available on your computer. Run `jarvis daemon start` on your computer, then try again.", R.string.home_start_happy_cli_missing),
     HappyAgentOffline("Machine is offline", R.string.new_session_machine_offline),
-    HappyCliOffline("Happy CLI is offline on your computer. Run `happy daemon start` on your computer, then try again.", R.string.home_start_happy_cli_offline),
+    HappyCliOffline("Jarvis CLI is offline on your computer. Run `jarvis daemon start` on your computer, then try again.", R.string.home_start_happy_cli_offline),
     CannotStartHappyAgent("This machine cannot start Happy Agent sessions", R.string.home_start_cannot_start_happy_agent),
     ProjectNeedsHappyAgent(
         "Only Happy Agent knows where this project is, so no other harness can open it. Switch the harness back to Happy Agent, or pick the project’s folder.",

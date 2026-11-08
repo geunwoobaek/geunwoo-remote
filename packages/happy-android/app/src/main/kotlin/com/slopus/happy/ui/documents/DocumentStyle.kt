@@ -114,7 +114,7 @@ object DocumentTokens {
  */
 class DocumentStyle(resources: Resources, val dark: Boolean, private val labels: Labels = Labels()) {
     /** Names for blocks without text, as the note in their place says them. */
-    class Labels(val picture: String = "Picture", val table: String = "Table", val unsupported: String = "Something Happy can't show here", val divider: String = "Divider")
+    class Labels(val picture: String = "Picture", val table: String = "Table", val unsupported: String = "Something Jarvis can't show here", val divider: String = "Divider")
 
     class Colors(dark: Boolean) {
         val text = DocumentTokens.text.of(dark)

@@ -9,7 +9,7 @@
     <string name="browser_problem_offline_title">オフラインです</string>
     <string name="browser_problem_offline_message">このスマートフォンはインターネットに接続されていません。接続されるとページが開きます。</string>
     <string name="browser_problem_unreachable_title">%1$s に接続できません</string>
-    <string name="browser_problem_unreachable_message">ページは %1$s を経由して開きますが、応答がありません。スリープしておらず、Happy が起動していることを確認してください。</string>
+    <string name="browser_problem_unreachable_message">ページは %1$s を経由して開きますが、応答がありません。スリープしておらず、Jarvis が起動していることを確認してください。</string>
     <string name="browser_problem_unavailable_title">このページを開けません</string>
     <string name="browser_problem_unavailable_message">ページは Happy Agent が動いているコンピュータを経由して開きますが、このページを開くための接続がありません。</string>
     <string name="browser_problem_host_not_found_title">サーバが見つかりません</string>

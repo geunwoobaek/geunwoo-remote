@@ -86,8 +86,8 @@ class SessionResumeTest {
         val outcome = resume(ops, metadata(version = "1.0.0"))
         assertEquals(
             ResumeOutcome.Failed(
-                "This session's Happy CLI (v1.0.0) does not support the 'auto' permission mode. " +
-                    "Pick a different mode for this session, or update the Happy CLI on that machine.",
+                "This session's Jarvis CLI (v1.0.0) does not support the 'auto' permission mode. " +
+                    "Pick a different mode for this session, or update the Jarvis CLI on that machine.",
             ),
             outcome,
         )

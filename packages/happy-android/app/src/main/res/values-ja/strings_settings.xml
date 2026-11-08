@@ -29,7 +29,7 @@
     <string name="settings_agents_custom_model">カスタムモデル…</string>
     <string name="settings_agents_enter_model_id">正確なモデル ID を入力</string>
     <string name="settings_agents_no_machines">接続されたマシンはありません</string>
-    <string name="settings_agents_no_machines_subtitle">コンピューターで Happy を実行すると接続できます</string>
+    <string name="settings_agents_no_machines_subtitle">コンピューターで Jarvis を実行すると接続できます</string>
     <string name="settings_agents_defaults">デフォルト</string>
     <string name="settings_agents_clear_overrides">上書きをクリア</string>
     <string name="settings_agents_clear_overrides_subtitle">すべてのエージェントをコードのデフォルトに戻す</string>
@@ -55,6 +55,6 @@
     <string name="agent_settings_default_access">デフォルトのアクセスモード</string>
     <string name="agent_settings_default_access_description">新しいセッションが確認なしで行えること。アカウントに保存されるため、すべてのデバイスで共通です。</string>
     <string name="agent_settings_new_sessions_unreadable">モデルを読み込めませんでした。接続を確認して、このページを開き直してください。</string>
-    <string name="settings_analytics_not_saved">アナリティクスは一時的にオフになっていますが、設定を保存できませんでした。次回 Happy を起動すると再びオンになります。</string>
+    <string name="settings_analytics_not_saved">アナリティクスは一時的にオフになっていますが、設定を保存できませんでした。次回 Jarvis を起動すると再びオンになります。</string>
     <string name="settings_analytics_not_turned_on">アナリティクスをオンにできませんでした。しばらくしてからもう一度お試しください。</string>
 </resources>

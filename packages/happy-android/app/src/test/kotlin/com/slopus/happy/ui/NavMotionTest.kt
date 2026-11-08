@@ -111,7 +111,7 @@ class NavMotionTest {
         rule.onNodeWithContentDescription("More").performClick()
         rule.waitForIdle()
         rule.mainClock.autoAdvance = false
-        rule.onNodeWithText("Happy CLI server").performClick()
+        rule.onNodeWithText("Jarvis CLI server").performClick()
         rule.mainClock.advanceTimeByFrame()
     }
 

@@ -45,7 +45,7 @@ sealed interface SpawnSessionResult {
     data class Error(val errorMessage: String) : SpawnSessionResult
 
     companion object {
-        const val UNREADABLE = "The machine answered with something Happy could not read."
+        const val UNREADABLE = "The machine answered with something Jarvis could not read."
 
         /**
          * ops.ts `normalizeSpawnSessionResult`: a refusal always under

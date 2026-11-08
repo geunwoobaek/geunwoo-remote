@@ -7,7 +7,7 @@
     <string name="push_background_send_pending_title">訊息未傳送</string>
     <string name="push_background_send_pending_body">一則訊息仍在背景傳送。如果 30 秒內未送達，將會失敗。</string>
     <string name="push_background_send_failed_title">訊息傳送失敗</string>
-    <string name="push_background_send_failed_body">App 在背景時有一則訊息傳送失敗。請開啟 Happy 並重試。</string>
+    <string name="push_background_send_failed_body">App 在背景時有一則訊息傳送失敗。請開啟 Jarvis 並重試。</string>
     <string name="push_permission">權限</string>
     <string name="push_request_again">重新要求權限</string>
     <string name="push_reregister">重新註冊此裝置</string>
@@ -41,7 +41,7 @@
     <string name="push_android_device">Android 裝置</string>
     <string name="push_load_failed">無法載入推播通知設定。</string>
     <string name="push_enabled">此裝置已啟用推播通知。</string>
-    <string name="push_opened_settings">系統不會再顯示權限提示，所以 Happy 開啟了設定。</string>
+    <string name="push_opened_settings">系統不會再顯示權限提示，所以 Jarvis 開啟了設定。</string>
     <string name="push_not_granted">未授予推播通知權限。</string>
     <string name="push_request_failed">無法要求推播通知權限。</string>
     <string name="push_refreshed">已重新整理此裝置的推播權杖。</string>

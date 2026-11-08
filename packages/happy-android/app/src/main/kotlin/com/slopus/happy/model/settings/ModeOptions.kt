@@ -262,7 +262,7 @@ object ModeOptions {
             val current = selectedKey ?: metadata?.currentOperatingModeCode ?: metadata?.permissionMode ?: metadata?.session?.permissionMode
             if (!current.isNullOrEmpty() && modes.none { it.key == current }) {
                 // Literal in happy-app.
-                return listOf(ModeOption(current, current, "Unavailable in the current Happy mode catalog", disabled = true)) + modes
+                return listOf(ModeOption(current, current, "Unavailable in the current Jarvis mode catalog", disabled = true)) + modes
             }
             return modes
         }

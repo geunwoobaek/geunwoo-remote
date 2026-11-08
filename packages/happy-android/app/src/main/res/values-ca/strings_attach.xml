@@ -12,10 +12,10 @@
     <string name="attach_unpick">Desselecciona</string>
     <string name="attach_access_title">Les teves fotos i vídeos</string>
     <string name="attach_access_message">Permet l\'accés per veure aquí les fotos i vídeos recents.</string>
-    <string name="attach_access_blocked">L\'accés a fotos i vídeos està desactivat. Activa\'l per a Happy a Configuració.</string>
+    <string name="attach_access_blocked">L\'accés a fotos i vídeos està desactivat. Activa\'l per a Jarvis a Configuració.</string>
     <string name="attach_access_allow">Permet l\'accés</string>
     <string name="attach_access_settings">Obre Configuració</string>
-    <string name="attach_partial_message">Happy només veu les fotos i vídeos que has triat.</string>
+    <string name="attach_partial_message">Jarvis només veu les fotos i vídeos que has triat.</string>
     <string name="attach_partial_manage">Gestiona</string>
     <string name="attach_gallery_empty">Encara no hi ha fotos ni vídeos</string>
     <string name="attach_files_browse">Explora</string>

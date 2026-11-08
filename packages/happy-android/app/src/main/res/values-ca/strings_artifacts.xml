@@ -32,7 +32,7 @@
     <string name="browser_close">Tanca</string>
     <string name="browser_share_link">Comparteix l\'enllaç</string>
     <string name="browser_open_outside">Obre al navegador (sense proxy)</string>
-    <string name="link_menu_open_in_app">Obre al navegador de Happy</string>
+    <string name="link_menu_open_in_app">Obre al navegador de Jarvis</string>
     <string name="link_menu_open_in_app_direct">A l\'app, a la xarxa d\'aquest telèfon</string>
     <string name="link_menu_open_external">Obre en un navegador extern</string>
     <string name="link_menu_open_external_proxied">Fora de la xarxa de l\'agent</string>

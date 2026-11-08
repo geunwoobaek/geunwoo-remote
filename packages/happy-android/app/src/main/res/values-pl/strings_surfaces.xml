@@ -40,7 +40,7 @@
     <string name="document_task_not_done">Niezrobione</string>
     <string name="document_picture">Obraz</string>
     <string name="document_table">Tabela</string>
-    <string name="document_unsupported">Coś, czego Happy nie może tu pokazać</string>
+    <string name="document_unsupported">Coś, czego Jarvis nie może tu pokazać</string>
     <string name="document_someone">Ktoś</string>
     <string name="document_history">Historia</string>
     <string name="document_history_empty">Na razie brak zmian</string>

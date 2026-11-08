@@ -37,7 +37,7 @@
     <string name="browser_open_outside">Open in browser (outside proxy)</string>
 
     <!-- A link's long-press menu (ui/browser/Links.kt), in chats and documents. -->
-    <string name="link_menu_open_in_app">Open in Happy browser</string>
+    <string name="link_menu_open_in_app">Open in Jarvis browser</string>
     <string name="link_menu_open_in_app_direct">In the app, on this phone’s network</string>
     <string name="link_menu_open_external">Open in external browser</string>
     <string name="link_menu_open_external_proxied">Outside the agent’s network</string>

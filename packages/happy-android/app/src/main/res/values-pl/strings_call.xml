@@ -9,7 +9,7 @@
     <string name="call_close">Zamknij</string>
     <string name="call_listening">Słucha</string>
     <string name="call_user_speaking">Mówisz</string>
-    <string name="call_agent_speaking">Happy mówi</string>
+    <string name="call_agent_speaking">Jarvis mówi</string>
     <string name="call_not_set_up">Głos nie jest jeszcze skonfigurowany dla tego połączenia</string>
     <string name="call_microphone">Brak dostępu do mikrofonu</string>
     <string name="call_subscription">Głos wymaga subskrypcji</string>
@@ -40,5 +40,5 @@
     <string name="call_restore_done">Subskrypcja została przywrócona.</string>
     <string name="call_restore_none">Na tym koncie sklepu nie znaleziono subskrypcji głosu.</string>
     <string name="call_restore_failed">Nie udało się połączyć ze sklepem. Spróbuj ponownie później.</string>
-    <string name="call_purchase_unconfirmed">Zakup nie jest jeszcze potwierdzony. Happy sprawdzi to ponownie, gdy wrócisz.</string>
+    <string name="call_purchase_unconfirmed">Zakup nie jest jeszcze potwierdzony. Jarvis sprawdzi to ponownie, gdy wrócisz.</string>
 </resources>

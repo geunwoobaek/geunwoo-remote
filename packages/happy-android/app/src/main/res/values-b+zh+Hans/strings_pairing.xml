@@ -16,7 +16,7 @@
     <string name="pairing_failed">无法连接</string>
     <string name="pairing_done">完成</string>
     <string name="pairing_error_invalid_code">此代码无效。请在 Happy Agent 中生成新代码。</string>
-    <string name="pairing_error_update_required">请更新 Happy 以使用此代码。</string>
+    <string name="pairing_error_update_required">请更新 Jarvis 以使用此代码。</string>
     <string name="pairing_error_expired">此代码已过期。请在 Happy Agent 中生成新代码。</string>
     <string name="pairing_error_rejected">连接被拒绝。请生成新代码并再次比对表情符号。</string>
     <string name="pairing_error_invalid_proof">无法验证智能体。请生成新代码。</string>

@@ -17,7 +17,7 @@
     <string name="pairing_done">Done</string>
     <!-- Why pairing or a paired agent failed (connection/PairingLink.kt's AgentConnectionException.Reason). -->
     <string name="pairing_error_invalid_code">This code is invalid. Generate a new one in Happy Agent.</string>
-    <string name="pairing_error_update_required">Update Happy to use this code.</string>
+    <string name="pairing_error_update_required">Update Jarvis to use this code.</string>
     <string name="pairing_error_expired">This code has expired. Generate a new one in Happy Agent.</string>
     <string name="pairing_error_rejected">The connection was rejected. Generate a new code and compare the emoji again.</string>
     <string name="pairing_error_invalid_proof">The agent could not be verified. Generate a new code.</string>

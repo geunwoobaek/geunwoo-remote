@@ -58,7 +58,7 @@ class InstallDesktopScreenTest {
     fun phoneLayout() {
         show()
         rule.node(HeaderTags.BAR).assertExists()
-        rule.onNodeWithText("Open Happy on your computer").assertExists()
+        rule.onNodeWithText("Open Jarvis on your computer").assertExists()
         rule.onNodeWithText("Choose Link\u00A0Mobile\u00A0App during onboarding.\nOr go to Settings\u00A0›\u00A0Mobile\u00A0Access.").assertExists()
         rule.onNodeWithContentDescription("Download from happy.engineering").assertExists()
         rule.node(InstallDesktopTags.BACKGROUND).assertExists()
@@ -139,8 +139,8 @@ class InstallDesktopScreenTest {
         show()
         for ((label, tap) in listOf(
             "Enter link manually" to "link",
-            "Restore Happy CLI account" to "restore",
-            "Happy CLI server" to "server",
+            "Restore Jarvis CLI account" to "restore",
+            "Jarvis CLI server" to "server",
         )) {
             rule.onNodeWithContentDescription("More").performClick()
             rule.node(StartTags.MENU).assertExists()

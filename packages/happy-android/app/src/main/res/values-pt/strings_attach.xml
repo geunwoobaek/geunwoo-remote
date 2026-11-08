@@ -12,10 +12,10 @@
     <string name="attach_unpick">Desmarcar</string>
     <string name="attach_access_title">Suas fotos e vídeos</string>
     <string name="attach_access_message">Permita o acesso para ver aqui suas fotos e vídeos recentes.</string>
-    <string name="attach_access_blocked">O acesso a fotos e vídeos está desativado. Ative-o para o Happy nas Configurações.</string>
+    <string name="attach_access_blocked">O acesso a fotos e vídeos está desativado. Ative-o para o Jarvis nas Configurações.</string>
     <string name="attach_access_allow">Permitir acesso</string>
     <string name="attach_access_settings">Abrir Configurações</string>
-    <string name="attach_partial_message">O Happy vê apenas as fotos e vídeos que você escolheu.</string>
+    <string name="attach_partial_message">O Jarvis vê apenas as fotos e vídeos que você escolheu.</string>
     <string name="attach_partial_manage">Gerenciar</string>
     <string name="attach_gallery_empty">Ainda não há fotos nem vídeos</string>
     <string name="attach_files_browse">Procurar</string>

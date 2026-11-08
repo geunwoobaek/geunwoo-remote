@@ -7,7 +7,7 @@
     <string name="push_background_send_pending_title">Сообщение не отправлено</string>
     <string name="push_background_send_pending_body">Сообщение всё ещё отправляется в фоне. Если его не доставят за 30 секунд, отправка не удастся.</string>
     <string name="push_background_send_failed_title">Сообщение не отправлено</string>
-    <string name="push_background_send_failed_body">Сообщение не удалось отправить, пока приложение было в фоне. Откройте Happy и повторите.</string>
+    <string name="push_background_send_failed_body">Сообщение не удалось отправить, пока приложение было в фоне. Откройте Jarvis и повторите.</string>
     <string name="push_permission">Разрешение</string>
     <string name="push_request_again">Запросить разрешение снова</string>
     <string name="push_reregister">Перерегистрировать это устройство</string>
@@ -41,7 +41,7 @@
     <string name="push_android_device">устройство Android</string>
     <string name="push_load_failed">Не удалось загрузить настройки push-уведомлений.</string>
     <string name="push_enabled">Push-уведомления включены на этом устройстве.</string>
-    <string name="push_opened_settings">Система больше не покажет запрос на разрешение, поэтому Happy открыл настройки.</string>
+    <string name="push_opened_settings">Система больше не покажет запрос на разрешение, поэтому Jarvis открыл настройки.</string>
     <string name="push_not_granted">Разрешение на push-уведомления не выдано.</string>
     <string name="push_request_failed">Не удалось запросить разрешение на push-уведомления.</string>
     <string name="push_refreshed">Push-токен этого устройства обновлён.</string>

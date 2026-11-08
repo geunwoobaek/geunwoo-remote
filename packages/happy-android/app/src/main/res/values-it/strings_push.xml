@@ -7,7 +7,7 @@
     <string name="push_background_send_pending_title">Messaggio non inviato</string>
     <string name="push_background_send_pending_body">Un messaggio è ancora in invio in background. Non andrà a buon fine se non viene consegnato entro 30 secondi.</string>
     <string name="push_background_send_failed_title">Invio del messaggio non riuscito</string>
-    <string name="push_background_send_failed_body">Non è stato possibile inviare un messaggio mentre l\'app era in background. Apri Happy e riprova.</string>
+    <string name="push_background_send_failed_body">Non è stato possibile inviare un messaggio mentre l\'app era in background. Apri Jarvis e riprova.</string>
     <string name="push_permission">Autorizzazione</string>
     <string name="push_request_again">Richiedi di nuovo l\'autorizzazione</string>
     <string name="push_reregister">Registra di nuovo questo dispositivo</string>
@@ -41,7 +41,7 @@
     <string name="push_android_device">dispositivo Android</string>
     <string name="push_load_failed">Impossibile caricare le impostazioni delle notifiche push.</string>
     <string name="push_enabled">Le notifiche push sono attive su questo dispositivo.</string>
-    <string name="push_opened_settings">Il sistema non mostrerà più la richiesta di autorizzazione, quindi Happy ha aperto le impostazioni.</string>
+    <string name="push_opened_settings">Il sistema non mostrerà più la richiesta di autorizzazione, quindi Jarvis ha aperto le impostazioni.</string>
     <string name="push_not_granted">L\'autorizzazione per le notifiche push non è stata concessa.</string>
     <string name="push_request_failed">Impossibile richiedere l\'autorizzazione per le notifiche push.</string>
     <string name="push_refreshed">Il token push di questo dispositivo è stato aggiornato.</string>

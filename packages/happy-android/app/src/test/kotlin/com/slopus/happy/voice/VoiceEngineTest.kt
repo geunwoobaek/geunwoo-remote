@@ -212,7 +212,7 @@ class VoiceEngineTest {
         f.engine.start("s", f.microphone())
         assertEquals(1, f.prefs.onboardingLoads)
         assertTrue(f.config.systemPrompt!!.contains("# Paid voice onboarding"))
-        assertEquals("Hi, Happy here, ask me what I can do", f.config.firstMessage)
+        assertEquals("Hi, Jarvis here, ask me what I can do", f.config.firstMessage)
         f.engine.stop()
     }
 

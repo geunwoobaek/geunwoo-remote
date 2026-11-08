@@ -12,10 +12,10 @@
     <string name="attach_unpick">取消選取</string>
     <string name="attach_access_title">你的照片和影片</string>
     <string name="attach_access_message">允許存取後，最近的照片和影片會顯示在這裡。</string>
-    <string name="attach_access_blocked">照片和影片的存取權已關閉。請在設定中為 Happy 開啟。</string>
+    <string name="attach_access_blocked">照片和影片的存取權已關閉。請在設定中為 Jarvis 開啟。</string>
     <string name="attach_access_allow">允許存取</string>
     <string name="attach_access_settings">開啟設定</string>
-    <string name="attach_partial_message">Happy 只能看到你選擇的照片和影片。</string>
+    <string name="attach_partial_message">Jarvis 只能看到你選擇的照片和影片。</string>
     <string name="attach_partial_manage">管理</string>
     <string name="attach_gallery_empty">還沒有照片或影片</string>
     <string name="attach_files_browse">瀏覽</string>

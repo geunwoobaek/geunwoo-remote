@@ -9,7 +9,7 @@
     <string name="call_close">Fechar</string>
     <string name="call_listening">Ouvindo</string>
     <string name="call_user_speaking">Você está falando</string>
-    <string name="call_agent_speaking">Happy está falando</string>
+    <string name="call_agent_speaking">Jarvis está falando</string>
     <string name="call_not_set_up">A voz ainda não está configurada para esta conexão</string>
     <string name="call_microphone">O acesso ao microfone está desativado</string>
     <string name="call_subscription">A voz precisa de uma assinatura</string>
@@ -40,5 +40,5 @@
     <string name="call_restore_done">A sua assinatura foi restaurada.</string>
     <string name="call_restore_none">Não foi encontrada nenhuma assinatura de voz nesta conta da loja.</string>
     <string name="call_restore_failed">Não foi possível contactar a loja. Tente mais tarde.</string>
-    <string name="call_purchase_unconfirmed">A sua compra ainda não está confirmada. O Happy volta a verificar quando regressar.</string>
+    <string name="call_purchase_unconfirmed">A sua compra ainda não está confirmada. O Jarvis volta a verificar quando regressar.</string>
 </resources>

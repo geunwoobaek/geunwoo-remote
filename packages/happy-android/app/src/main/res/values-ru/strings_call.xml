@@ -9,7 +9,7 @@
     <string name="call_close">Закрыть</string>
     <string name="call_listening">Слушает</string>
     <string name="call_user_speaking">Вы говорите</string>
-    <string name="call_agent_speaking">Говорит Happy</string>
+    <string name="call_agent_speaking">Говорит Jarvis</string>
     <string name="call_not_set_up">Голос для этого подключения ещё не настроен</string>
     <string name="call_microphone">Нет доступа к микрофону</string>
     <string name="call_subscription">Для голоса нужна подписка</string>
@@ -40,5 +40,5 @@
     <string name="call_restore_done">Подписка восстановлена.</string>
     <string name="call_restore_none">В этом аккаунте магазина не найдено подписки на голос.</string>
     <string name="call_restore_failed">Не удалось связаться с магазином. Попробуйте позже.</string>
-    <string name="call_purchase_unconfirmed">Покупка ещё не подтверждена. Happy проверит снова, когда вы вернётесь.</string>
+    <string name="call_purchase_unconfirmed">Покупка ещё не подтверждена. Jarvis проверит снова, когда вы вернётесь.</string>
 </resources>

@@ -16,7 +16,7 @@
     <string name="pairing_failed">接続できませんでした</string>
     <string name="pairing_done">完了</string>
     <string name="pairing_error_invalid_code">このコードは無効です。Happy Agent で新しいコードを生成してください。</string>
-    <string name="pairing_error_update_required">このコードを使うには Happy を更新してください。</string>
+    <string name="pairing_error_update_required">このコードを使うには Jarvis を更新してください。</string>
     <string name="pairing_error_expired">このコードは期限切れです。Happy Agent で新しいコードを生成してください。</string>
     <string name="pairing_error_rejected">接続が拒否されました。新しいコードを生成して、もう一度絵文字を比べてください。</string>
     <string name="pairing_error_invalid_proof">エージェントを検証できませんでした。新しいコードを生成してください。</string>

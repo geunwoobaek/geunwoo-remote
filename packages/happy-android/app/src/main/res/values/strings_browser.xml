@@ -9,7 +9,7 @@
     <string name="browser_problem_offline_title">You’re Offline</string>
     <string name="browser_problem_offline_message">This phone isn’t connected to the internet. Pages open once it is.</string>
     <string name="browser_problem_unreachable_title">Can’t Reach %1$s</string>
-    <string name="browser_problem_unreachable_message">Pages open through %1$s, and it isn’t answering. Make sure it’s awake and Happy is running there.</string>
+    <string name="browser_problem_unreachable_message">Pages open through %1$s, and it isn’t answering. Make sure it’s awake and Jarvis is running there.</string>
     <string name="browser_problem_unavailable_title">Can’t Open This Page</string>
     <string name="browser_problem_unavailable_message">Pages open through a computer running Happy Agent, and there’s no connection to open this one through.</string>
     <string name="browser_problem_host_not_found_title">Can’t Find the Server</string>

@@ -96,10 +96,10 @@
     <string name="home_dock_bot_try_again">Try again</string>
     <!-- useStartSessionFromDraft.ts's refusals and failures (StartRefusal, StartResult.Failed). -->
     <string name="home_start_no_machine">Please select a machine</string>
-    <string name="home_start_unknown_machine">This session’s computer is not registered with this account, so nothing can start a session on it. Check that Happy is running there and signed in to this account.</string>
+    <string name="home_start_unknown_machine">This session’s computer is not registered with this account, so nothing can start a session on it. Check that Jarvis is running there and signed in to this account.</string>
     <string name="home_start_happy_agent_missing">Happy Agent is not running on this computer</string>
-    <string name="home_start_happy_cli_missing">Happy CLI is not available on your computer. Run `happy daemon start` on your computer, then try again.</string>
-    <string name="home_start_happy_cli_offline">Happy CLI is offline on your computer. Run `happy daemon start` on your computer, then try again.</string>
+    <string name="home_start_happy_cli_missing">Jarvis CLI is not available on your computer. Run `jarvis daemon start` on your computer, then try again.</string>
+    <string name="home_start_happy_cli_offline">Jarvis CLI is offline on your computer. Run `jarvis daemon start` on your computer, then try again.</string>
     <string name="home_start_cannot_start_happy_agent">This machine cannot start Happy Agent sessions</string>
     <string name="home_start_project_needs_happy_agent">Only Happy Agent knows where this project is, so no other harness can open it. Switch the harness back to Happy Agent, or pick the project’s folder.</string>
     <string name="home_start_workspace_unavailable">The selected Happy Agent workspace is no longer available.</string>

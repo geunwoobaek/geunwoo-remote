@@ -132,8 +132,8 @@ class StartLayoutTest {
         rule.onNodeWithText("Start").performClick()
         for ((label, tap) in listOf(
             "Enter link manually" to "link",
-            "Restore Happy CLI account" to "restore",
-            "Happy CLI server" to "server",
+            "Restore Jarvis CLI account" to "restore",
+            "Jarvis CLI server" to "server",
         )) {
             rule.onNodeWithContentDescription("More").performClick()
             rule.node(StartTags.MENU).assertExists()
@@ -155,7 +155,7 @@ class StartLayoutTest {
     fun theDefaultServerHasNoSubtitle() {
         show(server = null)
         rule.onNodeWithContentDescription("More").performClick()
-        rule.onNodeWithText("Happy CLI server").assertExists()
+        rule.onNodeWithText("Jarvis CLI server").assertExists()
         rule.onNodeWithText("Default").assertDoesNotExist()
     }
 

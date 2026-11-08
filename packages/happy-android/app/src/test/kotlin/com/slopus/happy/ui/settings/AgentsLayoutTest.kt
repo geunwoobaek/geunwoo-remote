@@ -75,7 +75,7 @@ class AgentsLayoutTest {
     fun noMachinesAndNothingToClear() {
         rule.setHappyContent { AgentsScreen(emptyList(), AgentDefaultOverrides(), {}, {}, {}) }
         rule.onNodeWithText("No connected machines").assertIsDisplayed()
-        rule.onNodeWithText("Run Happy on a computer to connect it").assertIsDisplayed()
+        rule.onNodeWithText("Run Jarvis on a computer to connect it").assertIsDisplayed()
         rule.onNodeWithText("Clear Overrides").assertIsNotEnabled()
         rule.onNodeWithText("CLAUDE CODE").assertIsDisplayed()
         rule.onNodeWithText("CODEX").performScrollTo().assertIsDisplayed()

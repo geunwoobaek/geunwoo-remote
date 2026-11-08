@@ -9,7 +9,7 @@
     <string name="call_close">閉じる</string>
     <string name="call_listening">聞いています</string>
     <string name="call_user_speaking">話しています</string>
-    <string name="call_agent_speaking">Happy が話しています</string>
+    <string name="call_agent_speaking">Jarvis が話しています</string>
     <string name="call_not_set_up">この接続では音声がまだ設定されていません</string>
     <string name="call_microphone">マイクへのアクセスがオフです</string>
     <string name="call_subscription">音声にはサブスクリプションが必要です</string>
@@ -40,5 +40,5 @@
     <string name="call_restore_done">サブスクリプションを復元しました。</string>
     <string name="call_restore_none">このストアアカウントには音声のサブスクリプションが見つかりませんでした。</string>
     <string name="call_restore_failed">ストアに接続できませんでした。後でもう一度お試しください。</string>
-    <string name="call_purchase_unconfirmed">購入はまだ確認されていません。次に Happy を開いたときにもう一度確認します。</string>
+    <string name="call_purchase_unconfirmed">購入はまだ確認されていません。次に Jarvis を開いたときにもう一度確認します。</string>
 </resources>

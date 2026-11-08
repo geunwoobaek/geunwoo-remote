@@ -4,11 +4,11 @@
   (HappyGuestUI/GuestChatViewController.swift). Translated in values-*/.
 -->
 <resources>
-    <string name="guest_title" translatable="false">Happy</string>
+    <string name="guest_title" translatable="false">Jarvis</string>
     <string name="guest_more">More</string>
     <string name="guest_report">Report conversation</string>
     <string name="guest_leave">Leave conversation</string>
-    <string name="guest_join_title">Join a Happy bot</string>
+    <string name="guest_join_title">Join a Jarvis bot</string>
     <string name="guest_reconnect">Reconnect</string>
     <string name="guest_name">Your name</string>
     <string name="guest_join">Join</string>

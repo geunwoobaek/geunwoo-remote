@@ -35,7 +35,7 @@
     <string name="settings_agents_custom_model">Custom model…</string>
     <string name="settings_agents_enter_model_id">Enter an exact model ID</string>
     <string name="settings_agents_no_machines">No connected machines</string>
-    <string name="settings_agents_no_machines_subtitle">Run Happy on a computer to connect it</string>
+    <string name="settings_agents_no_machines_subtitle">Run Jarvis on a computer to connect it</string>
     <string name="settings_agents_defaults">Defaults</string>
     <string name="settings_agents_clear_overrides">Clear Overrides</string>
     <string name="settings_agents_clear_overrides_subtitle">Return every agent to code defaults</string>
@@ -65,6 +65,6 @@
     <string name="agent_settings_default_access">Default Access Mode</string>
     <string name="agent_settings_default_access_description">What a new session may do without asking. Saved to your account, so they follow you across devices.</string>
     <string name="agent_settings_new_sessions_unreadable">Couldn’t read the models. Check the connection and open this page again.</string>
-    <string name="settings_analytics_not_saved">Analytics is off for now, but the setting couldn’t be saved. It will be on again the next time Happy starts.</string>
+    <string name="settings_analytics_not_saved">Analytics is off for now, but the setting couldn’t be saved. It will be on again the next time Jarvis starts.</string>
     <string name="settings_analytics_not_turned_on">Analytics couldn’t be turned on. Try again later.</string>
 </resources>

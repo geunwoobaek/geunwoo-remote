@@ -166,7 +166,7 @@ android {
 
     buildTypes {
         debug {
-            resValue("string", "app_name", "Happy (dev)")
+            resValue("string", "app_name", "Jarvis (dev)")
             // -Phappy.debuggable=false: a debug build ART compiles ahead of time, for
             // frame measurements (research/telegram-chat.md). A debuggable app runs
             // interpreted and reads two to three times slower than it ships.
@@ -176,7 +176,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            resValue("string", "app_name", "Happy")
+            resValue("string", "app_name", "Jarvis Remote")
             signingConfig = signingConfigs.findByName("release")
         }
         create("preview") {
@@ -184,7 +184,7 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             matchingFallbacks += "release"
-            resValue("string", "app_name", "Happy (preview)")
+            resValue("string", "app_name", "Jarvis (preview)")
             signingConfig = signingConfigs.findByName("preview") ?: signingConfigs.getByName("debug")
         }
         // Release code after R8, installable beside the dev build: what cold start is
@@ -194,7 +194,7 @@ android {
             initWith(getByName("release"))
             matchingFallbacks += "release"
             isProfileable = true
-            resValue("string", "app_name", "Happy (bench)")
+            resValue("string", "app_name", "Jarvis (bench)")
             signingConfig = signingConfigs.getByName("debug")
         }
     }

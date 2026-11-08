@@ -12,10 +12,10 @@
     <string name="attach_unpick">Deseleziona</string>
     <string name="attach_access_title">Le tue foto e i tuoi video</string>
     <string name="attach_access_message">Consenti l\'accesso per vedere qui le foto e i video recenti.</string>
-    <string name="attach_access_blocked">L\'accesso a foto e video è disattivato. Attivalo per Happy nelle Impostazioni.</string>
+    <string name="attach_access_blocked">L\'accesso a foto e video è disattivato. Attivalo per Jarvis nelle Impostazioni.</string>
     <string name="attach_access_allow">Consenti accesso</string>
     <string name="attach_access_settings">Apri Impostazioni</string>
-    <string name="attach_partial_message">Happy vede solo le foto e i video che hai scelto.</string>
+    <string name="attach_partial_message">Jarvis vede solo le foto e i video che hai scelto.</string>
     <string name="attach_partial_manage">Gestisci</string>
     <string name="attach_gallery_empty">Ancora nessuna foto o video</string>
     <string name="attach_files_browse">Sfoglia</string>

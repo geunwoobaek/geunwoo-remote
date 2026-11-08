@@ -98,7 +98,7 @@ class BrowserChromeTest {
     @Test fun theComputerIsNamedWhenItIsUnreachable() {
         failure(BrowserProblem.ComputerUnreachable, host = null)
         rule.node(BrowserTags.ERROR_TITLE).assertTextEquals("Can’t Reach Studio Mac")
-        rule.node(BrowserTags.ERROR_MESSAGE).assertTextEquals("Pages open through Studio Mac, and it isn’t answering. Make sure it’s awake and Happy is running there.")
+        rule.node(BrowserTags.ERROR_MESSAGE).assertTextEquals("Pages open through Studio Mac, and it isn’t answering. Make sure it’s awake and Jarvis is running there.")
     }
 
     @Test fun anEmptyErrorStatusNamesItsStatus() {

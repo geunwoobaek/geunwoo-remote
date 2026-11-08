@@ -87,7 +87,7 @@ class CallHistoryTest {
         call.start(null, { "context" }, { CallToolResult("{}") })
         test.runCurrent()
         val said = events!!
-        said.said("Hi, Happy here", 1)
+        said.said("Hi, Jarvis here", 1)
         call.deliver(CallUpdate(listOf("""{"event":"assistant_text","text":"build passed"}""")))
         runBlocking { said.tool(CallToolCall("t", "readConversation", JsonObject(emptyMap()))) }
         said.heard("Read me the release task.")
@@ -158,7 +158,7 @@ class CallHistoryTest {
         call.onEnded = { ended += it }
         call.start(null, { CallContext.recap(history.slots, 1_700_000_000_000 + test.testScheduler.currentTime, 4096).orEmpty().also { contexts += it } }, { CallToolResult("") })
         test.runCurrent()
-        events!!.said("Hi, Happy here", 1)
+        events!!.said("Hi, Jarvis here", 1)
         events!!.heard("Yes, restart it.")
         val result = call.requestRestart()
         assertFalse(result.text, result.isError)

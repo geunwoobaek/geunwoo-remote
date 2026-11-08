@@ -34,7 +34,7 @@
     <string name="browser_close">Закрыть</string>
     <string name="browser_share_link">Поделиться ссылкой</string>
     <string name="browser_open_outside">Открыть в браузере (без прокси)</string>
-    <string name="link_menu_open_in_app">Открыть в браузере Happy</string>
+    <string name="link_menu_open_in_app">Открыть в браузере Jarvis</string>
     <string name="link_menu_open_in_app_direct">В приложении, через сеть этого телефона</string>
     <string name="link_menu_open_external">Открыть во внешнем браузере</string>
     <string name="link_menu_open_external_proxied">Вне сети агента</string>

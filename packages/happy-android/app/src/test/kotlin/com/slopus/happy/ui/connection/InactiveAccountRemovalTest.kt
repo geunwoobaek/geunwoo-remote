@@ -74,7 +74,7 @@ class InactiveAccountRemovalTest {
         rule.setHappyContent { AccountsCard(menu, rememberAccountsCardActions(graph)) }
         rule.node(SettingsPageTags.account(a)).performTouchInput { longClick() }
         rule.onNodeWithText("Logout").performClick()
-        rule.onNodeWithText("Sign out of Happy CLI?").assertIsDisplayed()
+        rule.onNodeWithText("Sign out of Jarvis CLI?").assertIsDisplayed()
         assertNotNull(graph.accountStore.registry.value.entry(a))
         rule.onNode(hasText("Logout") and hasAnyAncestor(isDialog())).performClick()
         rule.waitUntil(5_000) { graph.accountStore.registry.value.entry(a) == null }

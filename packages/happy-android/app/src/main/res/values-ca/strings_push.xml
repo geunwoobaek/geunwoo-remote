@@ -7,7 +7,7 @@
     <string name="push_background_send_pending_title">Missatge no enviat</string>
     <string name="push_background_send_pending_body">Un missatge encara s\'està enviant en segon pla. Fallarà d\'aquí a 30 segons si no s\'entrega.</string>
     <string name="push_background_send_failed_title">Ha fallat el missatge</string>
-    <string name="push_background_send_failed_body">No s\'ha pogut enviar un missatge mentre l\'app era en segon pla. Obre Happy i torna-ho a provar.</string>
+    <string name="push_background_send_failed_body">No s\'ha pogut enviar un missatge mentre l\'app era en segon pla. Obre Jarvis i torna-ho a provar.</string>
     <string name="push_permission">Permís</string>
     <string name="push_request_again">Torna a demanar el permís</string>
     <string name="push_reregister">Torna a registrar aquest dispositiu</string>
@@ -41,7 +41,7 @@
     <string name="push_android_device">dispositiu Android</string>
     <string name="push_load_failed">No s\'ha pogut carregar la configuració de les notificacions push.</string>
     <string name="push_enabled">Les notificacions push estan activades en aquest dispositiu.</string>
-    <string name="push_opened_settings">El sistema ja no mostrarà l\'avís de permís, així que Happy ha obert la configuració.</string>
+    <string name="push_opened_settings">El sistema ja no mostrarà l\'avís de permís, així que Jarvis ha obert la configuració.</string>
     <string name="push_not_granted">No s\'ha concedit el permís de notificacions push.</string>
     <string name="push_request_failed">No s\'ha pogut demanar el permís de notificacions push.</string>
     <string name="push_refreshed">S\'ha actualitzat el testimoni push d\'aquest dispositiu.</string>

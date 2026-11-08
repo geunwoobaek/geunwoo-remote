@@ -4,5 +4,5 @@
   source). Translated in values-*/ (AndroidStringsTranslatedTest).
 -->
 <resources>
-    <string name="tablet_install_description">Install and run Happy on your computer to connect it.</string>
+    <string name="tablet_install_description">Install and run Jarvis on your computer to connect it.</string>
 </resources>

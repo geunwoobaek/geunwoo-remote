@@ -203,7 +203,7 @@ class HomeLayoutTest {
     fun anAccountWithNoNameOfItsOwnIsNamedAsItsKind() {
         val home = state(listOf(cli("a")))
         rule.setHappyContent { HomeScreen(home, ConnectionStatus.CONNECTED, home.grouping, callbacks, actions) }
-        rule.onNodeWithText("Happy CLI", useUnmergedTree = true).assertExists()
+        rule.onNodeWithText("Jarvis CLI", useUnmergedTree = true).assertExists()
     }
 
     @Test

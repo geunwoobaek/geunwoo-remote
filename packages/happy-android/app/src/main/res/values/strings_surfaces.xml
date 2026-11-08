@@ -60,7 +60,7 @@
     <string name="document_task_not_done">Not done</string>
     <string name="document_picture">Picture</string>
     <string name="document_table">Table</string>
-    <string name="document_unsupported">Something Happy can’t show here</string>
+    <string name="document_unsupported">Something Jarvis can’t show here</string>
 
     <!-- This phone's name for desktop's cursor label when the profile has none (iOS Strings.Documents.someone). -->
     <string name="document_someone">Someone</string>

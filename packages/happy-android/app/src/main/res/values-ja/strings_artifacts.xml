@@ -28,7 +28,7 @@
     <string name="browser_close">閉じる</string>
     <string name="browser_share_link">リンクを共有</string>
     <string name="browser_open_outside">ブラウザで開く（プロキシ外）</string>
-    <string name="link_menu_open_in_app">Happy ブラウザで開く</string>
+    <string name="link_menu_open_in_app">Jarvis ブラウザで開く</string>
     <string name="link_menu_open_in_app_direct">アプリ内で、このスマートフォンのネットワークを使用</string>
     <string name="link_menu_open_external">外部ブラウザで開く</string>
     <string name="link_menu_open_external_proxied">エージェントのネットワーク外</string>

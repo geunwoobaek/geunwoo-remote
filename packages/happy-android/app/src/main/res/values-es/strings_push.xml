@@ -7,7 +7,7 @@
     <string name="push_background_send_pending_title">Mensaje no enviado</string>
     <string name="push_background_send_pending_body">Un mensaje se sigue enviando en segundo plano. Fallará en 30 segundos si no se entrega.</string>
     <string name="push_background_send_failed_title">Error al enviar el mensaje</string>
-    <string name="push_background_send_failed_body">No se pudo enviar un mensaje mientras la app estaba en segundo plano. Abre Happy y vuelve a intentarlo.</string>
+    <string name="push_background_send_failed_body">No se pudo enviar un mensaje mientras la app estaba en segundo plano. Abre Jarvis y vuelve a intentarlo.</string>
     <string name="push_permission">Permiso</string>
     <string name="push_request_again">Volver a pedir permiso</string>
     <string name="push_reregister">Volver a registrar este dispositivo</string>
@@ -41,7 +41,7 @@
     <string name="push_android_device">dispositivo Android</string>
     <string name="push_load_failed">No se pudieron cargar los ajustes de notificaciones push.</string>
     <string name="push_enabled">Las notificaciones push están activadas en este dispositivo.</string>
-    <string name="push_opened_settings">El sistema ya no mostrará el aviso de permiso, así que Happy abrió los ajustes.</string>
+    <string name="push_opened_settings">El sistema ya no mostrará el aviso de permiso, así que Jarvis abrió los ajustes.</string>
     <string name="push_not_granted">No se concedió el permiso de notificaciones push.</string>
     <string name="push_request_failed">No se pudo solicitar el permiso de notificaciones push.</string>
     <string name="push_refreshed">Se actualizó el token push de este dispositivo.</string>

@@ -7,7 +7,7 @@
     <string name="push_background_send_pending_title">メッセージは送信されていません</string>
     <string name="push_background_send_pending_body">メッセージをバックグラウンドで送信中です。30秒以内に届かない場合は失敗します。</string>
     <string name="push_background_send_failed_title">メッセージの送信に失敗しました</string>
-    <string name="push_background_send_failed_body">アプリがバックグラウンドにある間にメッセージを送信できませんでした。Happy を開いて再試行してください。</string>
+    <string name="push_background_send_failed_body">アプリがバックグラウンドにある間にメッセージを送信できませんでした。Jarvis を開いて再試行してください。</string>
     <string name="push_permission">許可</string>
     <string name="push_request_again">もう一度許可を求める</string>
     <string name="push_reregister">このデバイスを再登録</string>
@@ -41,7 +41,7 @@
     <string name="push_android_device">Android デバイス</string>
     <string name="push_load_failed">プッシュ通知の設定を読み込めませんでした。</string>
     <string name="push_enabled">このデバイスでプッシュ通知が有効になりました。</string>
-    <string name="push_opened_settings">システムが許可の確認を表示しないため、Happy が設定を開きました。</string>
+    <string name="push_opened_settings">システムが許可の確認を表示しないため、Jarvis が設定を開きました。</string>
     <string name="push_not_granted">プッシュ通知が許可されませんでした。</string>
     <string name="push_request_failed">プッシュ通知の許可をリクエストできませんでした。</string>
     <string name="push_refreshed">このデバイスのプッシュトークンを更新しました。</string>

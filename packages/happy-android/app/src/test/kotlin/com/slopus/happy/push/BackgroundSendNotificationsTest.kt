@@ -121,7 +121,7 @@ class BackgroundSendNotificationsTest {
         val failed = manager.getNotification("background-send", 2)
         assertEquals("Message failed", failed.extras.getString("android.title"))
         assertEquals(
-            "A message failed to send while the app was in background. Open Happy and retry.",
+            "A message failed to send while the app was in background. Open Jarvis and retry.",
             failed.extras.getString("android.text"),
         )
     }

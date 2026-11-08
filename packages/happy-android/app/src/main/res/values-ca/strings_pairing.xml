@@ -16,7 +16,7 @@
     <string name="pairing_failed">No s\'ha pogut connectar</string>
     <string name="pairing_done">Fet</string>
     <string name="pairing_error_invalid_code">Aquest codi no és vàlid. Genera\'n un de nou a Happy Agent.</string>
-    <string name="pairing_error_update_required">Actualitza Happy per fer servir aquest codi.</string>
+    <string name="pairing_error_update_required">Actualitza Jarvis per fer servir aquest codi.</string>
     <string name="pairing_error_expired">Aquest codi ha caducat. Genera\'n un de nou a Happy Agent.</string>
     <string name="pairing_error_rejected">S\'ha rebutjat la connexió. Genera un codi nou i torna a comparar els emojis.</string>
     <string name="pairing_error_invalid_proof">No s\'ha pogut verificar l\'agent. Genera un codi nou.</string>

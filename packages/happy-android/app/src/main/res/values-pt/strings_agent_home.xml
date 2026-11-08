@@ -8,9 +8,9 @@
     <string name="agent_home_empty_title">Nenhuma conversa ainda</string>
     <string name="agent_home_empty_body">Comece um chat com este agente e ele aparecerá aqui.</string>
     <string name="agent_home_offline_title">Não foi possível acessar %1$s</string>
-    <string name="agent_home_offline_body">Verifique se o agente está em execução e online. O Happy se reconecta sozinho.</string>
+    <string name="agent_home_offline_body">Verifique se o agente está em execução e online. O Jarvis se reconecta sozinho.</string>
     <string name="agent_home_revoked">Este telefone foi removido no Happy Agent. Conecte o agente de novo para usá-lo.</string>
-    <string name="agent_home_update_required">Este agente precisa de uma versão mais recente do Happy. Atualize o app para usá-lo.</string>
+    <string name="agent_home_update_required">Este agente precisa de uma versão mais recente do Jarvis. Atualize o app para usá-lo.</string>
     <string name="agent_artifacts_untitled">Sem título</string>
     <string name="agent_surface_add_todo">Adicionar tarefa</string>
     <string name="agent_surface_no_todos">Nada aqui ainda.</string>
@@ -41,5 +41,5 @@
     <string name="agent_settings_offline">Offline</string>
     <string name="agent_settings_revoked">Removido do Happy Agent</string>
     <string name="agent_settings_update">Atualização necessária</string>
-    <string name="agent_settings_remove_message">O Happy esquece este agente neste telefone. O Happy Agent continua listando o telefone até você removê-lo lá também.</string>
+    <string name="agent_settings_remove_message">O Jarvis esquece este agente neste telefone. O Happy Agent continua listando o telefone até você removê-lo lá também.</string>
 </resources>

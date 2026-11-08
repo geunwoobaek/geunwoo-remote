@@ -4,5 +4,5 @@
   catalogs. AndroidStringsTranslatedTest fails while one is missing here.
 -->
 <resources>
-    <string name="tablet_install_description">コンピューターに Happy をインストールして実行すると接続できます。</string>
+    <string name="tablet_install_description">コンピューターに Jarvis をインストールして実行すると接続できます。</string>
 </resources>

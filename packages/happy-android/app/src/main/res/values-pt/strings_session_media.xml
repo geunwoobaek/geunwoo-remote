@@ -5,7 +5,7 @@
     <string name="session_capture_screenshot">Captura de ecrã</string>
     <string name="session_capture_record">Gravar %1$d s</string>
     <string name="session_capture_recording">A gravar o ecrã…</string>
-    <string name="session_capture_failed">Não foi possível capturar o ecrã. No Mac, permita a gravação de ecrã à app que executa o happy (Definições do Sistema → Privacidade e segurança).</string>
+    <string name="session_capture_failed">Não foi possível capturar o ecrã. No Mac, permita a gravação de ecrã à app que executa o jarvis (Definições do Sistema → Privacidade e segurança).</string>
     <string name="session_capture_ask">Perguntar ao Claude</string>
     <string name="session_capture_ask_message">Vê esta captura do meu ecrã: %1$s</string>
 </resources>

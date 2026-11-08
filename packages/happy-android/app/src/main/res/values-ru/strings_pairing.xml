@@ -16,7 +16,7 @@
     <string name="pairing_failed">Не удалось подключиться</string>
     <string name="pairing_done">Готово</string>
     <string name="pairing_error_invalid_code">Этот код недействителен. Создайте новый в Happy Agent.</string>
-    <string name="pairing_error_update_required">Обновите Happy, чтобы использовать этот код.</string>
+    <string name="pairing_error_update_required">Обновите Jarvis, чтобы использовать этот код.</string>
     <string name="pairing_error_expired">Срок действия кода истёк. Создайте новый в Happy Agent.</string>
     <string name="pairing_error_rejected">Подключение отклонено. Создайте новый код и снова сравните эмодзи.</string>
     <string name="pairing_error_invalid_proof">Не удалось проверить агента. Создайте новый код.</string>

@@ -87,10 +87,10 @@
     <string name="home_dock_bot_not_now">Не сейчас</string>
     <string name="home_dock_bot_try_again">Повторить</string>
     <string name="home_start_no_machine">Выберите машину</string>
-    <string name="home_start_unknown_machine">Компьютер этой сессии не зарегистрирован в этом аккаунте, поэтому на нём нельзя запустить сессию. Проверьте, что Happy там запущен и вошёл в этот аккаунт.</string>
+    <string name="home_start_unknown_machine">Компьютер этой сессии не зарегистрирован в этом аккаунте, поэтому на нём нельзя запустить сессию. Проверьте, что Jarvis там запущен и вошёл в этот аккаунт.</string>
     <string name="home_start_happy_agent_missing">Happy Agent не запущен на этом компьютере</string>
-    <string name="home_start_happy_cli_missing">Happy CLI недоступен на вашем компьютере. Выполните `happy daemon start` на компьютере и попробуйте снова.</string>
-    <string name="home_start_happy_cli_offline">Happy CLI на вашем компьютере не в сети. Выполните `happy daemon start` на компьютере и попробуйте снова.</string>
+    <string name="home_start_happy_cli_missing">Jarvis CLI недоступен на вашем компьютере. Выполните `jarvis daemon start` на компьютере и попробуйте снова.</string>
+    <string name="home_start_happy_cli_offline">Jarvis CLI на вашем компьютере не в сети. Выполните `jarvis daemon start` на компьютере и попробуйте снова.</string>
     <string name="home_start_cannot_start_happy_agent">Эта машина не может запускать сессии Happy Agent</string>
     <string name="home_start_project_needs_happy_agent">Только Happy Agent знает, где этот проект, поэтому другая среда не может его открыть. Переключите среду обратно на Happy Agent или выберите папку проекта.</string>
     <string name="home_start_workspace_unavailable">Выбранное рабочее пространство Happy Agent больше недоступно.</string>

@@ -116,8 +116,8 @@ class ConnectFlowTest {
     fun theTerminalScannerSaysWhatEveryOtherCodeIs() {
         setTerminal()
         assertScanSays(ScanResult.Scanned(accountUrl), "This code links a new device. Scan it from Settings › Backup & Restore › Link New Device.")
-        assertScanSays(ScanResult.Scanned("https://example.com"), "This QR code isn't a Happy code.")
-        assertScanSays(ScanResult.Scanned("happy://something?else"), "This QR code isn't a Happy code.")
+        assertScanSays(ScanResult.Scanned("https://example.com"), "This QR code isn't a Jarvis code.")
+        assertScanSays(ScanResult.Scanned("happy://something?else"), "This QR code isn't a Jarvis code.")
         assertScanSays(ScanResult.Scanned("happy://direct?abc"), "This code connects Happy Agent. Use Add in the account menu on Home.")
         assertScanSays(ScanResult.Failed(ScanFailure.Unavailable), "The QR scanner isn't available on this device. Paste the link instead.")
         assertScanSays(ScanResult.Failed(ScanFailure.NoCamera), "This device has no camera. Paste the link instead.")
@@ -273,7 +273,7 @@ class ConnectFlowTest {
 
         scanner.results += ScanResult.Chose(ScannerWay.EnterLink)
         rule.runOnIdle { flow.scan() }
-        rule.onNodeWithText("Paste the link from Happy CLI on your computer or from Happy Agent.").assertExists()
+        rule.onNodeWithText("Paste the link from Jarvis CLI on your computer or from Happy Agent.").assertExists()
     }
 
     /** Other flows' scanners have no ⋮. */
@@ -302,9 +302,9 @@ class ConnectFlowTest {
         assertEquals(listOf("happy://direct?abc"), paired)
 
         approved.clear()
-        assertScanSays(ScanResult.Scanned(accountUrl), "This code asks for a Happy CLI account. Add one on this phone first.")
-        assertScanSays(ScanResult.Scanned("happy://something?else"), "This QR code isn't a Happy code.")
-        assertScanSays(ScanResult.Scanned("https://example.com"), "This QR code isn't a Happy code.")
+        assertScanSays(ScanResult.Scanned(accountUrl), "This code asks for a Jarvis CLI account. Add one on this phone first.")
+        assertScanSays(ScanResult.Scanned("happy://something?else"), "This QR code isn't a Jarvis code.")
+        assertScanSays(ScanResult.Scanned("https://example.com"), "This QR code isn't a Jarvis code.")
     }
 
     /** "Enter link manually" routes a pasted link as Connect routes a scanned code. */
@@ -317,7 +317,7 @@ class ConnectFlowTest {
         rule.runOnIdle { flow.connectWithUrl("happy://direct?xyz") }
         rule.waitUntil { paired.isNotEmpty() }
         rule.runOnIdle { flow.connectWithUrl(accountUrl) }
-        rule.onNodeWithText("This code asks for a Happy CLI account. Add one on this phone first.").assertExists()
+        rule.onNodeWithText("This code asks for a Jarvis CLI account. Add one on this phone first.").assertExists()
         // iOS's title, not "Error" (Strings.Scan.deviceNeedsAccountTitle).
         rule.onNodeWithText("No account to share").assertExists()
         rule.onNodeWithText("OK").performClick()

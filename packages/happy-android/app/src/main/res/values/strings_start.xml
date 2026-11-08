@@ -4,7 +4,7 @@
   Translated in values-*/ (AndroidStringsTranslatedTest).
 -->
 <resources>
-    <string name="start_logo" translatable="false">Happy</string>
+    <string name="start_logo" translatable="false">Jarvis</string>
     <string name="start_button">Start</string>
     <string name="start_connect">Connect</string>
     <string name="start_more">More</string>
@@ -12,7 +12,7 @@
     <string name="start_enter_link_title">Enter Link</string>
     <!-- happy-desktop's welcome deck (happyAgentWelcomeSlides.ts): its titles, each line cut to its first words. -->
     <string name="start_slide_happy_title">Any\u00A0model. Your\u00A0team. One\u00A0app.</string>
-    <string name="start_slide_happy_body">Happy integrates models, teams, and compute into one open-source app.</string>
+    <string name="start_slide_happy_body">Jarvis integrates models, teams, and compute into one open-source app.</string>
     <string name="start_slide_team_title">Natively multiplayer</string>
     <string name="start_slide_team_body">Bring your team into one session with every agent.</string>
     <string name="start_slide_mix_title">One\u00A0app. Every\u00A0agent.</string>

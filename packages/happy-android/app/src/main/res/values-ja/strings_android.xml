@@ -19,7 +19,7 @@
     <string name="chat_scroll_to_bottom">一番下までスクロール</string>
     <string name="voice_clear_search">検索をクリア</string>
     <string name="scan_unavailable">このデバイスでは QR スキャナーを使えません。代わりにリンクを貼り付けてください。</string>
-    <string name="scan_not_happy_code">この QR コードは Happy のものではありません。</string>
+    <string name="scan_not_happy_code">この QR コードは Jarvis のものではありません。</string>
     <string name="scan_terminal_code_elsewhere">このコードはターミナルを接続します。「設定 › QRコードをスキャンして認証」からスキャンしてください。</string>
     <string name="scan_account_code_elsewhere">このコードは新しいデバイスをリンクします。「設定 › バックアップと復元 › 新しいデバイスをリンク」からスキャンしてください。</string>
     <string name="scan_pairing_unavailable">このコードは Happy Agent を接続します。ホームのアカウントメニューにある「追加」を使ってください。</string>
@@ -32,6 +32,6 @@
     <string name="scan_no_camera">このデバイスにはカメラがありません。リンクを貼り付けてください。</string>
     <string name="scan_camera_failed">カメラを起動できませんでした。もう一度試すか、リンクを貼り付けてください。</string>
     <string name="voice_microphone_title">マイクへのアクセスが必要です</string>
-    <string name="voice_microphone_ask">ボイスチャットには Happy がマイクにアクセスする必要があります。確認が表示されたら許可してください。</string>
-    <string name="voice_microphone_settings">ボイスチャットには Happy がマイクにアクセスする必要があります。デバイスの設定でマイクへのアクセスを有効にしてください。</string>
+    <string name="voice_microphone_ask">ボイスチャットには Jarvis がマイクにアクセスする必要があります。確認が表示されたら許可してください。</string>
+    <string name="voice_microphone_settings">ボイスチャットには Jarvis がマイクにアクセスする必要があります。デバイスの設定でマイクへのアクセスを有効にしてください。</string>
 </resources>

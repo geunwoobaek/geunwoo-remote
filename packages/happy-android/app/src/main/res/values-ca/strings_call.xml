@@ -9,7 +9,7 @@
     <string name="call_close">Tanca</string>
     <string name="call_listening">Escoltant</string>
     <string name="call_user_speaking">Estàs parlant</string>
-    <string name="call_agent_speaking">Happy està parlant</string>
+    <string name="call_agent_speaking">Jarvis està parlant</string>
     <string name="call_not_set_up">La veu encara no està configurada per a aquesta connexió</string>
     <string name="call_microphone">L’accés al micròfon està desactivat</string>
     <string name="call_subscription">La veu necessita una subscripció</string>
@@ -40,5 +40,5 @@
     <string name="call_restore_done">S’ha restaurat la subscripció.</string>
     <string name="call_restore_none">No s’ha trobat cap subscripció de veu en aquest compte de la botiga.</string>
     <string name="call_restore_failed">No s’ha pogut connectar amb la botiga. Torna-ho a provar més tard.</string>
-    <string name="call_purchase_unconfirmed">La compra encara no s’ha confirmat. Happy ho tornarà a comprovar quan tornis.</string>
+    <string name="call_purchase_unconfirmed">La compra encara no s’ha confirmat. Jarvis ho tornarà a comprovar quan tornis.</string>
 </resources>

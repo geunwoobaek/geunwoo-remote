@@ -60,7 +60,7 @@ class RestoreRetryTest {
     private fun openRestore() {
         rule.waitUntilAtLeastOneExists(hasTestTag(StartTags.CONTENT), 5_000)
         rule.onNodeWithContentDescription("More").performClick()
-        rule.onNodeWithText("Restore Happy CLI account").performClick()
+        rule.onNodeWithText("Restore Jarvis CLI account").performClick()
     }
 
     /** The key the code on screen carries. */

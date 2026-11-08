@@ -12,10 +12,10 @@
     <string name="attach_unpick">Odznacz</string>
     <string name="attach_access_title">Twoje zdjęcia i filmy</string>
     <string name="attach_access_message">Zezwól na dostęp, aby widzieć tu ostatnie zdjęcia i filmy.</string>
-    <string name="attach_access_blocked">Dostęp do zdjęć i filmów jest wyłączony. Włącz go dla Happy w Ustawieniach.</string>
+    <string name="attach_access_blocked">Dostęp do zdjęć i filmów jest wyłączony. Włącz go dla Jarvis w Ustawieniach.</string>
     <string name="attach_access_allow">Zezwól na dostęp</string>
     <string name="attach_access_settings">Otwórz ustawienia</string>
-    <string name="attach_partial_message">Happy widzi tylko wybrane przez Ciebie zdjęcia i filmy.</string>
+    <string name="attach_partial_message">Jarvis widzi tylko wybrane przez Ciebie zdjęcia i filmy.</string>
     <string name="attach_partial_manage">Zarządzaj</string>
     <string name="attach_gallery_empty">Brak zdjęć i filmów</string>
     <string name="attach_files_browse">Przeglądaj</string>

@@ -60,14 +60,14 @@ class ScanRouteTableTest {
     private val serverMalformed = "happy://k3x9q2m7p0a4b8c1d5e6f7g2/server?url=http%3A%2F%2Fhappy.acme.example%2F"
     private val servers = setOf(server, serverAtPath, serverMalformed)
 
-    private val notHappyHere = "This QR code isn't a Happy code."
+    private val notHappyHere = "This QR code isn't a Jarvis code."
     private val terminalElsewhere = "This code connects a terminal. Scan it from Settings › Scan QR code to authenticate."
     private val accountElsewhere = "This code links a new device. Scan it from Settings › Backup & Restore › Link New Device."
-    private val accountNeedsPhone = "This code asks for a Happy CLI account. Add one on this phone first."
+    private val accountNeedsPhone = "This code asks for a Jarvis CLI account. Add one on this phone first."
     private val invalidUrl = "Invalid authentication URL"
-    private val serverInvalid = "This server code can't be used. Scan the code from Happy on your computer again."
-    private val serverPathUnsupported = "This server is set up under a web address path, which Happy on Android can't connect to yet."
-    private val serverScanOnly = "A server code works only when you scan it. Scan the code from Happy on your computer."
+    private val serverInvalid = "This server code can't be used. Scan the code from Jarvis on your computer again."
+    private val serverPathUnsupported = "This server is set up under a web address path, which Jarvis on Android can't connect to yet."
+    private val serverScanOnly = "A server code works only when you scan it. Scan the code from Jarvis on your computer."
 
     /**
      * The table, read as: taken at this way in, this code lands here. Each

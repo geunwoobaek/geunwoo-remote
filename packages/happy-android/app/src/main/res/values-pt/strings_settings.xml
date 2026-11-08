@@ -29,7 +29,7 @@
     <string name="settings_agents_custom_model">Modelo personalizado…</string>
     <string name="settings_agents_enter_model_id">Digite o ID exato do modelo</string>
     <string name="settings_agents_no_machines">Nenhuma máquina conectada</string>
-    <string name="settings_agents_no_machines_subtitle">Execute o Happy em um computador para conectá-lo</string>
+    <string name="settings_agents_no_machines_subtitle">Execute o Jarvis em um computador para conectá-lo</string>
     <string name="settings_agents_defaults">Padrões</string>
     <string name="settings_agents_clear_overrides">Limpar substituições</string>
     <string name="settings_agents_clear_overrides_subtitle">Voltar todos os agentes aos padrões do código</string>
@@ -55,6 +55,6 @@
     <string name="agent_settings_default_access">Acesso predefinido</string>
     <string name="agent_settings_default_access_description">O que uma nova sessão pode fazer sem perguntar. Guardado na tua conta, por isso acompanha-te em todos os dispositivos.</string>
     <string name="agent_settings_new_sessions_unreadable">Não foi possível ler os modelos. Verifica a ligação e abre esta página de novo.</string>
-    <string name="settings_analytics_not_saved">As análises estão desativadas por enquanto, mas não foi possível salvar a configuração. Elas serão ativadas novamente na próxima vez que o Happy for iniciado.</string>
+    <string name="settings_analytics_not_saved">As análises estão desativadas por enquanto, mas não foi possível salvar a configuração. Elas serão ativadas novamente na próxima vez que o Jarvis for iniciado.</string>
     <string name="settings_analytics_not_turned_on">Não foi possível ativar as análises. Tente novamente mais tarde.</string>
 </resources>

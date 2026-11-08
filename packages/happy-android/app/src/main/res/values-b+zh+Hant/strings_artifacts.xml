@@ -28,7 +28,7 @@
     <string name="browser_close">關閉</string>
     <string name="browser_share_link">分享連結</string>
     <string name="browser_open_outside">在瀏覽器中開啟（不經代理）</string>
-    <string name="link_menu_open_in_app">在 Happy 瀏覽器中開啟</string>
+    <string name="link_menu_open_in_app">在 Jarvis 瀏覽器中開啟</string>
     <string name="link_menu_open_in_app_direct">在 App 內，使用此手機的網路</string>
     <string name="link_menu_open_external">在外部瀏覽器中開啟</string>
     <string name="link_menu_open_external_proxied">不經過代理程式的網路</string>

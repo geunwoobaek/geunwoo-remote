@@ -32,7 +32,7 @@
     <string name="browser_close">Fechar</string>
     <string name="browser_share_link">Compartilhar link</string>
     <string name="browser_open_outside">Abrir no navegador (fora do proxy)</string>
-    <string name="link_menu_open_in_app">Abrir no navegador do Happy</string>
+    <string name="link_menu_open_in_app">Abrir no navegador do Jarvis</string>
     <string name="link_menu_open_in_app_direct">No app, na rede deste telefone</string>
     <string name="link_menu_open_external">Abrir em navegador externo</string>
     <string name="link_menu_open_external_proxied">Fora da rede do agente</string>

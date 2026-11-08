@@ -176,7 +176,7 @@ class SettingsLayoutTest {
     fun logoutAsksFirst() {
         show()
         rule.node(SettingsPageTags.REMOVE).performScrollTo().performClick()
-        rule.onNodeWithText("Sign out of Happy CLI?").assertIsDisplayed()
+        rule.onNodeWithText("Sign out of Jarvis CLI?").assertIsDisplayed()
         rule.onNodeWithText("Cancel").performClick()
         rule.waitForIdle()
         assertEquals(emptyList<String>(), opened)

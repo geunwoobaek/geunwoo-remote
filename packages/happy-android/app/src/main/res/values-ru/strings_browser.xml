@@ -9,7 +9,7 @@
     <string name="browser_problem_offline_title">Нет подключения к интернету</string>
     <string name="browser_problem_offline_message">Этот телефон не подключён к интернету. Страницы откроются, когда подключение появится.</string>
     <string name="browser_problem_unreachable_title">Не удаётся связаться с %1$s</string>
-    <string name="browser_problem_unreachable_message">Страницы открываются через %1$s, но он не отвечает. Убедитесь, что он не спит и на нём запущен Happy.</string>
+    <string name="browser_problem_unreachable_message">Страницы открываются через %1$s, но он не отвечает. Убедитесь, что он не спит и на нём запущен Jarvis.</string>
     <string name="browser_problem_unavailable_title">Не удаётся открыть страницу</string>
     <string name="browser_problem_unavailable_message">Страницы открываются через компьютер с Happy Agent, а подключения, через которое можно открыть эту, нет.</string>
     <string name="browser_problem_host_not_found_title">Сервер не найден</string>

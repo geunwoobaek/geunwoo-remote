@@ -35,10 +35,10 @@
     <string name="team_server_add_name">Указать имя</string>
     <string name="happy_link_unknown_title">Не удаётся открыть ссылку</string>
     <string name="happy_link_unknown_server">Эта ссылка относится к серверу Happy, к которому вы не подключены.</string>
-    <string name="team_server_code_invalid">Этот код сервера нельзя использовать. Отсканируйте код из Happy на компьютере ещё раз.</string>
+    <string name="team_server_code_invalid">Этот код сервера нельзя использовать. Отсканируйте код из Jarvis на компьютере ещё раз.</string>
     <string name="team_server_error_wrong_server">Этот код не соответствует серверу, на который он указывает.</string>
-    <string name="team_server_code_path">Этот сервер настроен по пути внутри веб-адреса, а Happy для Android пока не умеет к таким подключаться.</string>
-    <string name="team_server_code_scan_only">Код сервера работает, только если его отсканировать. Отсканируйте код из Happy на компьютере.</string>
+    <string name="team_server_code_path">Этот сервер настроен по пути внутри веб-адреса, а Jarvis для Android пока не умеет к таким подключаться.</string>
+    <string name="team_server_code_scan_only">Код сервера работает, только если его отсканировать. Отсканируйте код из Jarvis на компьютере.</string>
     <string name="team_server_error_cross_origin">Настройки входа этого сервера отправили бы ваши данные входа на другой сайт, поэтому их нельзя использовать.</string>
     <string name="team_server_error_wrong_audience">Этот вход предназначен для другого сервера.</string>
 </resources>

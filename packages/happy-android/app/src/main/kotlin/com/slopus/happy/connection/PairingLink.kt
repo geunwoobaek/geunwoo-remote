@@ -15,7 +15,7 @@ class AgentConnectionException(val reason: Reason) : Exception(reason.message) {
     /** [message] in English, for logs and tests; [text] what the person reads, in their language. */
     enum class Reason(val message: String, @StringRes val text: Int) {
         InvalidCode("This code is invalid. Generate a new one in Happy Agent.", R.string.pairing_error_invalid_code),
-        UpdateRequired("Update Happy to use this code.", R.string.pairing_error_update_required),
+        UpdateRequired("Update Jarvis to use this code.", R.string.pairing_error_update_required),
         Expired("This code has expired. Generate a new one in Happy Agent.", R.string.pairing_error_expired),
         Rejected("The connection was rejected. Generate a new code and compare the emoji again.", R.string.pairing_error_rejected),
         InvalidProof("The agent could not be verified. Generate a new code.", R.string.pairing_error_invalid_proof),

@@ -7,7 +7,7 @@
     <string name="push_background_send_pending_title">消息未发送</string>
     <string name="push_background_send_pending_body">一条消息仍在后台发送。如果 30 秒内未送达，将会失败。</string>
     <string name="push_background_send_failed_title">消息发送失败</string>
-    <string name="push_background_send_failed_body">应用在后台时有一条消息发送失败。请打开 Happy 并重试。</string>
+    <string name="push_background_send_failed_body">应用在后台时有一条消息发送失败。请打开 Jarvis 并重试。</string>
     <string name="push_permission">权限</string>
     <string name="push_request_again">重新请求权限</string>
     <string name="push_reregister">重新注册此设备</string>
@@ -41,7 +41,7 @@
     <string name="push_android_device">Android 设备</string>
     <string name="push_load_failed">无法加载推送通知设置。</string>
     <string name="push_enabled">此设备已启用推送通知。</string>
-    <string name="push_opened_settings">系统不会再显示权限提示，所以 Happy 打开了设置。</string>
+    <string name="push_opened_settings">系统不会再显示权限提示，所以 Jarvis 打开了设置。</string>
     <string name="push_not_granted">未授予推送通知权限。</string>
     <string name="push_request_failed">无法请求推送通知权限。</string>
     <string name="push_refreshed">已刷新此设备的推送令牌。</string>

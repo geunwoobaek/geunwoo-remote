@@ -12,10 +12,10 @@
     <string name="attach_unpick">選択解除</string>
     <string name="attach_access_title">写真と動画</string>
     <string name="attach_access_message">アクセスを許可すると、最近の写真と動画がここに表示されます。</string>
-    <string name="attach_access_blocked">写真と動画へのアクセスがオフになっています。設定で Happy に許可してください。</string>
+    <string name="attach_access_blocked">写真と動画へのアクセスがオフになっています。設定で Jarvis に許可してください。</string>
     <string name="attach_access_allow">アクセスを許可</string>
     <string name="attach_access_settings">設定を開く</string>
-    <string name="attach_partial_message">Happy は選択した写真と動画のみ表示できます。</string>
+    <string name="attach_partial_message">Jarvis は選択した写真と動画のみ表示できます。</string>
     <string name="attach_partial_manage">管理</string>
     <string name="attach_gallery_empty">写真や動画はまだありません</string>
     <string name="attach_files_browse">参照</string>

@@ -80,7 +80,7 @@ class ComposerModesTest {
         val modes = ModeOptions.availablePermissionModes("codex", rig(), translate, selectedKey = "plan_only")
         assertEquals("plan_only", modes.first().key)
         assertTrue(modes.first().disabled)
-        assertEquals("Unavailable in the current Happy mode catalog", modes.first().description)
+        assertEquals("Unavailable in the current Jarvis mode catalog", modes.first().description)
     }
 
     @Test

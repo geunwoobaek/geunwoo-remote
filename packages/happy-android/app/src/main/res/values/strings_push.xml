@@ -8,7 +8,7 @@
     <string name="push_background_send_pending_title">Message not sent</string>
     <string name="push_background_send_pending_body">A message is still sending in the background. It will fail in 30 seconds if not delivered.</string>
     <string name="push_background_send_failed_title">Message failed</string>
-    <string name="push_background_send_failed_body">A message failed to send while the app was in background. Open Happy and retry.</string>
+    <string name="push_background_send_failed_body">A message failed to send while the app was in background. Open Jarvis and retry.</string>
 
     <!-- Settings › Account's push rows. -->
     <string name="push_permission">Permission</string>
@@ -44,7 +44,7 @@
     <string name="push_android_device">android device</string>
     <string name="push_load_failed">Failed to load push notification settings.</string>
     <string name="push_enabled">Push notifications are enabled for this device.</string>
-    <string name="push_opened_settings">The system will not show the permission prompt again, so Happy opened Settings instead.</string>
+    <string name="push_opened_settings">The system will not show the permission prompt again, so Jarvis opened Settings instead.</string>
     <string name="push_not_granted">Push notification permission was not granted.</string>
     <string name="push_request_failed">Failed to request push notification permission.</string>
     <string name="push_refreshed">This device push token was refreshed.</string>

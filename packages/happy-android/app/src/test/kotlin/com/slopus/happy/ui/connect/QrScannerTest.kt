@@ -98,11 +98,11 @@ class QrScannerTest {
         assertBox("more", rule.node(QrScannerTags.MORE).bounds, 16.dp, 10.dp, 44.dp, 44.dp)
         rule.node(QrScannerTags.MORE).performClick()
         rule.onNodeWithText("Enter link manually").assertExists()
-        rule.onNodeWithText("Restore Happy CLI account").assertExists()
+        rule.onNodeWithText("Restore Jarvis CLI account").assertExists()
         rule.onNodeWithText("happy.example.com").assertExists()
-        rule.onNodeWithText("Happy CLI server").performClick()
+        rule.onNodeWithText("Jarvis CLI server").performClick()
         assertEquals(listOf(ScannerWay.Server), picked)
-        rule.onNodeWithText("Restore Happy CLI account").assertDoesNotExist()
+        rule.onNodeWithText("Restore Jarvis CLI account").assertDoesNotExist()
     }
 
     @Test

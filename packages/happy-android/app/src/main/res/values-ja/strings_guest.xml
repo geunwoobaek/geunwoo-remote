@@ -3,7 +3,7 @@
     <string name="guest_more">その他</string>
     <string name="guest_report">会話を報告</string>
     <string name="guest_leave">会話から退出</string>
-    <string name="guest_join_title">Happyボットに参加</string>
+    <string name="guest_join_title">Jarvisボットに参加</string>
     <string name="guest_reconnect">再接続</string>
     <string name="guest_name">名前</string>
     <string name="guest_join">参加</string>
