@@ -10,16 +10,16 @@
  *   folders. It judges the real (symlink-resolved) name, so Claude's
  *   screenshot or page in /tmp opens on the phone while a link named
  *   `x.png` pointing at a key does not.
- * - `captureScreen` runs macOS `screencapture` into ~/.happy/captures for
+ * - `captureScreen` runs macOS `screencapture` into the happy home's captures folder for
  *   a screenshot or a short recording. Nothing is captured until the phone
  *   asks; the first capture needs Screen Recording permission for the
  *   process that runs happy.
  */
 import { execFile } from 'child_process';
 import { mkdir, open, realpath, stat } from 'fs/promises';
-import { homedir } from 'os';
 import { extname, join, sep } from 'path';
 import { promisify } from 'util';
+import { configuration } from '@/configuration';
 import { PathValidationResult } from './pathSecurity';
 
 const execFileAsync = promisify(execFile);
@@ -112,7 +112,7 @@ export function captureArguments(kind: CaptureKind, seconds: number, file: strin
 
 /** The folder captures land in. */
 export function capturesDirectory(): string {
-    return join(homedir(), '.happy', 'captures');
+    return join(configuration.happyHomeDir, 'captures');
 }
 
 /** Recordings still being made, by path. */

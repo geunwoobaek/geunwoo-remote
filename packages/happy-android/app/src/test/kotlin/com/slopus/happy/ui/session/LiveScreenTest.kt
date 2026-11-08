@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.util.Base64
 
@@ -50,5 +51,12 @@ class LiveScreenTest {
         val computer = Computer(listOf(ScreenFrameResult(false, error = "Screen capture is only available on macOS")))
         assertEquals("Screen capture is only available on macOS", pollScreenFrames(computer, "s", onFrame = {}, intervalMillis = 10))
         assertEquals(5, computer.asked)
+    }
+
+    @Test fun theVideoKeepsTheFramesShape() {
+        assertEquals(16f / 9f, liveVideoAspect(1280, 720)!!, 0.0001f)
+        assertEquals(0.5f, liveVideoAspect(500, 1000)!!, 0.0001f)
+        assertNull(liveVideoAspect(0, 720))
+        assertNull(liveVideoAspect(1280, 0))
     }
 }

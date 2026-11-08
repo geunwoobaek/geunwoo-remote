@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -67,6 +68,10 @@ import livekit.org.webrtc.SessionDescription
 import livekit.org.webrtc.SurfaceViewRenderer
 import livekit.org.webrtc.VideoTrack
 import java.util.Base64
+
+/** The width-to-height shape of a live frame, or null before one has a size. */
+internal fun liveVideoAspect(width: Int, height: Int): Float? =
+    if (width > 0 && height > 0) width.toFloat() / height else null
 
 /** What the live screen asks of the session's computer (happy-cli `screenStreamStart` / `screenStreamStop` / `screenFrame`). */
 interface LiveScreenOps {
@@ -246,9 +251,18 @@ fun LiveScreenDialog(ops: LiveScreenOps, sessionId: String, onDismiss: () -> Uni
     var mode by remember { mutableStateOf<LiveMode>(LiveMode.Connecting) }
     var frame by remember { mutableStateOf<ImageBitmap?>(null) }
     val egl = remember { EglBase.create() }
+    // The renderer crops to whatever box it is given, so the box takes the frame's shape.
+    var videoAspect by remember { mutableStateOf<Float?>(null) }
     val renderer = remember {
         SurfaceViewRenderer(context).apply {
-            init(egl.eglBaseContext, null)
+            init(egl.eglBaseContext, object : RendererCommon.RendererEvents {
+                override fun onFirstFrameRendered() = Unit
+                override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) {
+                    val turned = rotation % 180 != 0
+                    val aspect = liveVideoAspect(if (turned) height else width, if (turned) width else height)
+                    post { videoAspect = aspect }
+                }
+            })
             setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
             setEnableHardwareScaler(true)
         }
@@ -310,7 +324,12 @@ fun LiveScreenDialog(ops: LiveScreenOps, sessionId: String, onDismiss: () -> Uni
     Dialog(onDismissRequest = { latestDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black).testTag(LiveScreenTags.SCREEN)) {
             when (mode) {
-                LiveMode.Direct -> AndroidView(factory = { renderer }, modifier = Modifier.fillMaxSize().testTag(LiveScreenTags.VIDEO))
+                LiveMode.Direct -> AndroidView(
+                    factory = { renderer },
+                    modifier = Modifier.align(Alignment.Center)
+                        .then(videoAspect?.let { Modifier.aspectRatio(it) } ?: Modifier.fillMaxSize())
+                        .testTag(LiveScreenTags.VIDEO),
+                )
                 LiveMode.Relay -> frame?.let {
                     Image(it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().testTag(LiveScreenTags.FRAME))
                 }

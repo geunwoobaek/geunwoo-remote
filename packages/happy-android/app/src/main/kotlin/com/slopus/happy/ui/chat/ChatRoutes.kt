@@ -73,6 +73,7 @@ import com.slopus.happy.ui.session.ScreenCaptureSheet
 import com.slopus.happy.ui.session.SyncLiveScreenOps
 import com.slopus.happy.ui.session.SyncScreenCaptureOps
 import com.slopus.happy.ui.files.SessionFileRoute
+import com.slopus.happy.ui.files.SessionFolderRoute
 import com.slopus.happy.ui.files.SyncSessionFileOps
 import com.slopus.happy.ui.files.toolPressRoute
 import com.slopus.happy.ui.home.SessionViewingEffect
@@ -116,6 +117,7 @@ fun NavGraphBuilder.chatRoutes(
             onOpenSession = { shown, id -> if (id != shown) nav.navigate(SessionRoute(id)) { popUpTo<SessionRoute> { inclusive = true } } },
             onComposeStarted = { id -> entry.savedStateHandle[COMPOSE_STARTED] = id },
             onOpenMedia = { sessionId, path -> nav.navigate(SessionFileRoute(sessionId, path)) },
+            onOpenFolder = { sessionId -> nav.navigate(SessionFolderRoute(sessionId)) },
         )
     }
 }
@@ -135,6 +137,8 @@ private fun ChatRoute(
     onComposeStarted: (sessionId: String) -> Unit = {},
     /** A picture, recording or page under a message was tapped. */
     onOpenMedia: (sessionId: String, path: String) -> Unit = { _, _ -> },
+    /** The session's folder, from the header. */
+    onOpenFolder: (sessionId: String) -> Unit = {},
 ) {
     // A chat opened from a tab strip's `+` stands on its stand-in's id until the machine names it (Home's pending chats);
     // one compose opened, on its own id until its first send has started the session.
@@ -235,6 +239,7 @@ private fun ChatRoute(
             // An empty chat already here stays.
             onCompose = { if (compose?.composing != true) latestCompose() },
             onScreen = { if (latestState.session != null) capturing = true },
+            onFiles = { if (latestState.session != null) onOpenFolder(sessionId) },
             onToolPress = { message -> onToolPress(sessionId, message) },
             onToolFilePress = { message, file -> onToolFilePress(sessionId, message, file) },
             onDraftChange = draft::set,

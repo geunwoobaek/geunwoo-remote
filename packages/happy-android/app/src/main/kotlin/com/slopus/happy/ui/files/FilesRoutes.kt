@@ -38,6 +38,7 @@ import com.slopus.happy.model.SessionMetadata
 import com.slopus.happy.model.gitStatusKey
 import com.slopus.happy.model.isRig
 import com.slopus.happy.sync.HappyAgentGit
+import com.slopus.happy.text.Words
 import com.slopus.happy.ui.components.Alert
 import com.slopus.happy.ui.components.AlertButton
 import com.slopus.happy.ui.components.HappyAlert
@@ -58,6 +59,9 @@ import kotlinx.serialization.Serializable
 
 /** `/session/{id}/message/{messageId}?file=`: one message in full; [file] narrows a patch to the file tapped. */
 @Serializable data class MessageDetailRoute(val id: String, val messageId: String, val file: String? = null)
+
+/** `/session/{id}/folder?path=`: one folder of a Happy session's computer, [path] absolute ("" is the session's folder). */
+@Serializable data class SessionFolderRoute(val id: String, val path: String = "")
 
 /** One folder of an agent connection's workspace, [path] relative to its root ("" is the root). */
 @Serializable data class WorkspaceFilesRoute(val connectionId: String, val workspaceId: String, val path: String = "")
@@ -118,6 +122,10 @@ fun NavGraphBuilder.filesRoutes(graph: AppGraph, nav: NavHostController) {
         val route = entry.toRoute<MessageDetailRoute>()
         MessageDetailRouteScreen(graph, route, onBack = { nav.popBackStack() })
     }
+    page<SessionFolderRoute> { entry ->
+        val route = entry.toRoute<SessionFolderRoute>()
+        SessionFolderRouteScreen(graph, route, nav)
+    }
     page<WorkspaceFilesRoute> { entry ->
         val route = entry.toRoute<WorkspaceFilesRoute>()
         WorkspaceFilesEntry(graph, route, nav)
@@ -142,6 +150,42 @@ private fun rememberMetadata(graph: AppGraph, sessionId: String): Pair<Boolean, 
     val flow = remember(sessionId) { graph.store.metadataFlow(sessionId).map { true to it } }
     val value by flow.collectAsStateWithLifecycle(false to null)
     return value
+}
+
+/**
+ * A session's folder, a level at a time: folders first, a folder opens the
+ * next level, a file opens in the viewer (pictures, recordings and pages
+ * included). The root is the session's working folder.
+ */
+@Composable
+private fun SessionFolderRouteScreen(graph: AppGraph, route: SessionFolderRoute, nav: NavHostController) {
+    val account by graph.account.collectAsStateWithLifecycle()
+    val (loaded, metadata) = rememberMetadata(graph, route.id)
+    val dir = route.path.ifEmpty { metadata?.path.orEmpty() }
+    val sync = account
+    val scope = rememberCoroutineScope()
+    val folder = remember(sync, dir) {
+        WorkspaceFolder(scope, { path, _ ->
+            val ops = sync?.sessionOps ?: throw IllegalStateException()
+            SessionFolder.page(path, ops.listDirectory(route.id, path))
+        }, dir)
+    }
+    LaunchedEffect(folder, loaded) { if (loaded && dir.isNotEmpty()) folder.open() }
+    val state by folder.state.collectAsStateWithLifecycle()
+    WorkspaceFilesScreen(
+        title = if (dir.isEmpty()) stringResource(R.string.common_files) else SessionFolder.title(dir),
+        state = when {
+            sync == null || (loaded && dir.isEmpty()) -> WorkspaceFolder.State(loading = false, error = Words.ours(R.string.files_load_failed))
+            else -> state
+        },
+        onBack = { nav.popBackStack() },
+        onOpen = { entry ->
+            if (entry.directory) nav.navigate(SessionFolderRoute(route.id, entry.path))
+            else nav.navigate(SessionFileRoute(route.id, entry.path))
+        },
+        onRetry = folder::open,
+        onMore = folder::more,
+    )
 }
 
 @Composable

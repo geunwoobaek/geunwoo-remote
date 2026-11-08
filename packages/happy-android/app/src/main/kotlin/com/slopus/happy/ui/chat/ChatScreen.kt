@@ -68,6 +68,7 @@ import com.slopus.happy.ui.theme.happyTextStyle
 object ChatScreenTags {
     const val SCREEN = "chat.screen"
     const val CAPTURE = "chat.header.capture"
+    const val FILES = "chat.header.files"
     const val DOCK = "chat.dock"
     const val SCRIM = "chat.dock.scrim"
     const val TITLE_BUTTON = "chat.header.titleButton"
@@ -149,6 +150,8 @@ class ChatScreenActions(
     val onCompose: () -> Unit = {},
     /** The computer's screen: a screenshot or recording from the session's computer; null hides the button. */
     val onScreen: (() -> Unit)? = null,
+    /** The session's folder on its computer, a level at a time; null hides the button. */
+    val onFiles: (() -> Unit)? = null,
 )
 
 /**

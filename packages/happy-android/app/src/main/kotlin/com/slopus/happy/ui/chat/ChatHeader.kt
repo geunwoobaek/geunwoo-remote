@@ -102,20 +102,31 @@ internal fun ChatHeaderTitle(
 }
 
 /**
- * The header's one action, compose, 48 dp. The More menu is gone, as iOS
- * da5fda505 took it: the details open from the name, and the permission
- * mode is their first row ([com.slopus.happy.ui.session.SessionInfoScreen]).
+ * The header's actions, 48 dp each: the session's folder and its
+ * computer's screen when the chat has a session, then compose. The More
+ * menu is gone, as iOS da5fda505 took it: the details open from the name,
+ * and the permission mode is their first row
+ * ([com.slopus.happy.ui.session.SessionInfoScreen]).
  */
 @Composable
 internal fun ChatHeaderActions(actions: ChatScreenActions) {
-    actions.onScreen?.let { onScreen ->
-        val screen = stringResource(R.string.session_capture)
-        IconButton(onClick = onScreen, modifier = Modifier.testTag(ChatScreenTags.CAPTURE).size(48.dp).semantics { contentDescription = screen }) {
-            Icon(Ionicon.DesktopOutline, 22.dp, HappyTheme.colors.header.tint)
+    // The header's slot stacks its children; the buttons stand side by side.
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        actions.onFiles?.let { onFiles ->
+            val files = stringResource(R.string.common_files)
+            IconButton(onClick = onFiles, modifier = Modifier.testTag(ChatScreenTags.FILES).size(48.dp).semantics { contentDescription = files }) {
+                Icon(Ionicon.FolderOutline, 22.dp, HappyTheme.colors.header.tint)
+            }
         }
-    }
-    val compose = stringResource(R.string.session_new_chat)
-    IconButton(onClick = actions.onCompose, modifier = Modifier.testTag(ChatScreenTags.COMPOSE).size(48.dp).semantics { contentDescription = compose }) {
-        Icon(Ionicon.CreateOutline, 24.dp, HappyTheme.colors.header.tint)
+        actions.onScreen?.let { onScreen ->
+            val screen = stringResource(R.string.session_capture)
+            IconButton(onClick = onScreen, modifier = Modifier.testTag(ChatScreenTags.CAPTURE).size(48.dp).semantics { contentDescription = screen }) {
+                Icon(Ionicon.DesktopOutline, 22.dp, HappyTheme.colors.header.tint)
+            }
+        }
+        val compose = stringResource(R.string.session_new_chat)
+        IconButton(onClick = actions.onCompose, modifier = Modifier.testTag(ChatScreenTags.COMPOSE).size(48.dp).semantics { contentDescription = compose }) {
+            Icon(Ionicon.CreateOutline, 24.dp, HappyTheme.colors.header.tint)
+        }
     }
 }

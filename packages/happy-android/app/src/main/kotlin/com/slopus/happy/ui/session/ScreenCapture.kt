@@ -122,8 +122,9 @@ private sealed interface SheetState {
 
 /**
  * The header's computer-screen sheet: a screenshot or a 5, 15 or 30 second
- * recording of the session's computer, opened in the app's viewer as soon
- * as it is written ([onOpen]); [onAsk] sends Claude a message naming it.
+ * recording of the session's computer. Once written, its row opens it in
+ * the app's viewer and closes the sheet ([onOpen]); [onAsk] sends Claude a
+ * message naming it.
  * The capture runs on the computer and comes to the phone through the
  * session's encrypted channel, as its other files do.
  */
@@ -147,7 +148,7 @@ fun ScreenCaptureSheet(
         job = scope.launch {
             val outcome = ScreenCapture.capture(ops, sessionId, video, seconds) { elapsed -> state = SheetState.Working(video, seconds, elapsed) }
             state = when (outcome) {
-                is CaptureOutcome.Captured -> SheetState.Done(outcome.path).also { onOpen(outcome.path) }
+                is CaptureOutcome.Captured -> SheetState.Done(outcome.path)
                 is CaptureOutcome.Failed -> SheetState.Failed(outcome.reason)
             }
         }
@@ -197,7 +198,11 @@ fun ScreenCaptureSheet(
                     Text(label, style = happyTextStyle(fontSize = 15), color = colors.text)
                 }
                 is SheetState.Done -> {
-                    CaptureRow(Ionicon.ImageOutline, s.path.substringAfterLast('/'), "screenCapture.open") { onOpen(s.path) }
+                    CaptureRow(Ionicon.ImageOutline, s.path.substringAfterLast('/'), "screenCapture.open") {
+                        // The sheet would sit over the viewer; it steps aside first.
+                        dismiss()
+                        onOpen(s.path)
+                    }
                     CaptureRow(Ionicon.ChatbubbleEllipsesOutline, stringResource(R.string.session_capture_ask), ScreenCaptureTags.ASK) {
                         onAsk(s.path)
                         dismiss()
