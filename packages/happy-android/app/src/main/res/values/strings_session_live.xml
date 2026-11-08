@@ -1,0 +1,8 @@
+<resources>
+    <string name="session_live">Live screen</string>
+    <string name="session_live_connecting">Connecting to the computer…</string>
+    <string name="session_live_direct">Live · direct, encrypted</string>
+    <string name="session_live_relay">Live · through the relay, about one picture a second</string>
+    <string name="session_live_failed">The live screen stopped</string>
+    <string name="session_live_close">Close the live screen</string>
+</resources>

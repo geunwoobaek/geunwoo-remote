@@ -1,0 +1,8 @@
+<resources>
+    <string name="session_live">Экран в реальном времени</string>
+    <string name="session_live_connecting">Подключение к компьютеру…</string>
+    <string name="session_live_direct">В эфире · напрямую, с шифрованием</string>
+    <string name="session_live_relay">В эфире · через сервер, примерно кадр в секунду</string>
+    <string name="session_live_failed">Трансляция экрана остановлена</string>
+    <string name="session_live_close">Закрыть трансляцию экрана</string>
+</resources>

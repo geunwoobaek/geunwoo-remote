@@ -1,0 +1,8 @@
+<resources>
+    <string name="session_live">Pantalla en directe</string>
+    <string name="session_live_connecting">S\'està connectant amb l\'ordinador…</string>
+    <string name="session_live_direct">En directe · connexió directa, xifrada</string>
+    <string name="session_live_relay">En directe · a través del servidor, una imatge per segon aprox.</string>
+    <string name="session_live_failed">La pantalla en directe s\'ha aturat</string>
+    <string name="session_live_close">Tanca la pantalla en directe</string>
+</resources>

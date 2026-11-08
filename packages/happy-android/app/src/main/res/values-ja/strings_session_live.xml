@@ -1,0 +1,8 @@
+<resources>
+    <string name="session_live">ライブ画面</string>
+    <string name="session_live_connecting">コンピュータに接続しています…</string>
+    <string name="session_live_direct">ライブ · 直接接続（暗号化）</string>
+    <string name="session_live_relay">ライブ · サーバー経由、約1秒に1枚</string>
+    <string name="session_live_failed">ライブ画面が止まりました</string>
+    <string name="session_live_close">ライブ画面を閉じる</string>
+</resources>

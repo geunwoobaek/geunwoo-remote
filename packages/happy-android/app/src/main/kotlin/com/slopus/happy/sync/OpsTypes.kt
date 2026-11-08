@@ -190,6 +190,23 @@ data class ReadFileChunkResult(
     val error: String? = null,
 )
 
+/** happy-cli `screenStreamStart`: the computer's WebRTC answer to a live-screen offer, and the stream's id. */
+@Serializable
+data class ScreenStreamResult(
+    val success: Boolean = false,
+    val id: String? = null,
+    val sdp: String? = null,
+    val error: String? = null,
+)
+
+/** happy-cli `screenFrame`: one JPEG of the screen (base64), the fallback when no direct connection forms. */
+@Serializable
+data class ScreenFrameResult(
+    val success: Boolean = false,
+    val content: String? = null,
+    val error: String? = null,
+)
+
 /** happy-cli `captureScreen` / `captureStatus`: where the capture is, and whether a recording is written yet. */
 @Serializable
 data class CaptureScreenResult(

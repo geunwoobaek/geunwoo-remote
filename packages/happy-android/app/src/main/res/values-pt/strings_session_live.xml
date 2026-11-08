@@ -1,0 +1,8 @@
+<resources>
+    <string name="session_live">Ecrã em direto</string>
+    <string name="session_live_connecting">A ligar ao computador…</string>
+    <string name="session_live_direct">Em direto · ligação direta, cifrada</string>
+    <string name="session_live_relay">Em direto · através do servidor, cerca de uma imagem por segundo</string>
+    <string name="session_live_failed">O ecrã em direto parou</string>
+    <string name="session_live_close">Fechar o ecrã em direto</string>
+</resources>

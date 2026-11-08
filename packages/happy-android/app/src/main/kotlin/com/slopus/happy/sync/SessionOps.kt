@@ -216,6 +216,30 @@ class SessionOps internal constructor(
             }))
         }
 
+    /** happy-cli `screenStreamStart`: answers a receive-only WebRTC [sdp] offer and starts sending the screen. */
+    suspend fun screenStreamStart(sessionId: String, sdp: String, maxWidth: Int, fps: Int): ScreenStreamResult =
+        attempt({ ScreenStreamResult(false, error = it ?: "Unknown error") }) {
+            decode(ScreenStreamResult.serializer(), rpc.sessionRpc(sessionId, "screenStreamStart", buildJsonObject {
+                put("sdp", sdp)
+                put("maxWidth", maxWidth)
+                put("fps", fps)
+            }))
+        }
+
+    /** happy-cli `screenStreamStop`: ends the live screen [id]. */
+    suspend fun screenStreamStop(sessionId: String, id: String?) {
+        attempt({ Unit }) {
+            rpc.sessionRpc(sessionId, "screenStreamStop", buildJsonObject { id?.let { put("id", it) } })
+            Unit
+        }
+    }
+
+    /** happy-cli `screenFrame`: one JPEG of the screen, at most [maxWidth] wide. */
+    suspend fun screenFrame(sessionId: String, maxWidth: Int): ScreenFrameResult =
+        attempt({ ScreenFrameResult(false, error = it ?: "Unknown error") }) {
+            decode(ScreenFrameResult.serializer(), rpc.sessionRpc(sessionId, "screenFrame", buildJsonObject { put("maxWidth", maxWidth) }))
+        }
+
     /** happy-cli `captureStatus`: whether the recording at [path] is written. */
     suspend fun captureStatus(sessionId: String, path: String): CaptureScreenResult =
         attempt({ CaptureScreenResult(false, error = it ?: "Unknown error") }) {

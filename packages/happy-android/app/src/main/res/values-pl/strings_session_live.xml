@@ -1,0 +1,8 @@
+<resources>
+    <string name="session_live">Ekran na żywo</string>
+    <string name="session_live_connecting">Łączenie z komputerem…</string>
+    <string name="session_live_direct">Na żywo · bezpośrednio, szyfrowane</string>
+    <string name="session_live_relay">Na żywo · przez serwer, około klatki na sekundę</string>
+    <string name="session_live_failed">Ekran na żywo zatrzymany</string>
+    <string name="session_live_close">Zamknij ekran na żywo</string>
+</resources>

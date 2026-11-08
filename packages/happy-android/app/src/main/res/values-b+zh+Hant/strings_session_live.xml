@@ -1,0 +1,8 @@
+<resources>
+    <string name="session_live">即時螢幕</string>
+    <string name="session_live_connecting">正在連線到電腦…</string>
+    <string name="session_live_direct">即時 · 直接連線，已加密</string>
+    <string name="session_live_relay">即時 · 經伺服器轉送，約每秒一張</string>
+    <string name="session_live_failed">即時螢幕已停止</string>
+    <string name="session_live_close">關閉即時螢幕</string>
+</resources>

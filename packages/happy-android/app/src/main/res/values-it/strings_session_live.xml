@@ -1,0 +1,8 @@
+<resources>
+    <string name="session_live">Schermo dal vivo</string>
+    <string name="session_live_connecting">Connessione al computer…</string>
+    <string name="session_live_direct">Dal vivo · diretto, cifrato</string>
+    <string name="session_live_relay">Dal vivo · tramite il server, circa un\'immagine al secondo</string>
+    <string name="session_live_failed">Lo schermo dal vivo si è fermato</string>
+    <string name="session_live_close">Chiudi lo schermo dal vivo</string>
+</resources>

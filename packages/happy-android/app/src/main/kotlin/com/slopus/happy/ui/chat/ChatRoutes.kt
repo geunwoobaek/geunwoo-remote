@@ -68,7 +68,9 @@ import com.slopus.happy.ui.components.AlertButton
 import com.slopus.happy.ui.components.HappyAlert
 import com.slopus.happy.ui.files.MessageDetailRoute
 import com.slopus.happy.sync.AccountSync
+import com.slopus.happy.ui.session.LiveScreenDialog
 import com.slopus.happy.ui.session.ScreenCaptureSheet
+import com.slopus.happy.ui.session.SyncLiveScreenOps
 import com.slopus.happy.ui.session.SyncScreenCaptureOps
 import com.slopus.happy.ui.files.SessionFileRoute
 import com.slopus.happy.ui.files.SyncSessionFileOps
@@ -225,6 +227,7 @@ private fun ChatRoute(
 
     val latestCompose by rememberUpdatedState(onCompose)
     var capturing by remember { mutableStateOf(false) }
+    var watchingLive by remember { mutableStateOf(false) }
     val screenActions = remember(sessionId, actions, feed, draft, resources, route, compose) {
         ChatScreenActions(
             onBack = onBack,
@@ -329,6 +332,9 @@ private fun ChatRoute(
         LocalSessionMedia provides rememberSessionMedia(account, sessionId, state.session?.metadata?.path, onOpenMedia),
     ) {
         val captureAccount = account
+        if (watchingLive && captureAccount != null) {
+            LiveScreenDialog(remember(captureAccount) { SyncLiveScreenOps(captureAccount) }, sessionId, onDismiss = { watchingLive = false })
+        }
         if (capturing && captureAccount != null) {
             val askText = stringResource(R.string.session_capture_ask_message)
             ScreenCaptureSheet(
@@ -337,6 +343,7 @@ private fun ChatRoute(
                 onOpen = { path -> onOpenMedia(sessionId, path) },
                 onAsk = { path -> scope.launch { runCatching { actions.send(sessionId, askText.format(path)) } } },
                 onDismiss = { capturing = false },
+                onLive = { watchingLive = true },
             )
         }
         // The account's link, as home reads it: its socket, its catch-up and the network (iOS's LegacyLink).

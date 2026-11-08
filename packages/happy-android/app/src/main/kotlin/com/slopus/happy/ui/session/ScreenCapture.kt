@@ -106,6 +106,7 @@ object ScreenCapture {
 object ScreenCaptureTags {
     const val SHEET = "screenCapture.sheet"
     const val SCREENSHOT = "screenCapture.screenshot"
+    const val LIVE = "screenCapture.live"
     fun record(seconds: Int) = "screenCapture.record.$seconds"
     const val WORKING = "screenCapture.working"
     const val FAILED = "screenCapture.failed"
@@ -134,6 +135,8 @@ fun ScreenCaptureSheet(
     onOpen: (String) -> Unit,
     onAsk: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** The live screen ([LiveScreenDialog]); null hides its row. */
+    onLive: (() -> Unit)? = null,
 ) {
     val colors = HappyTheme.colors
     val scope = rememberCoroutineScope()
@@ -172,6 +175,12 @@ fun ScreenCaptureSheet(
                             color = colors.textDestructive,
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp).testTag(ScreenCaptureTags.FAILED),
                         )
+                    }
+                    onLive?.let { live ->
+                        CaptureRow(Ionicon.DesktopOutline, stringResource(R.string.session_live), ScreenCaptureTags.LIVE) {
+                            live()
+                            dismiss()
+                        }
                     }
                     CaptureRow(Ionicon.ImageOutline, stringResource(R.string.session_capture_screenshot), ScreenCaptureTags.SCREENSHOT) { start(false, 0) }
                     for (seconds in ScreenCapture.RECORD_SECONDS) {

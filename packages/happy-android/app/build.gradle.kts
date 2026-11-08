@@ -478,6 +478,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(project(":elevenlabs"))
+    // The live screen's receive-only WebRTC (livekit.org.webrtc): the same build elevenlabs already ships.
+    implementation(libs.livekit)
 
     // QR codes (AGENTS.md "QR codes"): our own CameraX scanner reads them with
     // ZXing's decoder, so no Play services; ZXing's encoder draws them.

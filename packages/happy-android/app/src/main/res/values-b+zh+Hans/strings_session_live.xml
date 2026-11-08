@@ -1,0 +1,8 @@
+<resources>
+    <string name="session_live">实时屏幕</string>
+    <string name="session_live_connecting">正在连接电脑…</string>
+    <string name="session_live_direct">实时 · 直连，已加密</string>
+    <string name="session_live_relay">实时 · 经服务器中转，约每秒一张</string>
+    <string name="session_live_failed">实时屏幕已停止</string>
+    <string name="session_live_close">关闭实时屏幕</string>
+</resources>
