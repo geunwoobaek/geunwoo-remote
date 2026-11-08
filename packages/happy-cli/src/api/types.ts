@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { Update, UpdateMachineBody } from '@slopus/happy-wire';
 import { UsageSchema } from '@/claude/types'
 import type { SandboxConfig } from '@/persistence'
+import type { RemoteTask, RemoteTaskActivity } from '@/claude/utils/taskTracker'
 
 export {
   SessionMessageContentSchema,
@@ -344,6 +345,10 @@ export type Metadata = {
    * inside the parent session's sidebar panel.
    */
   isSideChat?: boolean
+  /** Background tasks (workflows, subagents, shells) for the app's task panel. Fork-only. */
+  remoteTasks?: RemoteTask[]
+  /** Running task counts; the app requires all four groups when present. */
+  activity?: RemoteTaskActivity
 };
 
 export type UsageLimitWindowStatus = 'allowed' | 'allowed_warning' | 'rejected'

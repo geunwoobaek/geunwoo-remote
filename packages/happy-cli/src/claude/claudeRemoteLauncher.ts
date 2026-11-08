@@ -18,6 +18,7 @@ import { OutgoingMessageQueue } from "./utils/OutgoingMessageQueue";
 import { getToolName } from "./utils/getToolName";
 import { getAskUserQuestionToolCallIds } from "./utils/questionNotification";
 import { launchFailureMessage } from "./utils/launchFailureMessage";
+import { createTaskPublisher, formatTaskCard } from "./utils/taskPublisher";
 import { cleanupStdinAfterInk } from "@/utils/terminalStdinCleanup";
 import type { MessageParam, ContentBlockParam } from '@anthropic-ai/sdk/resources';
 
@@ -133,6 +134,12 @@ export async function claudeRemoteLauncher(session: Session): Promise<'switch' |
     }, permissionHandler.getResponseLookup());
 
 
+    // Background tasks: panel snapshot in metadata, a chat card when one finishes
+    const taskPublisher = createTaskPublisher({
+        publish: (patch) => session.client.updateMetadata((metadata) => ({ ...metadata, ...patch })),
+        onFinished: (task) => session.client.sendSessionEvent({ type: 'message', message: formatTaskCard(task) }),
+    });
+
     // Handle messages
     let ongoingToolCalls = new Map<string, { parentToolCallId: string | null }>();
     let notifiedQuestionToolCalls = new Set<string>();
@@ -141,6 +148,8 @@ export async function claudeRemoteLauncher(session: Session): Promise<'switch' |
 
         // Write to message log
         formatClaudeMessageForInk(message, messageBuffer);
+
+        taskPublisher.onMessage(message);
 
         // Track active tool calls
         if (message.type === 'assistant') {
@@ -493,6 +502,7 @@ export async function claudeRemoteLauncher(session: Session): Promise<'switch' |
                     }
                 }
                 ongoingToolCalls.clear();
+                taskPublisher.stopAll();
 
                 // Flush any remaining messages in the queue
                 logger.debug('[remote]: flushing message queue');
