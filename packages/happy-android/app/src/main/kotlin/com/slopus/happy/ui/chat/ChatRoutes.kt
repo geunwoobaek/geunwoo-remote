@@ -67,6 +67,11 @@ import com.slopus.happy.ui.session.rememberSessionScreenSlots
 import com.slopus.happy.ui.components.AlertButton
 import com.slopus.happy.ui.components.HappyAlert
 import com.slopus.happy.ui.files.MessageDetailRoute
+import com.slopus.happy.sync.AccountSync
+import com.slopus.happy.ui.session.ScreenCaptureSheet
+import com.slopus.happy.ui.session.SyncScreenCaptureOps
+import com.slopus.happy.ui.files.SessionFileRoute
+import com.slopus.happy.ui.files.SyncSessionFileOps
 import com.slopus.happy.ui.files.toolPressRoute
 import com.slopus.happy.ui.home.SessionViewingEffect
 import com.slopus.happy.ui.home.resumeAvailability
@@ -108,6 +113,7 @@ fun NavGraphBuilder.chatRoutes(
             // A resume that comes back as another session, or another tab of the checkout, replaces this chat in place.
             onOpenSession = { shown, id -> if (id != shown) nav.navigate(SessionRoute(id)) { popUpTo<SessionRoute> { inclusive = true } } },
             onComposeStarted = { id -> entry.savedStateHandle[COMPOSE_STARTED] = id },
+            onOpenMedia = { sessionId, path -> nav.navigate(SessionFileRoute(sessionId, path)) },
         )
     }
 }
@@ -125,6 +131,8 @@ private fun ChatRoute(
     onOpenSession: (shown: String, sessionId: String) -> Unit,
     /** A compose chat's first send started this session. */
     onComposeStarted: (sessionId: String) -> Unit = {},
+    /** A picture, recording or page under a message was tapped. */
+    onOpenMedia: (sessionId: String, path: String) -> Unit = { _, _ -> },
 ) {
     // A chat opened from a tab strip's `+` stands on its stand-in's id until the machine names it (Home's pending chats);
     // one compose opened, on its own id until its first send has started the session.
@@ -216,12 +224,14 @@ private fun ChatRoute(
     }
 
     val latestCompose by rememberUpdatedState(onCompose)
+    var capturing by remember { mutableStateOf(false) }
     val screenActions = remember(sessionId, actions, feed, draft, resources, route, compose) {
         ChatScreenActions(
             onBack = onBack,
             onInfo = { onInfo(sessionId) },
             // An empty chat already here stays.
             onCompose = { if (compose?.composing != true) latestCompose() },
+            onScreen = { if (latestState.session != null) capturing = true },
             onToolPress = { message -> onToolPress(sessionId, message) },
             onToolFilePress = { message, file -> onToolFilePress(sessionId, message, file) },
             onDraftChange = draft::set,
@@ -316,7 +326,19 @@ private fun ChatRoute(
         LocalComposerImages provides images,
         LocalSuggestionSource provides rememberSessionSuggestions(graph, sessionId, state.session?.metadata),
         LocalUsageDisplay provides UsageDisplay(settings.alwaysShowContextSize, settings.usageLimitShowRemaining),
+        LocalSessionMedia provides rememberSessionMedia(account, sessionId, state.session?.metadata?.path, onOpenMedia),
     ) {
+        val captureAccount = account
+        if (capturing && captureAccount != null) {
+            val askText = stringResource(R.string.session_capture_ask_message)
+            ScreenCaptureSheet(
+                ops = remember(captureAccount) { SyncScreenCaptureOps(captureAccount) },
+                sessionId = sessionId,
+                onOpen = { path -> onOpenMedia(sessionId, path) },
+                onAsk = { path -> scope.launch { runCatching { actions.send(sessionId, askText.format(path)) } } },
+                onDismiss = { capturing = false },
+            )
+        }
         // The account's link, as home reads it: its socket, its catch-up and the network (iOS's LegacyLink).
         val socket by graph.connectionStatus.collectAsStateWithLifecycle()
         val catchingUp by graph.isSyncing.collectAsStateWithLifecycle()
@@ -378,5 +400,15 @@ private fun rememberMachine(graph: AppGraph, machineId: String?): State<Machine?
     val versions by graph.store.versions.collectAsStateWithLifecycle()
     return produceState<Machine?>(null, machineId, versions.machines, versions.machineActivity) {
         value = machineId?.let { id -> withContext(Dispatchers.IO) { graph.store.machine(id)?.let(Machine::from) } }
+    }
+}
+
+/** What the chat's media strips read from: this session's files on its computer, cached on the phone. */
+@Composable
+private fun rememberSessionMedia(account: AccountSync?, sessionId: String, sessionPath: String?, open: (String, String) -> Unit): SessionMediaHost? {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val latestOpen by rememberUpdatedState(open)
+    return remember(account, sessionId, sessionPath, context) {
+        account?.let { SessionMediaHost(sessionId, sessionPath, SyncSessionFileOps(it), context.cacheDir) { path -> latestOpen(sessionId, path) } }
     }
 }

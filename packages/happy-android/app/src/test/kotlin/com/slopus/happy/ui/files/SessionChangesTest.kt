@@ -238,9 +238,11 @@ class SessionChangesTest {
         // With nothing kept, it is the failure.
         assertEquals(FileLoad.Failed(Words.Said("gone")), ops.fileLoads(cache, "s", "/repo/b.kt", "/repo", "b.kt").toList().last())
         assertEquals("c\n", cache.file("s", "/repo/a.kt")?.content)
-        // Binary by extension caches as binary; a deleted session's files go.
-        assertEquals(listOf(FileLoad.Binary), ops.fileLoads(cache, "s", "/repo/logo.png", "/repo", "logo.png").toList())
-        assertTrue(cache.file("s", "/repo/logo.png")!!.isBinary)
+        // Binary by extension caches as binary; a picture is read to be shown instead (SessionMedia), so its failure shows.
+        assertEquals(listOf(FileLoad.Binary), ops.fileLoads(cache, "s", "/repo/spec.pdf", "/repo", "spec.pdf").toList())
+        assertTrue(cache.file("s", "/repo/spec.pdf")!!.isBinary)
+        assertEquals(listOf(FileLoad.Failed(Words.Said("gone"))), ops.fileLoads(cache, "s", "/repo/logo.png", "/repo", "logo.png").toList())
+        // A deleted session's files go.
         cache.forgetSession("s")
         assertNull(cache.file("s", "/repo/a.kt"))
     }

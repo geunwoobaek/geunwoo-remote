@@ -1,0 +1,11 @@
+<resources>
+    <string name="session_media_too_large">文件太大，无法在手机上显示。</string>
+    <string name="session_media_open">打开 %1$s</string>
+    <string name="session_capture">电脑屏幕</string>
+    <string name="session_capture_screenshot">截图</string>
+    <string name="session_capture_record">录制 %1$d 秒</string>
+    <string name="session_capture_recording">正在录制屏幕…</string>
+    <string name="session_capture_failed">无法截取屏幕。请在 Mac 上为运行 happy 的应用开启屏幕录制权限（系统设置 → 隐私与安全性）。</string>
+    <string name="session_capture_ask">问问 Claude</string>
+    <string name="session_capture_ask_message">看看我屏幕的这段截取：%1$s</string>
+</resources>

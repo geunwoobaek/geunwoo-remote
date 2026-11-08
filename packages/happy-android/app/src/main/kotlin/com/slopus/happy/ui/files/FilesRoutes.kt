@@ -91,11 +91,17 @@ fun NavHostController.openWorkspaceFile(connectionId: String, path: String, work
 
 /**
  * ToolView.tsx `handlePress`: Edit, MultiEdit and Write open the file they
- * changed; every other tool opens its message.
+ * changed, and Read a picture, recording or page it looked at; every other
+ * tool opens its message.
  */
 fun toolPressRoute(sessionId: String, message: ChatMessage.ToolCallMessage): Any {
     val tool = message.tool
-    val path = if (tool.name in setOf("Edit", "MultiEdit", "Write")) (tool.input as? kotlinx.serialization.json.JsonObject)?.get("file_path").str else null
+    val named = (tool.input as? kotlinx.serialization.json.JsonObject)?.get("file_path").str
+    val path = when (tool.name) {
+        "Edit", "MultiEdit", "Write" -> named
+        "Read" -> named?.takeIf { SessionMedia.kindOf(it) != null }
+        else -> null
+    }
     return if (path != null) SessionFileRoute(sessionId, path) else MessageDetailRoute(sessionId, message.id)
 }
 
@@ -190,12 +196,12 @@ private fun FileRouteScreen(graph: AppGraph, route: SessionFileRoute, onBack: ()
     val filePath = resolved?.absolutePath ?: route.path
     val gitDiffPath = resolved?.takeIf { it.withinSessionRoot }?.relativePath
     val sync = account
+    val context = LocalContext.current
     val load by produceState<FileLoad>(FileLoad.Loading, sync, loaded, filePath, gitDiffPath) {
         if (sync == null || !loaded) return@produceState
-        SyncSessionFileOps(sync).fileLoads(sync.fileCache, route.id, filePath, sessionPath, gitDiffPath).collect { value = it }
+        SyncSessionFileOps(sync).fileLoads(sync.fileCache, route.id, filePath, sessionPath, gitDiffPath, context.cacheDir).collect { value = it }
     }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val ops = remember(sync) { sync?.let(::SyncSessionFileOps) }
     FileScreen(
         load, filePath, onBack, route.line, route.column,
@@ -217,11 +223,9 @@ private fun FileRouteScreen(graph: AppGraph, route: SessionFileRoute, onBack: ()
     )
 }
 
-/** [path]'s bytes from the computer, or null when it can't be read. */
-private suspend fun SessionFileOps.readBytes(sessionId: String, path: String): ByteArray? {
-    val read = runCatching { readFile(sessionId, path) }.getOrNull()?.takeIf { it.success } ?: return null
-    return runCatching { java.util.Base64.getMimeDecoder().decode(read.content.orEmpty()) }.getOrNull()
-}
+/** [path]'s bytes from the computer a slice at a time ([readMediaBytes]), or null when it can't be read. */
+private suspend fun SessionFileOps.readBytes(sessionId: String, path: String): ByteArray? =
+    runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { readMediaBytes(sessionId, path) } }.getOrNull()
 
 /** The message and the nested sub-agent messages under it, by id. */
 private fun findMessage(rows: List<ChatMessage>, id: String): ChatMessage? {

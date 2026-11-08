@@ -1,0 +1,11 @@
+<resources>
+    <string name="session_media_too_large">Слишком большой файл для телефона.</string>
+    <string name="session_media_open">Открыть %1$s</string>
+    <string name="session_capture">Экран компьютера</string>
+    <string name="session_capture_screenshot">Снимок экрана</string>
+    <string name="session_capture_record">Запись %1$d с</string>
+    <string name="session_capture_recording">Идёт запись экрана…</string>
+    <string name="session_capture_failed">Не удалось снять экран. На Mac разрешите запись экрана приложению, в котором запущен happy (Системные настройки → Конфиденциальность и безопасность).</string>
+    <string name="session_capture_ask">Спросить Claude</string>
+    <string name="session_capture_ask_message">Посмотри на этот снимок моего экрана: %1$s</string>
+</resources>

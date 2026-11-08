@@ -92,6 +92,7 @@ object FileTags {
     const val RENDERED_TAB = "file.renderedTab"
     const val RENDERED = "file.rendered"
     const val PICTURE = "file.picture"
+    const val VIDEO = "file.video"
     const val SAVE = "file.save"
     const val RETRY = "file.retry"
 }
@@ -106,6 +107,12 @@ sealed interface FileLoad {
 
     /** A picture's bytes and its size in pixels (desktop's FilePreview shows it rather than calling it binary). */
     class Picture(val bytes: ByteArray, val width: Int, val height: Int) : FileLoad
+
+    /** A recording on its way from the computer: [received] of [total] bytes (0 while unknown). */
+    data class Receiving(val received: Long, val total: Long) : FileLoad
+
+    /** A recording read whole into the cache ([SessionMedia]), to play. */
+    data class Video(val file: java.io.File) : FileLoad
 }
 
 /** desktop FilePreview's `markdown` kind: these render as a document, with the source a tab away. */
@@ -177,6 +184,12 @@ fun isBinaryPath(path: String): Boolean = '.' in path && path.substringAfterLast
  * characters, are binary.
  */
 suspend fun SessionFileOps.loadFile(sessionId: String, filePath: String, sessionPath: String?, gitDiffPath: String?): FileLoad {
+    // A picture comes a slice at a time (a Retina screenshot outgrows one relay message), from anywhere on the computer.
+    if (SessionMedia.kindOf(filePath) == MediaKind.Picture) {
+        var failure: MediaRead? = null
+        val bytes = withContext(Dispatchers.IO) { readMediaBytes(sessionId, filePath) { failure = it } }
+        return bytes?.let { withContext(Dispatchers.Default) { fileLoadOf(filePath, it) } } ?: mediaFailure(failure)
+    }
     if (isBinaryPath(filePath)) return FileLoad.Binary
     return try {
         var diff: String? = null
@@ -184,7 +197,13 @@ suspend fun SessionFileOps.loadFile(sessionId: String, filePath: String, session
             val response = runCatching { bash(sessionId, "git diff --no-ext-diff -- \"$gitDiffPath\"", sessionPath, 5_000) }.getOrNull()
             if (response != null && response.success && response.stdout.isNotBlank()) diff = response.stdout
         }
-        val response = readFile(sessionId, filePath)
+        var response = readFile(sessionId, filePath)
+        // A page outside the session's folder (Claude's scratch HTML in /tmp) only the chunked read reaches.
+        if (!response.success && SessionMedia.kindOf(filePath) == MediaKind.Page) {
+            withContext(Dispatchers.IO) { readMediaBytes(sessionId, filePath) }?.let { bytes ->
+                response = com.slopus.happy.sync.ReadFileResult(true, java.util.Base64.getEncoder().encodeToString(bytes))
+            }
+        }
         val content = response.content
         if (!response.success || content.isNullOrEmpty()) return FileLoad.Failed(Words.said(response.error, R.string.files_failed_to_read))
         val bytes = try {
@@ -212,7 +231,35 @@ suspend fun SessionFileOps.loadFile(sessionId: String, filePath: String, session
  * leaves that copy up under its alert (iOS b6982bd92, offline), else it
  * replaces it.
  */
-fun SessionFileOps.fileLoads(cache: SessionFileCache?, sessionId: String, filePath: String, sessionPath: String?, gitDiffPath: String?): Flow<FileLoad> = flow {
+fun SessionFileOps.fileLoads(
+    cache: SessionFileCache?,
+    sessionId: String,
+    filePath: String,
+    sessionPath: String?,
+    gitDiffPath: String?,
+    /** Where a recording is read into to play; without it a recording is binary. */
+    cacheDir: java.io.File? = null,
+): Flow<FileLoad> =
+    if (cacheDir != null && SessionMedia.kindOf(filePath) == MediaKind.Video) videoLoads(sessionId, filePath, cacheDir) else textLoads(cache, sessionId, filePath, sessionPath, gitDiffPath)
+
+/** Why a picture or recording didn't come. */
+private fun mediaFailure(failure: MediaRead?): FileLoad = when (failure) {
+    MediaRead.TooLarge -> FileLoad.Failed(Words.ours(R.string.session_media_too_large))
+    is MediaRead.Failed -> FileLoad.Failed(Words.said(failure.reason, R.string.files_failed_to_read))
+    else -> FileLoad.Failed(Words.ours(R.string.files_failed_to_read))
+}
+
+/** A recording read into the cache, with how far it has come, then the file to play. */
+private fun SessionFileOps.videoLoads(sessionId: String, filePath: String, cacheDir: java.io.File): Flow<FileLoad> = kotlinx.coroutines.flow.channelFlow {
+    send(FileLoad.Receiving(0, 0))
+    val target = SessionMedia.cacheFile(cacheDir, sessionId, filePath)
+    val result = withContext(Dispatchers.IO) {
+        readMediaToFile(sessionId, filePath, target) { received, total -> trySend(FileLoad.Receiving(received, total)) }
+    }
+    send(if (result == MediaRead.Done) FileLoad.Video(target) else mediaFailure(result))
+}
+
+private fun SessionFileOps.textLoads(cache: SessionFileCache?, sessionId: String, filePath: String, sessionPath: String?, gitDiffPath: String?): Flow<FileLoad> = flow {
     val cached = cache?.file(sessionId, filePath) ?: cache?.snapshot(sessionId, filePath)
     if (cached != null) emit(if (cached.isBinary) FileLoad.Binary else FileLoad.Loaded(cached.content.orEmpty(), cached.diff))
     when (val fresh = loadFile(sessionId, filePath, sessionPath, gitDiffPath)) {
@@ -311,6 +358,12 @@ fun FileScreen(
             FileLoad.Binary -> Centered(stringResource(R.string.files_binary_file), colors.textSecondary, stringResource(R.string.files_cannot_display_binary), fileName)
             is FileLoad.Loaded -> LoadedFile(load, filePath, line, column, HtmlPage(readAsset, assetRoot ?: filePath.substringBeforeLast('/', ""), onMemo))
             is FileLoad.Picture -> PictureFile(load, filePath)
+            is FileLoad.Receiving -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(Modifier.size(20.dp).testTag(FileTags.SPINNER), color = colors.textSecondary, strokeWidth = 2.dp)
+                val said = if (load.total > 0) com.slopus.happy.media.MediaSizeText.progress(load.received, load.total) else stringResource(R.string.files_loading_file, fileName)
+                Text(said, style = happyTextStyle(fontSize = 16), color = colors.textSecondary, modifier = Modifier.padding(top = 16.dp))
+            }
+            is FileLoad.Video -> VideoFile(load.file, fileName, Modifier.fillMaxSize())
         }
     }
 }

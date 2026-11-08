@@ -15,6 +15,7 @@ import com.slopus.happy.sync.BashResult
 import com.slopus.happy.sync.GitFile
 import com.slopus.happy.sync.GitFileContent
 import com.slopus.happy.sync.GitState
+import com.slopus.happy.sync.ReadFileChunkResult
 import com.slopus.happy.sync.ReadFileResult
 import com.slopus.happy.sync.SessionFileCache
 import com.slopus.happy.ui.diff.DiffFileItem
@@ -37,6 +38,10 @@ interface SessionFileOps {
     suspend fun readFile(sessionId: String, path: String): ReadFileResult
     suspend fun gitState(sessionId: String): GitState
     suspend fun readGitFile(sessionId: String, base: String, file: GitFile): GitFileContent
+
+    /** A slice of a file ([SessionMedia]); where the computer can't, "Method not found" as a CLI without it says. */
+    suspend fun readFileChunk(sessionId: String, path: String, offset: Long, length: Int): ReadFileChunkResult =
+        ReadFileChunkResult(false, error = SessionMedia.METHOD_NOT_FOUND)
 }
 
 /** Sync's session ops and Happy Agent git. */
@@ -45,6 +50,7 @@ class SyncSessionFileOps(private val account: AccountSync) : SessionFileOps {
     override suspend fun readFile(sessionId: String, path: String) = account.sessionOps.readFile(sessionId, path)
     override suspend fun gitState(sessionId: String) = account.git.state(sessionId)
     override suspend fun readGitFile(sessionId: String, base: String, file: GitFile) = account.git.readFile(sessionId, base, file)
+    override suspend fun readFileChunk(sessionId: String, path: String, offset: Long, length: Int) = account.sessionOps.readFileChunk(sessionId, path, offset, length)
 }
 
 /**

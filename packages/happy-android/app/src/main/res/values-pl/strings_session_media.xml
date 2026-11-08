@@ -1,0 +1,11 @@
+<resources>
+    <string name="session_media_too_large">Za duży, by pokazać go na telefonie.</string>
+    <string name="session_media_open">Otwórz %1$s</string>
+    <string name="session_capture">Ekran komputera</string>
+    <string name="session_capture_screenshot">Zrzut ekranu</string>
+    <string name="session_capture_record">Nagraj %1$d s</string>
+    <string name="session_capture_recording">Nagrywanie ekranu…</string>
+    <string name="session_capture_failed">Nie udało się przechwycić ekranu. Na Macu zezwól na nagrywanie ekranu aplikacji, w której działa happy (Ustawienia systemowe → Prywatność i ochrona).</string>
+    <string name="session_capture_ask">Zapytaj Claude</string>
+    <string name="session_capture_ask_message">Spójrz na to nagranie mojego ekranu: %1$s</string>
+</resources>

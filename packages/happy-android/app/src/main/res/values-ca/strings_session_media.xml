@@ -1,0 +1,11 @@
+<resources>
+    <string name="session_media_too_large">Massa gran per mostrar-lo al telèfon.</string>
+    <string name="session_media_open">Obre %1$s</string>
+    <string name="session_capture">Pantalla de l’ordinador</string>
+    <string name="session_capture_screenshot">Captura de pantalla</string>
+    <string name="session_capture_record">Grava %1$d s</string>
+    <string name="session_capture_recording">S’està gravant la pantalla…</string>
+    <string name="session_capture_failed">No s’ha pogut capturar la pantalla. Al Mac, permet la gravació de pantalla a l’app que executa happy (Configuració del Sistema → Privacitat i seguretat).</string>
+    <string name="session_capture_ask">Pregunta a Claude</string>
+    <string name="session_capture_ask_message">Mira aquesta captura de la meva pantalla: %1$s</string>
+</resources>

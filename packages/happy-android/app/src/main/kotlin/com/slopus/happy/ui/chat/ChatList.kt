@@ -283,6 +283,7 @@ fun ChatList(
     val latestItems by rememberUpdatedState(displayItems)
     LaunchedEffect(foreground) { if (!foreground) expansion = expansion.backgrounded(latestItems) }
     val listItems = remember(displayItems, observed) { chatListItems(displayItems, observed::isExpanded) }
+    val mediaPaths = remember(listItems) { chatMediaPaths(listItems) }
     val blocked = pager.blocked
     LaunchedEffect(nearOldest, hasMoreOlder, isLoadingOlder, blocked, rows) {
         if (nearOldest && hasMoreOlder && !isLoadingOlder && blocked == null) {
@@ -313,7 +314,15 @@ fun ChatList(
                         // Its words are on their way from the composer: it shows once they land.
                         val sent = (row as? ChatRow.User)?.takeIf { it.display is UserDisplay.Text }?.message?.text
                         val moves = if (flight != null && flight.claim(row.key, sent)) Modifier.flying(flight, row.key) else Modifier
-                        MessageView(row, bubble, callbacks, moves, reveal = textReveal)
+                        val media = mediaPaths[row.key]
+                        if (media == null) {
+                            MessageView(row, bubble, callbacks, moves, reveal = textReveal)
+                        } else {
+                            Column {
+                                MessageView(row, bubble, callbacks, moves, reveal = textReveal)
+                                MediaStrip(media)
+                            }
+                        }
                     }
                     // Toggled by the group, not the row: both headers of an open group drive one state.
                     is ChatListItem.WorkHeader -> AgentWorkGroupHeader(

@@ -108,6 +108,12 @@ internal fun ChatHeaderTitle(
  */
 @Composable
 internal fun ChatHeaderActions(actions: ChatScreenActions) {
+    actions.onScreen?.let { onScreen ->
+        val screen = stringResource(R.string.session_capture)
+        IconButton(onClick = onScreen, modifier = Modifier.testTag(ChatScreenTags.CAPTURE).size(48.dp).semantics { contentDescription = screen }) {
+            Icon(Ionicon.DesktopOutline, 22.dp, HappyTheme.colors.header.tint)
+        }
+    }
     val compose = stringResource(R.string.session_new_chat)
     IconButton(onClick = actions.onCompose, modifier = Modifier.testTag(ChatScreenTags.COMPOSE).size(48.dp).semantics { contentDescription = compose }) {
         Icon(Ionicon.CreateOutline, 24.dp, HappyTheme.colors.header.tint)

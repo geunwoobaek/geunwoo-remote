@@ -1,0 +1,11 @@
+<resources>
+    <string name="session_media_too_large">Too large to show on the phone.</string>
+    <string name="session_media_open">Open %1$s</string>
+    <string name="session_capture">Computer screen</string>
+    <string name="session_capture_screenshot">Screenshot</string>
+    <string name="session_capture_record">Record %1$d s</string>
+    <string name="session_capture_recording">Recording the screen…</string>
+    <string name="session_capture_failed">Couldn’t capture the screen. On the Mac, allow Screen Recording for the app running happy (System Settings → Privacy &amp; Security).</string>
+    <string name="session_capture_ask">Ask Claude about it</string>
+    <string name="session_capture_ask_message">Look at this capture of my screen: %1$s</string>
+</resources>

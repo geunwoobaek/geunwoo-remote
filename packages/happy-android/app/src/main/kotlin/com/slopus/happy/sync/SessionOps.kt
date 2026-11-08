@@ -196,6 +196,32 @@ class SessionOps internal constructor(
             decode(ReadFileResult.serializer(), rpc.sessionRpc(sessionId, "readFile", buildJsonObject { put("path", path) }))
         }
 
+    /** happy-cli `readFileChunk`: up to [length] bytes of [path] from [offset]; pictures, recordings and pages may lie outside the session. */
+    suspend fun readFileChunk(sessionId: String, path: String, offset: Long, length: Int): ReadFileChunkResult =
+        attempt({ ReadFileChunkResult(false, error = it ?: "Unknown error") }) {
+            if (!metadata(sessionId).rigCanReadFiles()) throw RpcException("File reading is not available for this session")
+            decode(ReadFileChunkResult.serializer(), rpc.sessionRpc(sessionId, "readFileChunk", buildJsonObject {
+                put("path", path)
+                put("offset", offset)
+                put("length", length)
+            }))
+        }
+
+    /** happy-cli `captureScreen`: a screenshot, or a recording of [seconds] that [captureStatus] follows. */
+    suspend fun captureScreen(sessionId: String, video: Boolean, seconds: Int): CaptureScreenResult =
+        attempt({ CaptureScreenResult(false, error = it ?: "Unknown error") }) {
+            decode(CaptureScreenResult.serializer(), rpc.sessionRpc(sessionId, "captureScreen", buildJsonObject {
+                put("kind", if (video) "video" else "image")
+                put("seconds", seconds)
+            }))
+        }
+
+    /** happy-cli `captureStatus`: whether the recording at [path] is written. */
+    suspend fun captureStatus(sessionId: String, path: String): CaptureScreenResult =
+        attempt({ CaptureScreenResult(false, error = it ?: "Unknown error") }) {
+            decode(CaptureScreenResult.serializer(), rpc.sessionRpc(sessionId, "captureStatus", buildJsonObject { put("path", path) }))
+        }
+
     /** ops.ts `sessionWriteFile`: [content] base64; [expectedHash] guards against overwriting someone else's edit. */
     suspend fun writeFile(sessionId: String, path: String, content: String, expectedHash: String?): WriteFileResult =
         attempt({ WriteFileResult(false, error = it ?: "Unknown error") }) {

@@ -180,6 +180,26 @@ data class BashResult(
     val error: String? = null,
 )
 
+/** happy-cli `readFileChunk`: a slice of a file, base64, with the whole file's size. A CLI without it answers "Method not found". */
+@Serializable
+data class ReadFileChunkResult(
+    val success: Boolean = false,
+    val content: String? = null,
+    val size: Long? = null,
+    val eof: Boolean = false,
+    val error: String? = null,
+)
+
+/** happy-cli `captureScreen` / `captureStatus`: where the capture is, and whether a recording is written yet. */
+@Serializable
+data class CaptureScreenResult(
+    val success: Boolean = false,
+    val path: String? = null,
+    val done: Boolean = false,
+    val size: Long? = null,
+    val error: String? = null,
+)
+
 @Serializable
 data class ReadFileResult(
     val success: Boolean,

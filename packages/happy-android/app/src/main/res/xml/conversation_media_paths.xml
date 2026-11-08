@@ -6,4 +6,6 @@
 -->
 <paths>
     <cache-path name="conversation-media" path="conversation-media/" />
+    <!-- A session's pictures and recordings, read from the computer (ui/files/SessionMedia.kt). -->
+    <cache-path name="session-media" path="session-media/" />
 </paths>

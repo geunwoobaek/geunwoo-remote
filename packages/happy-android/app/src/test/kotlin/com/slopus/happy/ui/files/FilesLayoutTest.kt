@@ -296,6 +296,9 @@ class FilesLayoutTest {
     fun toolPressesRoute() {
         assertEquals(SessionFileRoute("s", "/repo/a.kt"), toolPressRoute("s", tool("Edit", """{"file_path":"/repo/a.kt"}""")))
         assertEquals(MessageDetailRoute("s", "m1"), toolPressRoute("s", tool("Bash", """{"command":"ls"}""")))
+        // A Read of a picture, recording or page opens it to look at; of source, its details.
+        assertEquals(SessionFileRoute("s", "/tmp/shot.png"), toolPressRoute("s", tool("Read", """{"file_path":"/tmp/shot.png"}""")))
+        assertEquals(MessageDetailRoute("s", "m1"), toolPressRoute("s", tool("Read", """{"file_path":"/repo/a.kt"}""")))
     }
 
     @Suppress("unused")
