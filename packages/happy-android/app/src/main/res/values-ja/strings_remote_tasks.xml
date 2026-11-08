@@ -1,0 +1,17 @@
+<resources>
+    <string name="remote_tasks_title">バックグラウンドタスク</string>
+    <string name="remote_tasks_empty">実行中のタスクはありません</string>
+    <string name="remote_tasks_kind_workflow">ワークフロー</string>
+    <string name="remote_tasks_kind_agent">エージェント</string>
+    <string name="remote_tasks_kind_shell">シェル</string>
+    <string name="remote_tasks_kind_other">タスク</string>
+    <string name="remote_tasks_status_pending">待機中</string>
+    <string name="remote_tasks_status_running">実行中</string>
+    <string name="remote_tasks_status_paused">一時停止</string>
+    <string name="remote_tasks_status_completed">完了</string>
+    <string name="remote_tasks_status_failed">失敗</string>
+    <string name="remote_tasks_status_stopped">停止</string>
+    <string name="remote_tasks_tokens">%1$s トークン</string>
+    <plurals name="remote_tasks_running"><item quantity="other">%1$d 件のタスクを実行中</item></plurals>
+    <plurals name="remote_tasks_recent"><item quantity="other">最近のタスク %1$d 件</item></plurals>
+</resources>

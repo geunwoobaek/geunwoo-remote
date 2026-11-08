@@ -1,0 +1,17 @@
+<resources>
+    <string name="remote_tasks_title">Tasques en segon pla</string>
+    <string name="remote_tasks_empty">Ara no hi ha cap tasca</string>
+    <string name="remote_tasks_kind_workflow">Flux</string>
+    <string name="remote_tasks_kind_agent">Agent</string>
+    <string name="remote_tasks_kind_shell">Shell</string>
+    <string name="remote_tasks_kind_other">Tasca</string>
+    <string name="remote_tasks_status_pending">En espera</string>
+    <string name="remote_tasks_status_running">En curs</string>
+    <string name="remote_tasks_status_paused">En pausa</string>
+    <string name="remote_tasks_status_completed">Fet</string>
+    <string name="remote_tasks_status_failed">Error</string>
+    <string name="remote_tasks_status_stopped">Aturada</string>
+    <string name="remote_tasks_tokens">%1$s tokens</string>
+    <plurals name="remote_tasks_running"><item quantity="one">%1$d tasca en curs</item><item quantity="many">%1$d de tasques en curs</item><item quantity="other">%1$d tasques en curs</item></plurals>
+    <plurals name="remote_tasks_recent"><item quantity="one">%1$d tasca recent</item><item quantity="many">%1$d de tasques recents</item><item quantity="other">%1$d tasques recents</item></plurals>
+</resources>

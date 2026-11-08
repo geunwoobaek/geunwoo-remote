@@ -1,0 +1,17 @@
+<resources>
+    <string name="remote_tasks_title">背景工作</string>
+    <string name="remote_tasks_empty">目前沒有工作</string>
+    <string name="remote_tasks_kind_workflow">工作流程</string>
+    <string name="remote_tasks_kind_agent">代理</string>
+    <string name="remote_tasks_kind_shell">Shell</string>
+    <string name="remote_tasks_kind_other">工作</string>
+    <string name="remote_tasks_status_pending">等待中</string>
+    <string name="remote_tasks_status_running">執行中</string>
+    <string name="remote_tasks_status_paused">已暫停</string>
+    <string name="remote_tasks_status_completed">完成</string>
+    <string name="remote_tasks_status_failed">失敗</string>
+    <string name="remote_tasks_status_stopped">已停止</string>
+    <string name="remote_tasks_tokens">%1$s 個權杖</string>
+    <plurals name="remote_tasks_running"><item quantity="other">%1$d 個工作執行中</item></plurals>
+    <plurals name="remote_tasks_recent"><item quantity="other">最近 %1$d 個工作</item></plurals>
+</resources>

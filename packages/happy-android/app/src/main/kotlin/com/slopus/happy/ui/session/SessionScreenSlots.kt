@@ -34,6 +34,7 @@ import com.slopus.happy.model.isPendingChatId
 import com.slopus.happy.model.newSessionLikeSession
 import com.slopus.happy.model.pendingChatsBeside
 import com.slopus.happy.model.resolveWorktreeTabs
+import com.slopus.happy.model.remoteTasks
 import com.slopus.happy.model.rigActivityIndicators
 import com.slopus.happy.model.visibleAgentGoal
 import com.slopus.happy.ui.chat.ChatPendingSlot
@@ -268,7 +269,14 @@ fun rememberSessionScreenSlots(
         }
     }
     val indicators = metadata.rigActivityIndicators()
-    val activityBar: (@Composable () -> Unit)? = if (indicators.isEmpty()) null else ({ RigActivityBar(indicators) })
+    val remoteTasks = metadata.remoteTasks()
+    var showingTasks by remember { mutableStateOf(false) }
+    val activityBar: (@Composable () -> Unit)? = when {
+        remoteTasks.isNotEmpty() -> ({ RemoteTaskBar(remoteTasks, onOpen = { showingTasks = true }) })
+        indicators.isNotEmpty() -> ({ RigActivityBar(indicators) })
+        else -> null
+    }
+    if (showingTasks) RemoteTaskSheet(remoteTasks) { showingTasks = false }
 
     val pendingSlot = pending?.takeIf { session == null }?.let { chat ->
         val anchor by produceState<ChatSessionInfo?>(null, chat.anchorSessionId) {

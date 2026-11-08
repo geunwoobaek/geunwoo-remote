@@ -1,0 +1,17 @@
+<resources>
+    <string name="remote_tasks_title">Background tasks</string>
+    <string name="remote_tasks_empty">No tasks right now</string>
+    <string name="remote_tasks_kind_workflow">Workflow</string>
+    <string name="remote_tasks_kind_agent">Agent</string>
+    <string name="remote_tasks_kind_shell">Shell</string>
+    <string name="remote_tasks_kind_other">Task</string>
+    <string name="remote_tasks_status_pending">Waiting</string>
+    <string name="remote_tasks_status_running">Running</string>
+    <string name="remote_tasks_status_paused">Paused</string>
+    <string name="remote_tasks_status_completed">Done</string>
+    <string name="remote_tasks_status_failed">Failed</string>
+    <string name="remote_tasks_status_stopped">Stopped</string>
+    <string name="remote_tasks_tokens">%1$s tokens</string>
+    <plurals name="remote_tasks_running"><item quantity="one">%1$d task running</item><item quantity="other">%1$d tasks running</item></plurals>
+    <plurals name="remote_tasks_recent"><item quantity="one">%1$d recent task</item><item quantity="other">%1$d recent tasks</item></plurals>
+</resources>

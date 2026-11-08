@@ -1,0 +1,17 @@
+<resources>
+    <string name="remote_tasks_title">Tarefas em segundo plano</string>
+    <string name="remote_tasks_empty">Nenhuma tarefa agora</string>
+    <string name="remote_tasks_kind_workflow">Fluxo</string>
+    <string name="remote_tasks_kind_agent">Agente</string>
+    <string name="remote_tasks_kind_shell">Shell</string>
+    <string name="remote_tasks_kind_other">Tarefa</string>
+    <string name="remote_tasks_status_pending">Aguardando</string>
+    <string name="remote_tasks_status_running">Em execução</string>
+    <string name="remote_tasks_status_paused">Pausada</string>
+    <string name="remote_tasks_status_completed">Concluída</string>
+    <string name="remote_tasks_status_failed">Falhou</string>
+    <string name="remote_tasks_status_stopped">Parada</string>
+    <string name="remote_tasks_tokens">%1$s tokens</string>
+    <plurals name="remote_tasks_running"><item quantity="one">%1$d tarefa em execução</item><item quantity="many">%1$d de tarefas em execução</item><item quantity="other">%1$d tarefas em execução</item></plurals>
+    <plurals name="remote_tasks_recent"><item quantity="one">%1$d tarefa recente</item><item quantity="many">%1$d de tarefas recentes</item><item quantity="other">%1$d tarefas recentes</item></plurals>
+</resources>

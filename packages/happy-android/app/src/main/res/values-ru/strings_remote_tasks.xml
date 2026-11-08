@@ -1,0 +1,17 @@
+<resources>
+    <string name="remote_tasks_title">Фоновые задачи</string>
+    <string name="remote_tasks_empty">Сейчас задач нет</string>
+    <string name="remote_tasks_kind_workflow">Процесс</string>
+    <string name="remote_tasks_kind_agent">Агент</string>
+    <string name="remote_tasks_kind_shell">Оболочка</string>
+    <string name="remote_tasks_kind_other">Задача</string>
+    <string name="remote_tasks_status_pending">Ожидает</string>
+    <string name="remote_tasks_status_running">Выполняется</string>
+    <string name="remote_tasks_status_paused">Приостановлена</string>
+    <string name="remote_tasks_status_completed">Готово</string>
+    <string name="remote_tasks_status_failed">Ошибка</string>
+    <string name="remote_tasks_status_stopped">Остановлена</string>
+    <string name="remote_tasks_tokens">токенов: %1$s</string>
+    <plurals name="remote_tasks_running"><item quantity="one">Выполняется %1$d задача</item><item quantity="few">Выполняются %1$d задачи</item><item quantity="many">Выполняется %1$d задач</item><item quantity="other">Выполняется %1$d задачи</item></plurals>
+    <plurals name="remote_tasks_recent"><item quantity="one">%1$d недавняя задача</item><item quantity="few">%1$d недавние задачи</item><item quantity="many">%1$d недавних задач</item><item quantity="other">%1$d недавней задачи</item></plurals>
+</resources>
