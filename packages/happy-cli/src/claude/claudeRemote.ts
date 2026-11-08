@@ -37,6 +37,8 @@ export async function claudeRemote(opts: {
 
     // Dynamic parameters
     nextMessage: () => Promise<{ message: MessageParam['content'], mode: EnhancedMode } | null>,
+    /** Receives a message nextMessage returned after the query had already closed. */
+    onUndeliverable?: (message: { message: MessageParam['content'], mode: EnhancedMode }) => void,
     onReady: (status?: 'failed') => void | Promise<void>,
     isAborted: (toolCallId: string) => boolean,
 
@@ -181,15 +183,17 @@ export async function claudeRemote(opts: {
     // that arrives mid-turn at the next tool boundary. nextMessage returns null
     // when the caller needs a relaunch (mode change, isolated command) or the
     // session is ending; closing the input still lets the current turn finish.
-    // The caller must make a pending nextMessage resolve to null once this
-    // function returns, so no message is taken from its queue after that.
+    // The caller should make a pending nextMessage resolve to null once this
+    // function returns; a message it still hands over in that instant goes to
+    // onUndeliverable so the caller can deliver it on the next launch.
     let queryClosed = false;
     const pumpMessages = async () => {
         while (!queryClosed) {
             const next = await opts.nextMessage();
             if (!next) break;
             if (queryClosed) {
-                logger.debug('[claudeRemote] Message arrived after the query closed; it was not delivered');
+                logger.debug('[claudeRemote] Message arrived after the query closed; handing it back');
+                opts.onUndeliverable?.(next);
                 break;
             }
             mode = next.mode;

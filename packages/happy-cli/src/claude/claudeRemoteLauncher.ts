@@ -400,6 +400,9 @@ export async function claudeRemoteLauncher(session: Session): Promise<'switch' |
                         // Exit
                         return null;
                     },
+                    onUndeliverable: (message) => {
+                        pending = message;
+                    },
                     onSessionFound: (sessionId) => {
                         // Update converter's session ID when new session is found
                         sdkToLogConverter.updateSessionId(sessionId);

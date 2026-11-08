@@ -336,6 +336,29 @@ describe('claudeRemote', () => {
             expect(nextMessage).toHaveBeenCalledTimes(2);
         });
 
+        it('hands back a message that arrives just after the query closed', async () => {
+            vi.mocked(query).mockImplementation(({ prompt }) => ({
+                async *[Symbol.asyncIterator]() {
+                    const input = (prompt as AsyncIterable<any>)[Symbol.asyncIterator]();
+                    await input.next();
+                    throw new Error('claude process crashed');
+                },
+            } as any));
+            let releaseSecond: (value: unknown) => void = () => {};
+            const nextMessage = vi.fn()
+                .mockResolvedValueOnce({ message: 'Original prompt', mode })
+                .mockImplementationOnce(() => new Promise((resolve) => { releaseSecond = resolve; }))
+                .mockResolvedValue({ message: 'must stay queued', mode });
+            const onUndeliverable = vi.fn();
+
+            await expect(claudeRemote({ ...baseOpts, nextMessage, onUndeliverable, onReady: vi.fn() })).rejects.toThrow('claude process crashed');
+            releaseSecond({ message: 'Sent as the turn died', mode });
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            expect(onUndeliverable).toHaveBeenCalledExactlyOnceWith({ message: 'Sent as the turn died', mode });
+            expect(nextMessage).toHaveBeenCalledTimes(2);
+        });
+
         it('marks the session as thinking again when a message arrives after the result', async () => {
             vi.mocked(query).mockImplementation(({ prompt }) => ({
                 async *[Symbol.asyncIterator]() {
