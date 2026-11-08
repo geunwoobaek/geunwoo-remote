@@ -61,8 +61,12 @@ import kotlinx.serialization.Serializable
 /** `/session/{id}/changes?file=`: the session's changes, scrolled to [file] when set. */
 @Serializable data class SessionChangesRoute(val id: String, val file: String? = null)
 
-/** `/session/{id}/file?path=&line=&column=`: one file and its uncommitted diff. */
-@Serializable data class SessionFileRoute(val id: String, val path: String, val line: Int? = null, val column: Int? = null)
+/**
+ * `/session/{id}/file?path=&line=&column=`: one file and its uncommitted diff.
+ * [rendered]: a page or document opens as it renders even when it has a diff
+ * (the chat's page card); its source and diff stay a tab away.
+ */
+@Serializable data class SessionFileRoute(val id: String, val path: String, val line: Int? = null, val column: Int? = null, val rendered: Boolean = false)
 
 /** `/session/{id}/message/{messageId}?file=`: one message in full; [file] narrows a patch to the file tapped. */
 @Serializable data class MessageDetailRoute(val id: String, val messageId: String, val file: String? = null)
@@ -113,7 +117,8 @@ fun toolPressRoute(sessionId: String, message: ChatMessage.ToolCallMessage): Any
         "Read" -> named?.takeIf { SessionMedia.kindOf(it) != null }
         else -> null
     }
-    return if (path != null) SessionFileRoute(sessionId, path) else MessageDetailRoute(sessionId, message.id)
+    // A page opens rendered, as its card under the turn does.
+    return if (path != null) SessionFileRoute(sessionId, path, rendered = SessionMedia.kindOf(path) == MediaKind.Page) else MessageDetailRoute(sessionId, message.id)
 }
 
 fun NavGraphBuilder.filesRoutes(graph: AppGraph, nav: NavHostController) {
@@ -243,14 +248,17 @@ private fun FileRouteScreen(graph: AppGraph, route: SessionFileRoute, onBack: ()
     val account by graph.account.collectAsStateWithLifecycle()
     val (loaded, metadata) = rememberMetadata(graph, route.id)
     val sessionPath = metadata?.path
+    val cwd = metadata?.cwd
     val resolved = remember(route.path, sessionPath) { SessionFilePaths.resolve(route.path, sessionPath) }
     val named = resolved?.absolutePath ?: route.path
+    // A relative path read against the folder the agent works in now, when that isn't the session's.
+    val agentCopy = remember(route.path, sessionPath, cwd) { AgentFolder.candidates(route.path, sessionPath, cwd).takeIf { it.size > 1 }?.first() }
     val sync = account
     val context = LocalContext.current
-    // The chat names the path in the session's folder; the agent may have written it in a worktree.
-    val located by produceState<WorktreeLookup.Located?>(null, sync, loaded, named, sessionPath) {
+    // The chat names the path in the session's folder; the agent may have written it in its folder or a worktree.
+    val located by produceState<WorktreeLookup.Located?>(null, sync, loaded, named, sessionPath, agentCopy, cwd) {
         if (sync == null || !loaded) return@produceState
-        value = WorktreeLookup.locate(sessionPath, named) { dir -> sync.sessionOps.listDirectory(route.id, dir) }
+        value = WorktreeLookup.locate(sessionPath, named, { dir -> sync.sessionOps.listDirectory(route.id, dir) }, agentCopy, cwd)
     }
     var picked by rememberSaveable(route.path) { mutableStateOf<String?>(null) }
     val copies = (located as? WorktreeLookup.Located.InWorktrees)?.copies
@@ -274,6 +282,7 @@ private fun FileRouteScreen(graph: AppGraph, route: SessionFileRoute, onBack: ()
     val ops = remember(sync) { sync?.let(::SyncSessionFileOps) }
     FileScreen(
         load, filePath, onBack, route.line, route.column,
+        startRendered = route.rendered,
         readAsset = ops?.let { files -> { path -> files.readBytes(route.id, path) } },
         // A page in the session's folder reads anywhere in it (`../style.css`); one outside, only beside itself.
         assetRoot = sessionPath?.takeIf { resolved?.withinSessionRoot == true },

@@ -1,0 +1,4 @@
+<resources>
+    <string name="page_card_subtitle">Page · on your computer</string>
+    <string name="page_card_open">Open page %1$s</string>
+</resources>

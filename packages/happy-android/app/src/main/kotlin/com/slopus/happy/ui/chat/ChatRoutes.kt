@@ -72,7 +72,9 @@ import com.slopus.happy.ui.session.LiveScreenDialog
 import com.slopus.happy.ui.session.ScreenCaptureSheet
 import com.slopus.happy.ui.session.SyncLiveScreenOps
 import com.slopus.happy.ui.session.SyncScreenCaptureOps
+import com.slopus.happy.ui.files.MediaKind
 import com.slopus.happy.ui.files.SessionFileRoute
+import com.slopus.happy.ui.files.SessionMedia
 import com.slopus.happy.ui.files.SessionFolderRoute
 import com.slopus.happy.ui.files.SyncSessionFileOps
 import com.slopus.happy.ui.files.toolPressRoute
@@ -116,7 +118,8 @@ fun NavGraphBuilder.chatRoutes(
             // A resume that comes back as another session, or another tab of the checkout, replaces this chat in place.
             onOpenSession = { shown, id -> if (id != shown) nav.navigate(SessionRoute(id)) { popUpTo<SessionRoute> { inclusive = true } } },
             onComposeStarted = { id -> entry.savedStateHandle[COMPOSE_STARTED] = id },
-            onOpenMedia = { sessionId, path -> nav.navigate(SessionFileRoute(sessionId, path)) },
+            // A page opens as it renders, even with a diff: what the agent made is what was asked to be seen.
+            onOpenMedia = { sessionId, path -> nav.navigate(SessionFileRoute(sessionId, path, rendered = SessionMedia.kindOf(path) == MediaKind.Page)) },
             onOpenFolder = { sessionId -> nav.navigate(SessionFolderRoute(sessionId)) },
         )
     }
@@ -334,7 +337,7 @@ private fun ChatRoute(
         LocalComposerImages provides images,
         LocalSuggestionSource provides rememberSessionSuggestions(graph, sessionId, state.session?.metadata),
         LocalUsageDisplay provides UsageDisplay(settings.alwaysShowContextSize, settings.usageLimitShowRemaining),
-        LocalSessionMedia provides rememberSessionMedia(account, sessionId, state.session?.metadata?.path, onOpenMedia),
+        LocalSessionMedia provides rememberSessionMedia(account, sessionId, state.session?.metadata?.path, state.session?.metadata?.cwd, onOpenMedia),
     ) {
         val captureAccount = account
         if (watchingLive && captureAccount != null) {
@@ -415,12 +418,16 @@ private fun rememberMachine(graph: AppGraph, machineId: String?): State<Machine?
     }
 }
 
-/** What the chat's media strips read from: this session's files on its computer, cached on the phone. */
+/**
+ * What the chat's media strips read from: this session's files on its
+ * computer, cached on the phone. A new [cwd] (the agent moved) makes a new
+ * host, so relative paths are read against where it is now.
+ */
 @Composable
-private fun rememberSessionMedia(account: AccountSync?, sessionId: String, sessionPath: String?, open: (String, String) -> Unit): SessionMediaHost? {
+private fun rememberSessionMedia(account: AccountSync?, sessionId: String, sessionPath: String?, cwd: String?, open: (String, String) -> Unit): SessionMediaHost? {
     val context = androidx.compose.ui.platform.LocalContext.current
     val latestOpen by rememberUpdatedState(open)
-    return remember(account, sessionId, sessionPath, context) {
-        account?.let { SessionMediaHost(sessionId, sessionPath, SyncSessionFileOps(it), context.cacheDir) { path -> latestOpen(sessionId, path) } }
+    return remember(account, sessionId, sessionPath, cwd, context) {
+        account?.let { SessionMediaHost(sessionId, sessionPath, SyncSessionFileOps(it), context.cacheDir, cwd) { path -> latestOpen(sessionId, path) } }
     }
 }

@@ -33,8 +33,20 @@ object WorktreeLookup {
      * [path] (absolute) for the session rooted at [root], looking in its
      * worktrees when it's missing. [list] is the computer's `listDirectory`;
      * a listing that fails counts as nothing there.
+     *
+     * [agentCopy] is the same name read against the folder the agent works in
+     * now ([AgentFolder.candidates]): when it is there it is the one. [cwd] is
+     * that folder: of several worktree copies, the one in it opens without a
+     * choice.
      */
-    suspend fun locate(root: String?, path: String, list: suspend (String) -> ListDirectoryResult): Located {
+    suspend fun locate(
+        root: String?,
+        path: String,
+        list: suspend (String) -> ListDirectoryResult,
+        agentCopy: String? = null,
+        cwd: String? = null,
+    ): Located {
+        if (agentCopy != null && agentCopy != path && entry(agentCopy, list) != null) return Located.Here(agentCopy)
         root ?: return Located.Here(path)
         val base = SessionFilePaths.normalize(root).trimEnd('/')
         val file = SessionFilePaths.normalize(path)
@@ -54,7 +66,9 @@ object WorktreeLookup {
                 }
             }.awaitAll()
         }.filterNotNull().sortedByDescending { it.modified ?: 0.0 }
-        return if (copies.isEmpty()) Located.Here(path) else Located.InWorktrees(copies)
+        if (copies.isEmpty()) return Located.Here(path)
+        val agents = AgentFolder.preferred(copies, root, cwd)
+        return Located.InWorktrees(if (agents != null) listOf(agents) else copies)
     }
 
     private suspend fun entry(file: String, list: suspend (String) -> ListDirectoryResult): DirectoryEntry? {

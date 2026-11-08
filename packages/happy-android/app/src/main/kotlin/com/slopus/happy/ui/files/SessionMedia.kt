@@ -85,6 +85,17 @@ object SessionMedia {
         else -> emptyList()
     }
 
+    /** Tools that write a file the agent made or changed, named by `file_path`. */
+    private val writingTools = setOf("Write", "Edit", "MultiEdit")
+
+    /** The pages [row] wrote or edited (a Write, Edit or MultiEdit of an `.html`/`.htm`): the chat shows them as cards. */
+    fun pagesMadeBy(row: ChatRow): List<String> {
+        val message = (row as? ChatRow.Tool)?.message ?: return emptyList()
+        if (message.tool.name !in writingTools) return emptyList()
+        val path = ((message.tool.input as? JsonObject)?.get("file_path") as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return emptyList()
+        return if (kindOf(path) == MediaKind.Page) listOf(path) else emptyList()
+    }
+
     private fun pathsOf(message: ChatMessage.ToolCallMessage): List<String> {
         if (message.tool.name in listingTools) return emptyList()
         val words = buildList { message.tool.input?.let { strings(it, this) } }

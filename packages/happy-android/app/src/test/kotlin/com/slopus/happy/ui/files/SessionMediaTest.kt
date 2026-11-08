@@ -12,6 +12,7 @@ import com.slopus.happy.sync.GitFileContent
 import com.slopus.happy.sync.GitState
 import com.slopus.happy.sync.ReadFileChunkResult
 import com.slopus.happy.sync.ReadFileResult
+import com.slopus.happy.ui.chat.ChatMedia
 import com.slopus.happy.ui.chat.chatMediaPaths
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
@@ -75,13 +76,32 @@ class SessionMediaTest {
             user("u1", 0),
         )
         val display = groupChatRowsForDisplay(rows, enabled = true, collapseCurrentTurn = true)
-        val folded = chatMediaPaths(chatListItems(display) { false })
+        val folded = chatMediaPaths(chatListItems(display) { false }).mapValues { (_, media) -> media.map { it.path } }
         assertEquals(mapOf("a1" to listOf("/tmp/page.html", "/tmp/shot.png", "/tmp/rec.mov")), folded)
-        val open = chatMediaPaths(chatListItems(display) { true })
+        val open = chatMediaPaths(chatListItems(display) { true }).mapValues { (_, media) -> media.map { it.path } }
         assertEquals(
             mapOf("a1" to listOf("/tmp/page.html"), "t2" to listOf("/tmp/rec.mov"), "t1" to listOf("/tmp/shot.png")),
             open,
         )
+    }
+
+    @Test fun aPageAWriteOrEditMadeIsMarkedMadeAndOneOnlyNamedIsNot() {
+        val made = "/Users/me/my site/index.html"
+        assertEquals(listOf(made), SessionMedia.pagesMadeBy(tool("w", 1, "Write", "file_path" to made, "content" to "<p>")))
+        assertEquals(listOf("/p/a.htm"), SessionMedia.pagesMadeBy(tool("e", 1, "Edit", "file_path" to "/p/a.htm")))
+        assertEquals(emptyList<String>(), SessionMedia.pagesMadeBy(tool("w", 1, "Write", "file_path" to "/p/shot.png")))
+        assertEquals(emptyList<String>(), SessionMedia.pagesMadeBy(tool("r", 1, "Read", "file_path" to "/p/a.html")))
+        assertEquals(emptyList<String>(), SessionMedia.pagesMadeBy(text("t", 1, "see /p/a.html")))
+
+        // Newest first: the answer names the page the folded Write made, and another it only mentions.
+        val page = "/p/site/index.html"
+        val rows = listOf(
+            text("a1", 30, "Made $page, compare /p/old.html"),
+            tool("t1", 10, "Write", "file_path" to page, "content" to "<title>x</title>"),
+            user("u1", 0),
+        )
+        val folded = chatMediaPaths(chatListItems(groupChatRowsForDisplay(rows, enabled = true, collapseCurrentTurn = true)) { false })
+        assertEquals(listOf(ChatMedia(page, made = true), ChatMedia("/p/old.html", made = false)), folded["a1"])
     }
 
     /** A computer whose file is [bytes], read in slices of [slice], or whole when [chunked] is false. */

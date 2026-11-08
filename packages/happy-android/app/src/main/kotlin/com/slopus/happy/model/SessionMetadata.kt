@@ -262,6 +262,13 @@ data class SessionMetadata(
     val path: String,
     val host: String,
     val version: String? = null,
+    /**
+     * The folder the agent works in now, when happy-cli has seen it move from
+     * [path] (into a worktree, or by `cd`); null from older CLIs. Relative
+     * paths it names are read against this folder first. Read leniently:
+     * a malformed value is only missing, never the whole metadata.
+     */
+    val cwd: String? = null,
     val name: String? = null,
     val os: String? = null,
     val summary: SessionSummary? = null,
@@ -359,6 +366,7 @@ data class SessionMetadata(
             path = f.required("path", Read.string),
             host = f.required("host", Read.string),
             version = f.optional("version", Read.string),
+            cwd = f.caught("cwd", Read.string)?.takeIf { it.isNotBlank() },
             name = f.optional("name", Read.string),
             os = f.optional("os", Read.string),
             summary = f.optional(

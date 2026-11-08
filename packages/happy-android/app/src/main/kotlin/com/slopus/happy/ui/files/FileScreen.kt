@@ -336,6 +336,8 @@ fun FileScreen(
     assetRoot: String? = null,
     /** A note on a shown HTML page, for the agent to change the file; null offers no Memo. */
     onMemo: ((quote: String?, note: String) -> Unit)? = null,
+    /** A page or Markdown file opens rendered even when it has a diff (the chat's page card); a [line] still opens the source. */
+    startRendered: Boolean = false,
 ) {
     val colors = HappyTheme.colors
     val fileName = filePath.substringAfterLast('/').ifEmpty { filePath }
@@ -356,7 +358,7 @@ fun FileScreen(
                 }
             }
             FileLoad.Binary -> Centered(stringResource(R.string.files_binary_file), colors.textSecondary, stringResource(R.string.files_cannot_display_binary), fileName)
-            is FileLoad.Loaded -> LoadedFile(load, filePath, line, column, HtmlPage(readAsset, assetRoot ?: filePath.substringBeforeLast('/', ""), onMemo))
+            is FileLoad.Loaded -> LoadedFile(load, filePath, line, column, HtmlPage(readAsset, assetRoot ?: filePath.substringBeforeLast('/', ""), onMemo), startRendered)
             is FileLoad.Picture -> PictureFile(load, filePath)
             is FileLoad.Receiving -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(Modifier.size(20.dp).testTag(FileTags.SPINNER), color = colors.textSecondary, strokeWidth = 2.dp)
@@ -408,7 +410,7 @@ internal fun offsetOfLine(text: String, line: Int): Int {
 }
 
 @Composable
-private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, column: Int?, page: HtmlPage) {
+private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, column: Int?, page: HtmlPage, startRendered: Boolean = false) {
     val colors = HappyTheme.colors
     var staleShown by remember(load) { mutableStateOf(load.stale != null) }
     if (staleShown && load.stale != null) {
@@ -422,10 +424,11 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
     val markdown = isMarkdownPath(filePath) && load.content.isNotEmpty()
     val html = isHtmlPath(filePath) && load.content.isNotEmpty()
     val renderable = markdown || html
-    var mode by rememberSaveable(load.diff != null, requested, renderable) {
+    var mode by rememberSaveable(load.diff != null, requested, renderable, startRendered) {
         mutableStateOf(
             when {
                 requested != null -> Mode.File
+                startRendered && renderable -> Mode.Rendered
                 load.diff != null -> Mode.Diff
                 renderable -> Mode.Rendered
                 else -> Mode.File
