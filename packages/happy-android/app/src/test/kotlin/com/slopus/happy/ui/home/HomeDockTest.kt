@@ -289,7 +289,7 @@ class HomeDockTest {
         assertDp("help with the rows, 24 in", 24, help.left)
         assertDp("title after 12 + the 14 cloud + 8", 24 + 12 + 14 + 8, rule.onNodeWithText("Machine is offline", useUnmergedTree = true).bounds.left)
         rule.onNodeWithText("Switch machines", substring = true, useUnmergedTree = true).assertExists()
-        rule.onNodeWithText("jarvis daemon start", substring = true, useUnmergedTree = true).assertExists()
+        rule.onNodeWithText("happy daemon start", substring = true, useUnmergedTree = true).assertExists()
         // Only another machine helps: the rows under it take no presses.
         rule.node(HomeDockTags.row(NewSessionPage.Project)).assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Disabled))
         rule.node(HomeDockTags.row(NewSessionPage.Project)).performClick()

@@ -12,7 +12,7 @@
     <string name="compose_still_loading">Seus computadores ainda estão carregando. Tente de novo em instantes.</string>
     <string name="compose_offline_computer">Este computador está offline. Inicie o Jarvis nele ou escolha outro.</string>
     <string name="compose_offline_happy_agent">Happy Agent está offline neste computador. Inicie-o ou escolha outro computador.</string>
-    <string name="compose_offline_happy_cli">O Jarvis CLI neste computador está offline. Execute `jarvis daemon start` nele ou escolha outro computador.</string>
+    <string name="compose_offline_happy_cli">O Jarvis CLI neste computador está offline. Execute `happy daemon start` nele ou escolha outro computador.</string>
     <string name="compose_machines_bots">Computadores cujo Happy Agent cria bots</string>
     <string name="compose_machines_tasks">Computadores cujo Happy Agent cria tarefas</string>
     <string name="compose_chip_happy_agent_offline">Happy Agent offline</string>

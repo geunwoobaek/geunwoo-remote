@@ -63,9 +63,9 @@ enum class StartRefusal(val message: String, @StringRes val text: Int) {
         R.string.home_start_unknown_machine,
     ),
     HappyAgentMissing("Happy Agent is not running on this computer", R.string.home_start_happy_agent_missing),
-    HappyCliMissing("Jarvis CLI is not available on your computer. Run `jarvis daemon start` on your computer, then try again.", R.string.home_start_happy_cli_missing),
+    HappyCliMissing("Jarvis CLI is not available on your computer. Run `happy daemon start` on your computer, then try again.", R.string.home_start_happy_cli_missing),
     HappyAgentOffline("Machine is offline", R.string.new_session_machine_offline),
-    HappyCliOffline("Jarvis CLI is offline on your computer. Run `jarvis daemon start` on your computer, then try again.", R.string.home_start_happy_cli_offline),
+    HappyCliOffline("Jarvis CLI is offline on your computer. Run `happy daemon start` on your computer, then try again.", R.string.home_start_happy_cli_offline),
     CannotStartHappyAgent("This machine cannot start Happy Agent sessions", R.string.home_start_cannot_start_happy_agent),
     ProjectNeedsHappyAgent(
         "Only Happy Agent knows where this project is, so no other harness can open it. Switch the harness back to Happy Agent, or pick the project’s folder.",

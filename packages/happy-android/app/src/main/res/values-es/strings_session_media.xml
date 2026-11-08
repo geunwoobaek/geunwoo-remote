@@ -5,7 +5,7 @@
     <string name="session_capture_screenshot">Captura de pantalla</string>
     <string name="session_capture_record">Grabar %1$d s</string>
     <string name="session_capture_recording">Grabando la pantalla…</string>
-    <string name="session_capture_failed">No se pudo capturar la pantalla. En el Mac, permite la grabación de pantalla a la app que ejecuta jarvis (Ajustes del Sistema → Privacidad y seguridad).</string>
+    <string name="session_capture_failed">No se pudo capturar la pantalla. En el Mac, permite la grabación de pantalla a la app que ejecuta happy (Ajustes del Sistema → Privacidad y seguridad).</string>
     <string name="session_capture_ask">Preguntar a Claude</string>
     <string name="session_capture_ask_message">Mira esta captura de mi pantalla: %1$s</string>
 </resources>

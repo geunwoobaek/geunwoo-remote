@@ -12,7 +12,7 @@
     <string name="compose_still_loading">你的电脑仍在加载。请稍后再试。</string>
     <string name="compose_offline_computer">这台电脑处于离线状态。请在上面启动 Jarvis，或选择另一台。</string>
     <string name="compose_offline_happy_agent">这台电脑上的 Happy Agent 处于离线状态。请启动它，或选择另一台电脑。</string>
-    <string name="compose_offline_happy_cli">这台电脑上的 Jarvis CLI 处于离线状态。请在那里运行 `jarvis daemon start`，或选择另一台电脑。</string>
+    <string name="compose_offline_happy_cli">这台电脑上的 Jarvis CLI 处于离线状态。请在那里运行 `happy daemon start`，或选择另一台电脑。</string>
     <string name="compose_machines_bots">Happy Agent 可创建机器人的电脑</string>
     <string name="compose_machines_tasks">Happy Agent 可创建任务的电脑</string>
     <string name="compose_chip_happy_agent_offline">Happy Agent 离线</string>

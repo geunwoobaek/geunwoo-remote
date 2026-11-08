@@ -5,7 +5,7 @@
     <string name="session_capture_screenshot">スクリーンショット</string>
     <string name="session_capture_record">%1$d 秒録画</string>
     <string name="session_capture_recording">画面を録画しています…</string>
-    <string name="session_capture_failed">画面を取り込めませんでした。Mac で jarvis を動かしているアプリに画面収録を許可してください（システム設定 → プライバシーとセキュリティ）。</string>
+    <string name="session_capture_failed">画面を取り込めませんでした。Mac で happy を動かしているアプリに画面収録を許可してください（システム設定 → プライバシーとセキュリティ）。</string>
     <string name="session_capture_ask">Claude に聞く</string>
     <string name="session_capture_ask_message">私の画面のこのキャプチャを見て: %1$s</string>
 </resources>

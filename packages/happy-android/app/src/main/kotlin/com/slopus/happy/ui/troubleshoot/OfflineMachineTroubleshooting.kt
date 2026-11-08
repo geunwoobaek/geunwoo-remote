@@ -70,7 +70,7 @@ fun buildOfflineMachineTroubleshooting(
         aiPrompt = aiPrompt,
         message = listOf(
             "1. Wake the machine and check internet.",
-            "2. Run `jarvis` again.",
+            "2. Run `happy` again.",
             "3. Reopen Jarvis.",
             "",
             "AI prompt:",

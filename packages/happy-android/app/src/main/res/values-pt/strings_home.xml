@@ -89,8 +89,8 @@
     <string name="home_start_no_machine">Selecione uma máquina</string>
     <string name="home_start_unknown_machine">O computador desta sessão não está registrado nesta conta, então não é possível iniciar uma sessão nele. Verifique se o Jarvis está em execução lá e conectado a esta conta.</string>
     <string name="home_start_happy_agent_missing">O Happy Agent não está em execução neste computador</string>
-    <string name="home_start_happy_cli_missing">O Jarvis CLI não está disponível no seu computador. Execute `jarvis daemon start` no computador e tente de novo.</string>
-    <string name="home_start_happy_cli_offline">O Jarvis CLI está offline no seu computador. Execute `jarvis daemon start` no computador e tente de novo.</string>
+    <string name="home_start_happy_cli_missing">O Jarvis CLI não está disponível no seu computador. Execute `happy daemon start` no computador e tente de novo.</string>
+    <string name="home_start_happy_cli_offline">O Jarvis CLI está offline no seu computador. Execute `happy daemon start` no computador e tente de novo.</string>
     <string name="home_start_cannot_start_happy_agent">Esta máquina não pode iniciar sessões do Happy Agent</string>
     <string name="home_start_project_needs_happy_agent">Só o Happy Agent sabe onde está este projeto, então nenhum outro ambiente pode abri-lo. Volte o ambiente para o Happy Agent ou escolha a pasta do projeto.</string>
     <string name="home_start_workspace_unavailable">O espaço de trabalho do Happy Agent selecionado não está mais disponível.</string>

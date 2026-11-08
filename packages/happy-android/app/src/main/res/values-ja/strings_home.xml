@@ -89,8 +89,8 @@
     <string name="home_start_no_machine">マシンを選択してください</string>
     <string name="home_start_unknown_machine">このセッションのコンピューターはこのアカウントに登録されていないため、セッションを開始できません。Jarvis がそこで実行中で、このアカウントにサインインしていることを確認してください。</string>
     <string name="home_start_happy_agent_missing">このコンピューターで Happy Agent が実行されていません</string>
-    <string name="home_start_happy_cli_missing">コンピューターで Jarvis CLI を利用できません。コンピューターで `jarvis daemon start` を実行してから、もう一度お試しください。</string>
-    <string name="home_start_happy_cli_offline">コンピューターの Jarvis CLI はオフラインです。コンピューターで `jarvis daemon start` を実行してから、もう一度お試しください。</string>
+    <string name="home_start_happy_cli_missing">コンピューターで Jarvis CLI を利用できません。コンピューターで `happy daemon start` を実行してから、もう一度お試しください。</string>
+    <string name="home_start_happy_cli_offline">コンピューターの Jarvis CLI はオフラインです。コンピューターで `happy daemon start` を実行してから、もう一度お試しください。</string>
     <string name="home_start_cannot_start_happy_agent">このマシンでは Happy Agent のセッションを開始できません</string>
     <string name="home_start_project_needs_happy_agent">このプロジェクトの場所を知っているのは Happy Agent だけなので、ほかのハーネスでは開けません。ハーネスを Happy Agent に戻すか、プロジェクトのフォルダを選んでください。</string>
     <string name="home_start_workspace_unavailable">選択した Happy Agent のワークスペースはもう利用できません。</string>

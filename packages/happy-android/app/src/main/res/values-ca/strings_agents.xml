@@ -12,7 +12,7 @@
     <string name="compose_still_loading">Els teus ordinadors encara s\'estan carregant. Torna-ho a provar d\'aquí a un moment.</string>
     <string name="compose_offline_computer">Aquest ordinador està fora de línia. Obre Jarvis en ell o tria\'n un altre.</string>
     <string name="compose_offline_happy_agent">Happy Agent està fora de línia en aquest ordinador. Obre\'l o tria un altre ordinador.</string>
-    <string name="compose_offline_happy_cli">Jarvis CLI en aquest ordinador està fora de línia. Executa-hi `jarvis daemon start` o tria un altre ordinador.</string>
+    <string name="compose_offline_happy_cli">Jarvis CLI en aquest ordinador està fora de línia. Executa-hi `happy daemon start` o tria un altre ordinador.</string>
     <string name="compose_machines_bots">Ordinadors on Happy Agent crea bots</string>
     <string name="compose_machines_tasks">Ordinadors on Happy Agent crea tasques</string>
     <string name="compose_chip_happy_agent_offline">Happy Agent fora de línia</string>

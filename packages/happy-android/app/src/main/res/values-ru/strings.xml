@@ -852,7 +852,7 @@
     <string name="onboarding_install_body_suffix">.</string>
     <string name="onboarding_terminal_comment"># Prefer the terminal?</string>
     <string name="onboarding_terminal_install">npm install -g happy</string>
-    <string name="onboarding_terminal_run">jarvis</string>
+    <string name="onboarding_terminal_run">happy</string>
     <string name="onboarding_open_step">Open Happy and choose Link\u00A0Mobile\u00A0App</string>
     <string name="onboarding_open_body">It’s the last step of setup on your computer. A QR code appears there.</string>
     <string name="onboarding_scan_step">Scan the QR code</string>
@@ -868,7 +868,7 @@
     <string name="onboarding_offline_linked_step">Linked %1$s</string>
     <string name="onboarding_offline_linked_step_many">Linked %1$d computers</string>
     <string name="onboarding_offline_open_step">Open Jarvis on your computer</string>
-    <string name="onboarding_offline_open_body">Open Happy Desktop, or run jarvis in a terminal. This screen updates as soon as it connects.</string>
+    <string name="onboarding_offline_open_body">Open Happy Desktop, or run happy in a terminal. This screen updates as soon as it connects.</string>
     <string name="onboarding_offline_troubleshoot">Troubleshoot</string>
     <string name="onboarding_link_another">Link another computer</string>
     <string name="onboarding_get_help">Get help</string>
@@ -905,7 +905,7 @@
     <string name="troubleshoot_desktop_body_link">happy.engineering</string>
     <string name="troubleshoot_desktop_body_suffix">. We recommend it.</string>
     <string name="troubleshoot_terminal_step">Using the terminal?</string>
-    <string name="troubleshoot_terminal_body">Run jarvis again. The computer comes back online as soon as it starts.</string>
+    <string name="troubleshoot_terminal_body">Run happy again. The computer comes back online as soon as it starts.</string>
     <string name="troubleshoot_terminal_comment"># Not using Happy Desktop?</string>
     <string name="troubleshoot_machines">Machines</string>
     <string name="troubleshoot_machine_offline">Offline</string>
@@ -923,7 +923,7 @@
 
     <string name="machine_launch_new_session_in_directory">Запустить новую сессию в папке</string>
     <string name="machine_offline_unable_to_spawn">Запуск отключен: машина offline</string>
-    <string name="machine_offline_help">• Убедитесь, что компьютер online\n• Выполните `jarvis daemon status` для диагностики\n• Используете последнюю версию CLI? Обновите командой `npm install -g happy@latest`</string>
+    <string name="machine_offline_help">• Убедитесь, что компьютер online\n• Выполните `happy daemon status` для диагностики\n• Используете последнюю версию CLI? Обновите командой `npm install -g happy@latest`</string>
     <string name="machine_daemon">Daemon</string>
     <string name="machine_status">Статус</string>
     <string name="machine_stop_daemon">Остановить daemon</string>
