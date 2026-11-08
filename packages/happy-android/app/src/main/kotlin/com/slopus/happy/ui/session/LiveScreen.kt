@@ -324,12 +324,18 @@ fun LiveScreenDialog(ops: LiveScreenOps, sessionId: String, onDismiss: () -> Uni
     Dialog(onDismissRequest = { latestDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black).testTag(LiveScreenTags.SCREEN)) {
             when (mode) {
-                LiveMode.Direct -> AndroidView(
-                    factory = { renderer },
-                    modifier = Modifier.align(Alignment.Center)
-                        .then(videoAspect?.let { Modifier.aspectRatio(it) } ?: Modifier.fillMaxSize())
-                        .testTag(LiveScreenTags.VIDEO),
-                )
+                LiveMode.Direct -> {
+                    AndroidView(
+                        factory = { renderer },
+                        modifier = Modifier.align(Alignment.Center)
+                            .then(videoAspect?.let { Modifier.aspectRatio(it) } ?: Modifier.fillMaxSize())
+                            .testTag(LiveScreenTags.VIDEO),
+                    )
+                    // Connected, but the first frame is still on its way.
+                    if (videoAspect == null) {
+                        CircularProgressIndicator(Modifier.align(Alignment.Center).size(28.dp), color = Color.White, strokeWidth = 2.dp)
+                    }
+                }
                 LiveMode.Relay -> frame?.let {
                     Image(it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().testTag(LiveScreenTags.FRAME))
                 }
