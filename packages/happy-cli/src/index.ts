@@ -592,20 +592,20 @@ Conversation history is preserved on the server, but in-flight tool calls are in
       }
     } else {
       console.log(`
-${chalk.bold('happy daemon')} - Daemon management
+${chalk.bold('jarvis daemon')} - Daemon management
 
 ${chalk.bold('Usage:')}
-  happy daemon start              Start the daemon (detached)
-  happy daemon stop               Stop the daemon (sessions stay alive)
-  happy daemon status             Show daemon status
-  happy daemon list               List active sessions
+  jarvis daemon start             Start the daemon (detached)
+  jarvis daemon stop              Stop the daemon (sessions stay alive)
+  jarvis daemon status            Show daemon status
+  jarvis daemon list              List active sessions
 
-  If you want to kill all happy related processes run 
-  ${chalk.cyan('happy doctor clean')}
+  If you want to kill all jarvis related processes run 
+  ${chalk.cyan('jarvis doctor clean')}
 
 ${chalk.bold('Note:')} The daemon runs in the background and manages Claude sessions.
 
-${chalk.bold('To clean up runaway processes:')} Use ${chalk.cyan('happy doctor clean')}
+${chalk.bold('To clean up runaway processes:')} Use ${chalk.cyan('jarvis doctor clean')}
 `)
     }
     return;
@@ -709,46 +709,46 @@ ${chalk.bold('To clean up runaway processes:')} Use ${chalk.cyan('happy doctor c
     // Show help
     if (showHelp) {
       console.log(`
-${chalk.bold('happy')} - Claude Code On the Go
+${chalk.bold('jarvis')} - Claude Code On the Go
 
 ${chalk.bold('Usage:')}
-  happy [options]         Start Claude with mobile control
-  happy auth              Manage authentication
-  happy resume            Resume a previous Happy session by Happy session ID
-  happy codex             Start Codex mode
-  happy gemini            Start Gemini mode (ACP) [deprecated — use agy]
-  happy agy               Start agy (Antigravity CLI) mode
-  happy acp               Start a generic ACP-compatible agent
-  happy connect           Connect AI vendor API keys
-  happy sandbox           Configure and manage OS-level sandboxing
-  happy notify            Send push notification
-  happy daemon            Manage background service that allows
+  jarvis [options]        Start Claude with mobile control
+  jarvis auth             Manage authentication
+  jarvis resume           Resume a previous Jarvis session by Jarvis session ID
+  jarvis codex            Start Codex mode
+  jarvis gemini           Start Gemini mode (ACP) [deprecated — use agy]
+  jarvis agy              Start agy (Antigravity CLI) mode
+  jarvis acp              Start a generic ACP-compatible agent
+  jarvis connect          Connect AI vendor API keys
+  jarvis sandbox          Configure and manage OS-level sandboxing
+  jarvis notify           Send push notification
+  jarvis daemon           Manage background service that allows
                             to spawn new sessions away from your computer
-  happy doctor            System diagnostics & troubleshooting
+  jarvis doctor           System diagnostics & troubleshooting
 
 ${chalk.bold('Examples:')}
-  happy                    Start session
-  happy resume cmmij8      Resume a previous session by Happy session ID
-  happy --yolo             Start with bypassing permissions
-                            happy sugar for --dangerously-skip-permissions
-  happy --chrome           Enable Chrome browser access for this session
-  happy --no-chrome        Disable Chrome even if default is on
-  happy --no-sandbox       Disable Happy sandbox for this session
-  happy --js-runtime bun   Use bun instead of node to spawn Claude Code
-  happy --claude-env ANTHROPIC_BASE_URL=http://127.0.0.1:3456
+  jarvis                   Start session
+  jarvis resume cmmij8     Resume a previous session by Jarvis session ID
+  jarvis --yolo            Start with bypassing permissions
+                            jarvis sugar for --dangerously-skip-permissions
+  jarvis --chrome          Enable Chrome browser access for this session
+  jarvis --no-chrome       Disable Chrome even if default is on
+  jarvis --no-sandbox      Disable Jarvis sandbox for this session
+  jarvis --js-runtime bun  Use bun instead of node to spawn Claude Code
+  jarvis --claude-env ANTHROPIC_BASE_URL=http://127.0.0.1:3456
                            Use a custom API endpoint (e.g., claude-code-router)
-  happy acp gemini         Start Gemini via generic ACP runner
-  happy acp -- opencode --acp
+  jarvis acp gemini        Start Gemini via generic ACP runner
+  jarvis acp -- opencode --acp
                            Start a custom ACP command
-  happy acp opencode --verbose
+  jarvis acp opencode --verbose
                            Print raw ACP backend/envelope events
-  happy auth login --force Authenticate
-  happy doctor             Run diagnostics
+  jarvis auth login --force Authenticate
+  jarvis doctor            Run diagnostics
 
-${chalk.bold('Happy supports ALL Claude options!')}
-  Use any claude flag with happy as you would with claude. Our favorite:
+${chalk.bold('Jarvis supports ALL Claude options!')}
+  Use any claude flag with jarvis as you would with claude. Our favorite:
 
-  happy --resume
+  jarvis --resume
 
 ${chalk.gray('─'.repeat(60))}
 ${chalk.bold.cyan('Claude Code Options (from `claude --help`):')}

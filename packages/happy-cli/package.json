@@ -13,6 +13,7 @@
   },
   "bin": {
     "happy": "./bin/happy.mjs",
+    "jarvis": "./bin/happy.mjs",
     "happy-mcp": "./bin/happy-mcp.mjs"
   },
   "main": "./dist/index.cjs",

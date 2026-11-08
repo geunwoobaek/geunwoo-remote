@@ -101,7 +101,7 @@ export async function runDoctorDaemon(): Promise<void> {
  * Full doctor diagnostics — verbose sections first, concise useful info last
  */
 export async function runDoctorCommand(): Promise<void> {
-    console.log(chalk.bold.cyan('\n🩺 Happy CLI Doctor\n'));
+    console.log(chalk.bold.cyan('\n🩺 Jarvis CLI Doctor\n'));
 
     // ── Verbose sections first (scroll off the top) ──
 
@@ -109,7 +109,7 @@ export async function runDoctorCommand(): Promise<void> {
     try {
         const allProcesses = await findAllHappyProcesses();
         if (allProcesses.length > 0) {
-            console.log(chalk.bold('🔍 All Happy CLI Processes'));
+            console.log(chalk.bold('🔍 All Jarvis CLI Processes'));
 
             const grouped = allProcesses.reduce((groups, process) => {
                 if (!groups[process.type]) groups[process.type] = [];
@@ -228,7 +228,7 @@ export async function runDoctorCommand(): Promise<void> {
 
     // Basic info
     console.log(chalk.bold('\n📋 Basic Information'));
-    console.log(`Happy CLI Version: ${chalk.green(packageJson.version)}`);
+    console.log(`Jarvis CLI Version: ${chalk.green(packageJson.version)}`);
     console.log(`Platform: ${chalk.green(process.platform)} ${process.arch}`);
     console.log(`Node.js Version: ${chalk.green(process.version)}`);
 
