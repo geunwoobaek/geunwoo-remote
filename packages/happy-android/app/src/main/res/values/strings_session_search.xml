@@ -1,0 +1,6 @@
+<resources>
+    <string name="session_search">Search sessions</string>
+    <string name="session_search_placeholder">Titles, folders, messages</string>
+    <string name="session_search_hint">Find a session by its title, folder, summary, computer, model, or the messages kept on this phone. Nothing leaves the phone.</string>
+    <string name="session_search_empty">No session matches.</string>
+</resources>

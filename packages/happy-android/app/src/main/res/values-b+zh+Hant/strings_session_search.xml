@@ -1,0 +1,6 @@
+<resources>
+    <string name="session_search">搜尋工作階段</string>
+    <string name="session_search_placeholder">標題、資料夾、訊息</string>
+    <string name="session_search_hint">依標題、資料夾、摘要、電腦、模型或儲存在這支手機上的訊息尋找工作階段。任何內容都不會離開手機。</string>
+    <string name="session_search_empty">沒有符合的工作階段。</string>
+</resources>

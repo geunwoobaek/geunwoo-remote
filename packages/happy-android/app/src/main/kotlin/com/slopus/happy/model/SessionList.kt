@@ -157,7 +157,7 @@ fun buildSessionRowData(session: Session, inputs: SessionListInputs): SessionRow
         clientId = metadata?.client?.id,
         identityLine = rigIdentity?.let { "${it.clientName} · ${it.providerName}" },
         providerKind = rigIdentity?.providerKind ?: metadata?.provider?.kind?.let(::providerIconKind),
-        modelName = rigIdentity?.modelName,
+        modelName = rigIdentity?.modelName ?: metadata.runningModel(),
         activitySummary = rigActivity.takeIf { it.isNotEmpty() }?.joinToString(" · ") {
             "${it.count}${if (it.queued != null && it.queued != 0L) "+${it.queued}" else ""} ${it.key}"
         },

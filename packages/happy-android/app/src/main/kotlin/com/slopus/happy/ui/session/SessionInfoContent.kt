@@ -28,6 +28,7 @@ import com.slopus.happy.diagnostics.ClientLogs
 import com.slopus.happy.model.Machine
 import com.slopus.happy.model.Session
 import com.slopus.happy.model.SessionMetadata
+import com.slopus.happy.model.runningModel
 import com.slopus.happy.chat.ComposerModes
 import com.slopus.happy.model.settings.ModeOption
 import com.slopus.happy.model.settings.ModeOptions
@@ -433,7 +434,7 @@ internal fun SessionInfoContent(
                     )
                 }
                 InfoRow(stringResource(R.string.session_info_ai_provider), metadata.aiProviderName(), Ionicon.SparklesOutline)
-                metadata.rigIdentity()?.modelName?.let { InfoRow(stringResource(R.string.home_info_model), it, Ionicon.HardwareChipOutline) }
+                (metadata.rigIdentity()?.modelName ?: metadata.runningModel())?.let { InfoRow(stringResource(R.string.home_info_model), it, Ionicon.HardwareChipOutline) }
                 if (!metadata.isRig()) {
                     InfoRow(stringResource(R.string.home_info_sandbox), sandboxText(sandboxSummary(metadata.sandbox, metadata.homeDir)), Ionicon.ShieldOutline)
                     InfoRow(

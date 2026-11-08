@@ -1,0 +1,6 @@
+<resources>
+    <string name="session_search">Szukaj sesji</string>
+    <string name="session_search_placeholder">Tytuły, foldery, wiadomości</string>
+    <string name="session_search_hint">Znajdź sesję po tytule, folderze, podsumowaniu, komputerze, modelu lub wiadomościach zapisanych na tym telefonie. Nic nie opuszcza telefonu.</string>
+    <string name="session_search_empty">Żadna sesja nie pasuje.</string>
+</resources>

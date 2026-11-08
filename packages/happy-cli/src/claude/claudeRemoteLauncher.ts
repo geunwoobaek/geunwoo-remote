@@ -425,6 +425,8 @@ export async function claudeRemoteLauncher(session: Session): Promise<'switch' |
                             slashCommands: metadata.slashCommands,
                             mcpServers: metadata.mcpServers,
                             skills: metadata.skills,
+                            // The model Claude actually started with (e.g. claude-opus-5-5), for the phone to show.
+                            ...(metadata.model ? { runningModel: metadata.model } : {}),
                         }));
                     },
                     onUsageLimits: (patch) => {

@@ -75,6 +75,7 @@ import com.slopus.happy.ui.theme.happyTextStyle
 object HomeTags {
     const val BAR = "home.bar"
     const val SETTINGS = "home.settings"
+    const val SEARCH = "home.search"
     /** The floating compose button. */
     const val COMPOSE = "home.compose"
     const val TITLE = "home.title"
@@ -126,6 +127,8 @@ class HomeScreenActions(
     /** The migration card's screen, and its ×. */
     val onMigration: (MigrationPath) -> Unit = {},
     val onCloseMigration: (MigrationPath) -> Unit = {},
+    /** The bar's search, over every session on the phone; null shows none. */
+    val onSearch: (() -> Unit)? = null,
 )
 
 /**
@@ -247,6 +250,7 @@ private fun HomeHeader(link: LinkState, accounts: AccountMenu, actions: HomeScre
         navigationIcon = { AccountMenuButton(accounts, actions.onSwitchAccount) },
         title = { BarTitle(name, link, HomeTags.TITLE, HomeTags.STATUS) },
         actions = {
+            actions.onSearch?.let { BarIconButton(Ionicon.SearchOutline, stringResource(R.string.session_search), it, Modifier.testTag(HomeTags.SEARCH)) }
             if (settings) BarIconButton(Ionicon.SettingsOutline, stringResource(R.string.settings_title), actions.onSettings, Modifier.testTag(HomeTags.SETTINGS))
         },
         inset = HomeCardSpec.inset,

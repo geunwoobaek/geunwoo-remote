@@ -1,0 +1,6 @@
+<resources>
+    <string name="session_search">Pesquisar sessões</string>
+    <string name="session_search_placeholder">Títulos, pastas, mensagens</string>
+    <string name="session_search_hint">Encontre uma sessão pelo título, pasta, resumo, computador, modelo ou pelas mensagens guardadas neste telefone. Nada sai do telefone.</string>
+    <string name="session_search_empty">Nenhuma sessão corresponde.</string>
+</resources>

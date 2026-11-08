@@ -1,0 +1,6 @@
+<resources>
+    <string name="session_search">Cerca sessions</string>
+    <string name="session_search_placeholder">Títols, carpetes, missatges</string>
+    <string name="session_search_hint">Troba una sessió pel títol, la carpeta, el resum, l’ordinador, el model o els missatges desats en aquest telèfon. Res no surt del telèfon.</string>
+    <string name="session_search_empty">Cap sessió no coincideix.</string>
+</resources>

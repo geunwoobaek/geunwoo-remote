@@ -444,6 +444,19 @@ class HappyStore(@Volatile private var helper: SQLiteOpenHelper) {
             arrayOf(sessionId, limit.toString()),
         ) { c -> buildList { while (c.moveToNext()) add(c.toMessage()) } }
 
+    /**
+     * The newest [limit] stored messages, of any session, whose decrypted
+     * JSON holds [needle] (SQLite LIKE: ASCII case aside, as written). Only
+     * candidates: the text may sit in a key rather than a value.
+     */
+    fun messagesContaining(needle: String, limit: Int): List<MessageRecord> {
+        val pattern = "%" + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        return query(
+            "SELECT $MESSAGE_COLUMNS FROM messages WHERE content LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
+            arrayOf(pattern, limit.toString()),
+        ) { c -> buildList { while (c.moveToNext()) add(c.toMessage()) } }
+    }
+
     private fun updateHistory(sessionId: String, oldest: Long, newest: Long, hasOlder: Boolean) {
         val values = ContentValues().apply {
             put("messages_oldest_seq", oldest)

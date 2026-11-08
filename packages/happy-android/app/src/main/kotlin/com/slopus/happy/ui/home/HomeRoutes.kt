@@ -85,6 +85,8 @@ class HomeNavigation(
     val onCompose: () -> Unit = onNewSession,
     /** The migration card's screen for its path (iOS ea1a0902f). */
     val onMigration: (MigrationPath) -> Unit = {},
+    /** Searching every session on the phone ([SessionSearchRoute]). */
+    val onSearch: () -> Unit = {},
 ) {
     companion object {
         fun of(graph: AppGraph, nav: NavHostController, onOpenSession: (String) -> Unit, onTroubleshoot: () -> Unit) = HomeNavigation(
@@ -98,6 +100,7 @@ class HomeNavigation(
             onDetails = { id -> nav.navigate(SessionInfoRoute(id)) },
             onCompose = { nav.composeChat() },
             onMigration = { path -> nav.navigate(DesktopMigrationRoute(path.wire)) },
+            onSearch = { nav.navigate(SessionSearchRoute) { launchSingleTop = true } },
         )
     }
 }
@@ -123,6 +126,7 @@ fun HomeNavigation.through(go: MainPanelOpener): HomeNavigation = HomeNavigation
     onDetails = { id -> go.open(MainPanelKey.info(id)) { onDetails(id) } },
     onCompose = { go.open(null, onCompose) },
     onMigration = { path -> go.open(null) { onMigration(path) } },
+    onSearch = { go.open(null, onSearch) },
 )
 
 /**
@@ -190,6 +194,9 @@ fun NavGraphBuilder.homeRoutes(
             initialPrompt = { HomeServices.of(graph).newSession(nav.context.applicationContext).draft.value.input },
         )
         NewSessionScreen(dock, onBack = { nav.popBackStack() })
+    }
+    page<SessionSearchRoute> {
+        SessionSearchScreen(graph, onOpenSession = onOpenSession, onBack = { nav.popBackStack() })
     }
     page<SessionInfoRoute> { entry ->
         SessionInfoRouteScreen(graph, entry.toRoute<SessionInfoRoute>().id, nav, onOpenSession)

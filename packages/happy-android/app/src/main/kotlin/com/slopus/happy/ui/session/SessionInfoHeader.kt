@@ -15,6 +15,7 @@ import com.slopus.happy.model.avatarId
 import com.slopus.happy.model.displayName
 import com.slopus.happy.model.isTask
 import com.slopus.happy.model.rigIdentity
+import com.slopus.happy.model.runningModel
 import com.slopus.happy.ui.chat.rememberComposerStatus
 import com.slopus.happy.ui.components.Avatar
 import com.slopus.happy.ui.components.AvatarBadgeLocation
@@ -55,7 +56,7 @@ internal fun SessionInfoHeader(session: Session, avatar: ProjectAvatar?) {
             )
         }
         Row(Modifier.padding(top = spec.tilesTop).padding(horizontal = ContentTokens.inset).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spec.tileGap)) {
-            ProfileTile(session.metadata?.rigIdentity()?.modelName ?: stringResource(R.string.agent_page_none),
+            ProfileTile(session.metadata?.rigIdentity()?.modelName ?: session.metadata.runningModel() ?: stringResource(R.string.agent_page_none),
                 stringResource(R.string.conversation_details_model), Modifier.weight(1f))
             ProfileTile(profileStartedText(session.createdAt, System.currentTimeMillis()),
                 stringResource(R.string.agent_page_started), Modifier.weight(1f))

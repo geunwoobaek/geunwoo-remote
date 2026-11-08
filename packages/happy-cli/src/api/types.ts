@@ -321,6 +321,8 @@ export type Metadata = {
   slashCommands?: string[],
   mcpServers?: Array<{ name: string; status: string }>,
   skills?: string[],
+  /** The model the Claude SDK reported at init (fork only), e.g. `claude-opus-5-5`. */
+  runningModel?: string,
   homeDir: string,
   happyHomeDir: string,
   happyLibDir: string,

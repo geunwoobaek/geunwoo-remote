@@ -1,0 +1,6 @@
+<resources>
+    <string name="session_search">Поиск сессий</string>
+    <string name="session_search_placeholder">Названия, папки, сообщения</string>
+    <string name="session_search_hint">Найдите сессию по названию, папке, описанию, компьютеру, модели или сообщениям, сохранённым на этом телефоне. Ничего не покидает телефон.</string>
+    <string name="session_search_empty">Подходящих сессий нет.</string>
+</resources>

@@ -165,6 +165,7 @@ fun HomeListHost(graph: AppGraph, navigation: HomeNavigation, phone: Boolean = f
             onCompose = navigation.onCompose,
             onMigration = navigation.onMigration,
             onCloseMigration = graph.desktopMigration::close,
+            onSearch = navigation.onSearch,
         )
     }
 
