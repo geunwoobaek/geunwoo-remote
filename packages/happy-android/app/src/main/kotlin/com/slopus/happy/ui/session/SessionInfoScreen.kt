@@ -69,6 +69,7 @@ object SessionInfoTags {
     const val COPY_METADATA_AND_LOGS = "sessionInfo.copyMetadataAndLogs"
     const val RAW_JSON = "sessionInfo.rawJson"
     const val SKIP_PERMISSIONS = "sessionInfo.skipPermissions"
+    const val SKILLS = "sessionInfo.skills"
 }
 
 /** info.tsx's icon colours (iOS system colours) and sizes. */
@@ -154,6 +155,8 @@ class SessionInfoActions(
     val clientLogs: suspend () -> List<String> = { withContext(Dispatchers.IO) { ClientLogs.read() } },
     /** replaceToSession: a duplicated session takes this screen's place. */
     val onReplaceWithSession: (String) -> Unit = onOpenSession,
+    /** The session's skills, workflows and tools ([SessionSkillsScreen]); null hides the row. */
+    val onSkills: ((String) -> Unit)? = null,
 )
 
 /**

@@ -262,6 +262,25 @@ data class RipgrepResult(
     val error: String? = null,
 )
 
+/** happy-cli `listWorkflows`: one saved Claude Code workflow, read from its script's `export const meta`. */
+@Serializable
+data class SavedWorkflow(
+    val name: String,
+    val description: String? = null,
+    val whenToUse: String? = null,
+    val phases: List<String> = emptyList(),
+    /** project (the session's folder or its git root) or user (~/.claude/workflows). */
+    val scope: String,
+    /** The script's absolute path on the computer. */
+    val path: String,
+    /** Inside the session's folder, where the session's file reads can open it. */
+    val inWorkingDirectory: Boolean = false,
+)
+
+/** happy-cli `listWorkflows`. A CLI from before it answers "Method not found". */
+@Serializable
+data class ListWorkflowsResult(val success: Boolean = false, val workflows: List<SavedWorkflow>? = null, val error: String? = null)
+
 internal fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
 /** `{ ...(value ? { key: value } : {}) }`: absent when null or empty. */

@@ -193,6 +193,16 @@ internal fun SessionInfoContent(
                     modifier = Modifier.testTag(SessionInfoTags.MACHINE),
                 )
             }
+            // What Claude said it can use at start; a Happy Agent session doesn't report this.
+            actions.onSkills?.takeIf { !metadata.isRig() }?.let { onSkills ->
+                Item(
+                    title = stringResource(R.string.skills_title),
+                    subtitle = skillsSummary(SkillsCatalog.of(metadata)),
+                    icon = { SettingsTile(Ionicon.ExtensionPuzzleOutline, SettingsTiles.purple) },
+                    onClick = { onSkills(session.id) },
+                    modifier = Modifier.testTag(SessionInfoTags.SKILLS),
+                )
+            }
             if (resume.canShowResume) {
                 Item(
                     title = stringResource(R.string.session_info_resume_session),

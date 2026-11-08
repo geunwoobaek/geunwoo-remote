@@ -61,6 +61,8 @@ import com.slopus.happy.ui.session.SessionInfoActions
 import com.slopus.happy.ui.session.SessionInfoLive
 import com.slopus.happy.ui.session.SessionInfoPermission
 import com.slopus.happy.ui.session.SessionInfoRoute
+import com.slopus.happy.ui.session.SessionSkillsRoute
+import com.slopus.happy.ui.session.SessionSkillsRouteScreen
 import com.slopus.happy.ui.session.SessionInfoScreen
 import com.slopus.happy.model.resolveAvatar
 import com.slopus.happy.ui.settings.ChangelogRoute
@@ -201,6 +203,9 @@ fun NavGraphBuilder.homeRoutes(
     page<SessionInfoRoute> { entry ->
         SessionInfoRouteScreen(graph, entry.toRoute<SessionInfoRoute>().id, nav, onOpenSession)
     }
+    page<SessionSkillsRoute> { entry ->
+        SessionSkillsRouteScreen(graph, entry.toRoute<SessionSkillsRoute>().id, nav)
+    }
     page<MachineRoute> { entry ->
         val id = entry.toRoute<MachineRoute>().id
         val services = remember(graph) { HomeServices.of(graph) }
@@ -268,6 +273,7 @@ private fun SessionInfoRouteScreen(graph: AppGraph, id: String, nav: NavHostCont
             tabSuccessor = services::tabSuccessor,
             // DuplicateSheet's replaceToSession: the copy takes this screen's place.
             onReplaceWithSession = { sessionId -> nav.navigate(SessionRoute(sessionId)) { popUpTo<SessionInfoRoute> { inclusive = true } } },
+            onSkills = { sessionId -> nav.navigate(SessionSkillsRoute(sessionId)) },
         )
     }
     SessionInfoScreen(

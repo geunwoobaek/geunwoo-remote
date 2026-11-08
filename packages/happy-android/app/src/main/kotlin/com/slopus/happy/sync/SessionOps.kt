@@ -290,6 +290,16 @@ class SessionOps internal constructor(
             }))
         }
 
+    /** happy-cli `listWorkflows`: the saved workflows the session's agent can run. */
+    suspend fun listWorkflows(sessionId: String): ListWorkflowsResult =
+        attempt({ ListWorkflowsResult(false, error = it ?: "Unknown error") }) {
+            val metadata = metadata(sessionId)
+            if (metadata.isRig() && !metadata.rigHasRpcMethod("listWorkflows")) {
+                throw RpcException("Workflows are not advertised by this Rig session")
+            }
+            decode(ListWorkflowsResult.serializer(), rpc.sessionRpc(sessionId, "listWorkflows", JsonObject(emptyMap())))
+        }
+
     private suspend fun metadata(sessionId: String): SessionMetadata? =
         withContext(io) { SessionMetadata.parse(store.session(sessionId)?.metadataJson) }
 

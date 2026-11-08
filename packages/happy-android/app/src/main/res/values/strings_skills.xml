@@ -1,0 +1,43 @@
+<resources>
+    <!-- Fork-only: English only, so each string is translatable="false" (AndroidStringsTranslatedTest skips those). -->
+    <string name="skills_title" translatable="false">Skills &amp; tools</string>
+    <string name="skills_row_not_reported" translatable="false">Not reported yet</string>
+    <plurals name="skills_count_skills" translatable="false">
+        <item quantity="one">%d skill</item>
+        <item quantity="other">%d skills</item>
+    </plurals>
+    <plurals name="skills_count_commands" translatable="false">
+        <item quantity="one">%d command</item>
+        <item quantity="other">%d commands</item>
+    </plurals>
+    <plurals name="skills_count_servers" translatable="false">
+        <item quantity="one">%d MCP server</item>
+        <item quantity="other">%d MCP servers</item>
+    </plurals>
+    <plurals name="skills_server_tools" translatable="false">
+        <item quantity="one">%d tool</item>
+        <item quantity="other">%d tools</item>
+    </plurals>
+    <string name="skills_search" translatable="false">Search skills, commands and tools</string>
+    <string name="skills_clear_search" translatable="false">Clear search</string>
+    <string name="skills_none_match" translatable="false">Nothing matches “%1$s”</string>
+    <string name="skills_group_skills" translatable="false">Skills</string>
+    <string name="skills_group_commands" translatable="false">Commands</string>
+    <string name="skills_group_workflows" translatable="false">Workflows</string>
+    <string name="skills_group_servers" translatable="false">MCP servers</string>
+    <string name="skills_group_tools" translatable="false">Tools</string>
+    <string name="skills_insert_footer" translatable="false">Tap one to start a message with it.</string>
+    <string name="skills_not_reported_title" translatable="false">Nothing reported yet</string>
+    <string name="skills_not_reported_footer" translatable="false">Claude lists its skills and tools when it starts from the phone. A session still starting, or running in the terminal, shows them after you send it a message from here.</string>
+    <string name="skills_none_reported" translatable="false">Claude reported no skills, commands or tools.</string>
+    <string name="skills_workflows_loading" translatable="false">Looking for workflows…</string>
+    <string name="skills_workflows_new_session" translatable="false">Start a new session to see workflows</string>
+    <string name="skills_workflows_new_session_subtitle" translatable="false">This session’s happy can’t list them yet.</string>
+    <string name="skills_workflows_failed" translatable="false">Couldn’t list workflows</string>
+    <string name="skills_workflows_retry" translatable="false">Tap to try again</string>
+    <string name="skills_workflows_none" translatable="false">No saved workflows</string>
+    <string name="skills_workflows_none_footer" translatable="false">Saved workflows live in .claude/workflows, in the project or your home folder.</string>
+    <string name="skills_workflows_outside_footer" translatable="false">A workflow outside the session’s folder shows its description only: the phone can’t open its file.</string>
+    <string name="skills_workflow_scope_project" translatable="false">Project</string>
+    <string name="skills_workflow_scope_user" translatable="false">User</string>
+</resources>
