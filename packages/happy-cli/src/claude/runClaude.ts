@@ -36,6 +36,7 @@ import { applySandboxPermissionPolicy, normalizeRemotePermissionMode, resolveIni
 import { decodeBase64, encodeBase64 } from '@/api/encryption';
 import type { Session as ApiSession } from '@/api/types';
 import { getProjectPath } from './utils/path';
+import { createAgentCwdTracker } from './utils/agentCwd';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { RawJSONLinesSchema, type RawJSONLines } from './types';
@@ -220,10 +221,15 @@ export async function runClaude(credentials: Credentials, options: StartOptions 
                         agentGoalStatus: latestClaudeGoalStatus ?? goalStatus,
                     }));
                 };
+                const agentCwd = createAgentCwdTracker({
+                    initial: workingDirectory,
+                    publish: (cwd) => session.updateMetadata((current) => ({ ...current, cwd })),
+                });
                 const scanner = await createSessionScanner({
                     sessionId: null,
                     workingDirectory,
                     onMessage: (msg) => {
+                        agentCwd.observe(msg);
                         void session.sendClaudeSessionMessageFromLocalTranscript(msg);
                     },
                     onTranscriptEvent: updateClaudeGoalState,
@@ -442,10 +448,21 @@ export async function runClaude(credentials: Credentials, options: StartOptions 
     // can't see.
     const initialScannerSessionId = forkClaudeSessionId
         ?? (metadata.claudeSessionId ?? null);
+    // The scanner sees every new transcript line in local and remote mode,
+    // each with the folder Claude is in: publish it as `metadata.cwd` when it
+    // changes (EnterWorktree, `cd`), so the app opens the files Claude names.
+    const agentCwd = createAgentCwdTracker({
+        initial: session.getMetadata()?.cwd ?? workingDirectory,
+        publish: (cwd) => {
+            logger.debug(`[START] Claude works in ${cwd}`);
+            session.updateMetadata((current) => ({ ...current, cwd }));
+        },
+    });
     const remoteScanner = await createSessionScanner({
         sessionId: initialScannerSessionId,
         workingDirectory,
         onMessage: (raw) => {
+            agentCwd.observe(raw);
             if (currentRunMode !== 'remote') return;
             // Only user-typed prompts. SDK pipeline owns assistant and
             // tool_result-bearing user messages.
@@ -490,6 +507,7 @@ export async function runClaude(credentials: Credentials, options: StartOptions 
             // *future* JSONL writes from a parallel `claude --resume`
             // terminal, which the file watcher will pick up.
             remoteScanner.onNewSession(sessionId, { treatExistingAsProcessed: true });
+            agentCwd.reset(data.cwd);
 
             // Update session ID in the Session instance
             if (currentSession) {

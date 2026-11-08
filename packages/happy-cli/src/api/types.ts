@@ -305,6 +305,12 @@ export type Metadata = {
   thoughtLevels?: Array<{ code: string; value: string; description?: string | null }>,
   currentThoughtLevelCode?: string,
   path: string,
+  /**
+   * The folder Claude works in now, when it has moved from [path] (a worktree
+   * after EnterWorktree, or a `cd`); read from its transcript. [path] stays
+   * the folder the session started in.
+   */
+  cwd?: string,
   host: string,
   version?: string,
   name?: string,
