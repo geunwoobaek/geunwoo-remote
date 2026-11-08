@@ -9,6 +9,7 @@ import { run as runDifftastic } from '@/modules/difftastic/index';
 import { RpcHandlerManager } from '../../api/rpc/RpcHandlerManager';
 import { validatePath, PathValidationResult } from './pathSecurity';
 import { captureScreen, captureStatus, mediaReadPolicy, readFileChunk, CaptureKind, CaptureResult, FileChunk } from './mediaFiles';
+import { screenFrame, startScreenStream, stopScreenStream, ScreenFrame, ScreenStreamStart } from './screenStream';
 
 const execAsync = promisify(exec);
 
@@ -318,6 +319,21 @@ export function registerCommonHandlers(rpcHandlerManager: RpcHandlerManager, wor
 
     // Whether a recording started by captureScreen has been written.
     rpcHandlerManager.registerHandler<{ path: string }, CaptureResult>('captureStatus', async (data) => captureStatus(data.path));
+
+    // Live screen: answer the phone's WebRTC offer and send the screen until it stops (screenStream.ts).
+    rpcHandlerManager.registerHandler<{ sdp: string; maxWidth?: number; fps?: number }, ScreenStreamStart>('screenStreamStart', async (data) => {
+        try {
+            return await startScreenStream(data.sdp, { maxWidth: data.maxWidth, fps: data.fps });
+        } catch (error) {
+            logger.debug('Failed to start the live screen:', error);
+            return { success: false, error: error instanceof Error ? error.message : 'Failed to start the live screen' };
+        }
+    });
+
+    rpcHandlerManager.registerHandler<{ id?: string }, { success: boolean }>('screenStreamStop', async (data) => stopScreenStream(data?.id));
+
+    // One downscaled JPEG of the screen through the relay, when no direct connection can be made.
+    rpcHandlerManager.registerHandler<{ maxWidth?: number }, ScreenFrame>('screenFrame', async (data) => screenFrame(data?.maxWidth));
 
     // Write file handler - with hash verification
     rpcHandlerManager.registerHandler<WriteFileRequest, WriteFileResponse>('writeFile', async (data) => {
