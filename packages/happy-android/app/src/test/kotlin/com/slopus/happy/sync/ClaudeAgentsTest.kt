@@ -7,6 +7,10 @@ import com.slopus.happy.ui.home.claudeAgentStatusLabel
 import com.slopus.happy.ui.home.claudeAgentsNotice
 import com.slopus.happy.ui.home.folderTail
 import com.slopus.happy.ui.home.visibleAgents
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
@@ -139,5 +143,15 @@ class ClaudeAgentsTest {
         assertEquals("project", folderTail("C:\\Users\\tester\\project"))
         assertEquals("/", folderTail("/"))
         assertEquals("project", folderTail("project"))
+    }
+
+    @Test
+    fun aSyncWaitEndsAtItsBoundAndAFastOneIsNotCutShort() = runTest {
+        awaitSyncBriefly { delay(100) }
+        assertEquals(100L, currentTime)
+        // A sync that never ends (offline, retrying) is let go of at the bound, in virtual time.
+        awaitSyncBriefly { awaitCancellation() }
+        assertEquals(100L + CLAUDE_AGENTS_SYNC_WAIT_MS, currentTime)
+        assertEquals(5_000L, CLAUDE_AGENTS_SYNC_WAIT_MS)
     }
 }

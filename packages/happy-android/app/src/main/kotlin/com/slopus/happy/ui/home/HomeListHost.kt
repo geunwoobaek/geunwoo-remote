@@ -9,6 +9,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.slopus.happy.model.displayName
 import com.slopus.happy.model.isRigMachine
 import com.slopus.happy.sync.OpenClaudeAgentResult
+import com.slopus.happy.sync.awaitSyncBriefly
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import com.slopus.happy.ui.rememberHomeAccountSwitch
@@ -221,18 +222,25 @@ fun HomeListHost(graph: AppGraph, navigation: HomeNavigation, phone: Boolean = f
             openScope.launch {
                 when (val result = agentsModel.open(machineId, agentId)) {
                     null -> Unit
-                    is OpenClaudeAgentResult.Success -> onOpenSession(result.sessionId)
+                    is OpenClaudeAgentResult.Success -> {
+                        onOpenSession(result.sessionId)
+                        // Its mirror session exists now: the list drops it once that shows on the home.
+                        agentsModel.refreshMachine(machineId)
+                    }
                     is OpenClaudeAgentResult.Error ->
                         showAlert(Alert(errorTitle, result.message.ifEmpty { errorTitle }, listOf(AlertButton(okLabel))))
                 }
             }
         }
     }
+    // The indicator stops after CLAUDE_AGENTS_SYNC_WAIT_MS even offline, where the sync never ends (it goes on after).
     val refresh = remember(agentsModel, agentMachineIds, graph) {
         suspend {
-            coroutineScope {
-                launch { graph.account.value?.syncNow() }
-                agentsModel.refresh(agentMachineIds)
+            awaitSyncBriefly {
+                coroutineScope {
+                    launch { graph.account.value?.syncNow() }
+                    agentsModel.refresh(agentMachineIds)
+                }
             }
         }
     }

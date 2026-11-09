@@ -208,8 +208,9 @@ fun HomeScreen(
                 }
                 state.emptyState == HomeEmptyState.NoSessions -> Box(below) {
                     val onShowArchived = if (state.hasArchivedSessions) showArchived else null
-                    // A Mac's background Claude sessions are the way in on a first, empty home.
-                    if (claudeAgents != null && claudeAgents.blocks.isNotEmpty()) {
+                    // A Mac's background Claude sessions are the way in on a first, empty home, and a
+                    // session started on the Mac later is found by pulling, so it pulls with or without them.
+                    if (claudeAgents != null || onRefresh != null) {
                         NoSessionsWithAgents(claudeAgents, onRefresh, actions.onCompose, onShowArchived)
                     } else {
                         NoSessionsState(onNewSession = actions.onCompose, onShowArchived = onShowArchived)
@@ -320,7 +321,9 @@ fun HomeList(
                 HomeBanners(state.offlineBanner, update, actions, migration)
             }
         }
-        if (claudeAgents != null && claudeAgents.blocks.isNotEmpty()) {
+        // A slot that is always there, empty until blocks arrive: a section inserted above a list sitting at
+        // the top would be kept off-screen by the list's key anchoring, and only a standing item grows in place.
+        if (claudeAgents != null) {
             item(key = "claude-agents", contentType = "claude-agents") { ClaudeAgentsSection(claudeAgents) }
         }
         if (carded) {

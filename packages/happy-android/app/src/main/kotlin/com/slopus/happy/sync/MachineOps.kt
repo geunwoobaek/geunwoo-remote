@@ -31,6 +31,8 @@ class MachineOps internal constructor(
     /** Pulls a just-spawned session in before the caller navigates to it; best effort. */
     private val refreshSessions: suspend () -> Unit,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** How long [openClaudeAgent] waits on [refreshSessions]. */
+    private val syncWaitMs: Long = CLAUDE_AGENTS_SYNC_WAIT_MS,
 ) {
     /** ops.ts `machineSpawnNewSession`. */
     suspend fun spawnSession(options: SpawnSessionOptions): SpawnSessionResult = try {
@@ -294,7 +296,8 @@ class MachineOps internal constructor(
         when (answer?.string("type")) {
             "success" -> answer.string("sessionId")?.takeIf { it.isNotEmpty() }?.let { sessionId ->
                 try {
-                    refreshSessions()
+                    // Bounded: an offline sync never ends, and the open must not hang on it.
+                    awaitSyncBriefly(syncWaitMs, refreshSessions)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {

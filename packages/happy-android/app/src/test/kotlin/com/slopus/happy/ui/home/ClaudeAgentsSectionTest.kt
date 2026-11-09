@@ -1,5 +1,8 @@
 package com.slopus.happy.ui.home
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
@@ -8,9 +11,13 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.slopus.happy.model.HomeEmptyState
 import com.slopus.happy.model.HomeModelFixtures.machine
+import com.slopus.happy.model.HomeModelFixtures.metadata
+import com.slopus.happy.model.HomeModelFixtures.session
 import com.slopus.happy.model.SessionListGrouping
 import com.slopus.happy.net.ConnectionStatus
 import com.slopus.happy.sync.ClaudeAgentEntry
@@ -18,6 +25,7 @@ import com.slopus.happy.ui.PHONE
 import com.slopus.happy.ui.setHappyContent
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -133,6 +141,39 @@ class ClaudeAgentsSectionTest {
         rule.onAllNodesWithTag(HomeStateTags.NO_SESSIONS).assertCountEquals(1)
         rule.onAllNodesWithTag(ClaudeAgentsTags.SECTION).assertCountEquals(0)
         rule.onAllNodesWithTag(ClaudeAgentsTags.ROW).assertCountEquals(0)
+    }
+
+    @Test
+    fun aSectionThatLoadsAfterTheListIsShownIsVisibleWithoutScrolling() {
+        val noon = LocalDate.of(2026, 10, 16).atTime(12, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
+        val sessions = listOf("a", "b", "c").map {
+            session(it, metadata = metadata(path = "/Users/dev/$it") { put("machineId", "m1") }, active = true, lastMessageSentAt = noon)
+        }
+        val home = deriveHomeList(
+            HomeListInputs(HomeSnapshot(sessions, listOf(machine("m1"))), SessionListGrouping.Flat, true, emptySet(), emptySet(), emptySet()),
+            ZoneOffset.UTC,
+            LocalDate.of(2026, 10, 16),
+        )
+        // The host's first frame: nothing listed yet. The listing answers later.
+        var ui by mutableStateOf(ClaudeAgentsUi(emptyList(), emptySet()) { _, _ -> })
+        rule.setHappyContent {
+            HomeScreen(home, ConnectionStatus.CONNECTED, SessionListGrouping.Flat, callbacks, HomeScreenActions({}, {}, {}, {}, {}, {}), claudeAgents = ui)
+        }
+        rule.onAllNodesWithTag(ClaudeAgentsTags.TITLE).assertCountEquals(0)
+        ui = ClaudeAgentsUi(listOf(ClaudeAgentsBlock("m1", "Studio", listOf(agent("demo-agent", "Demo", "busy")), null)), emptySet()) { _, _ -> }
+        rule.waitForIdle()
+        rule.onNodeWithText("Claude background sessions").assertIsDisplayed()
+        rule.onNodeWithText("Demo").assertIsDisplayed()
+    }
+
+    @Test
+    fun anEmptyHomeWithNoBackgroundSessionsStillPullsToRefresh() {
+        var refreshed = 0
+        showEmptyHome(ClaudeAgentsUi(emptyList(), emptySet()) { _, _ -> }, onRefresh = { refreshed++ })
+        rule.onAllNodesWithTag(HomeStateTags.NO_SESSIONS).assertCountEquals(1)
+        rule.onNodeWithTag(HomeTags.LIST).performTouchInput { swipeDown(startY = top + 100f, endY = bottom - 100f) }
+        rule.waitForIdle()
+        assertEquals(1, refreshed)
     }
 
     @Test

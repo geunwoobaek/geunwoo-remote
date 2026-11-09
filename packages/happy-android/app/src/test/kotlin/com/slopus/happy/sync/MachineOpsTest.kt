@@ -6,7 +6,10 @@ import com.slopus.happy.data.SessionRecord
 import com.slopus.happy.ui.home.ClaudeAgentsModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -27,6 +30,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * ops.ts machine operations against the fake server: ports of
@@ -448,12 +453,46 @@ class MachineOpsTest {
         model.refresh(listOf("m1"))
         assertEquals(setOf("m1"), model.listings.value.keys)
 
-        respond("open-claude-agent") { Thread.sleep(300); success("mirror-1") }
+        // The daemon holds its answer until released: the open stays in flight, with no sleeping.
+        val release = CountDownLatch(1)
+        respond("open-claude-agent") { check(release.await(10, TimeUnit.SECONDS)) { "never released" }; success("mirror-1") }
         val first = async(Dispatchers.Default) { model.open("m1", "demo-agent") }
-        eventually(message = "open in flight") { "demo-agent" in model.opening.value }
+        withTimeout(10_000) { model.opening.first { "demo-agent" in it } }
         assertNull(model.open("m1", "demo-agent"))
+        release.countDown()
         assertEquals(OpenClaudeAgentResult.Success("mirror-1"), first.await())
         assertTrue(model.opening.value.isEmpty())
+    }
+
+    @Test
+    fun aMachineIsListedAgainAfterOneOfItsSessionsIsOpened() = runBlocking {
+        h.startAndSync()
+        val listings = ArrayDeque(listOf(
+            buildJsonObject { putJsonArray("agents") { add(buildJsonObject { put("id", "demo-agent"); put("sessionId", "claude-1"); put("cwd", "/Users/tester/project"); put("status", "busy") }) } },
+            buildJsonObject { putJsonArray("agents") { add(buildJsonObject { put("id", "demo-agent"); put("sessionId", "claude-1"); put("cwd", "/Users/tester/project"); put("status", "busy"); put("mirrorSessionId", "mirror-1") }) } },
+        ))
+        respond("list-claude-agents") { listings.removeFirst() }
+        val model = ClaudeAgentsModel { ops }
+        model.refresh(listOf("m1"))
+        assertEquals(null, model.listings.value.getValue("m1").agents.single().mirrorSessionId)
+        model.refreshMachine("m1")
+        assertEquals("mirror-1", model.listings.value.getValue("m1").agents.single().mirrorSessionId)
+        // A machine that is not among the listed ones does not appear by being asked about.
+        model.refreshMachine("m2")
+        assertEquals(setOf("m1"), model.listings.value.keys)
+    }
+
+    @Test
+    fun openClaudeAgentStillSucceedsWhenTheSyncNeverEnds() = runBlocking {
+        h.startAndSync()
+        respond("open-claude-agent") { success("mirror-1") }
+        // The session sync that never answers (offline, retrying): the open is not held for it. The wait is
+        // shortened to 50 ms here because the real RPC under it needs real time; the 5 s bound itself is
+        // checked in virtual time (ClaudeAgentsTest) and is this parameter's default.
+        val stuck = MachineOps(h.account.rpc, h.account.api, h.store, h.account.decoder, refreshSessions = { awaitCancellation() }, syncWaitMs = 50)
+        val started = System.nanoTime()
+        assertEquals(OpenClaudeAgentResult.Success("mirror-1"), stuck.openClaudeAgent("m1", "demo-agent"))
+        assertTrue("returned after the wait, not after the sync", (System.nanoTime() - started) / 1_000_000 < 4_000)
     }
 
     // The rest of ops.ts's machine calls.

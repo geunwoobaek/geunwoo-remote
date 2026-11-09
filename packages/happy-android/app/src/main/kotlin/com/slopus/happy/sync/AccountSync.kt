@@ -94,7 +94,7 @@ class AccountSync(
 
     val live = LiveUpdates(store, decoder, presence, messages, requestSync = deltaSync::invalidate, onSessionDeleted = fileCache::forgetSession)
 
-    private val rpc = RpcClient(socket, store, decoder, io)
+    internal val rpc = RpcClient(socket, store, decoder, io)
 
     /** Abort, permissions, kill, archive, delete, files and shell for one session (ops.ts). */
     val sessionOps = SessionOps(rpc, api, store, io)

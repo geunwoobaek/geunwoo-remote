@@ -148,6 +148,13 @@ class ClaudeAgentsModel(private val ops: () -> MachineOps?) {
         }
     }
 
+    /** Lists one machine again, as after opening one of its sessions; a machine not among the listed ones stays unlisted. */
+    suspend fun refreshMachine(machineId: String) {
+        val machineOps = ops() ?: return
+        val listing = machineOps.listClaudeAgents(machineId)
+        listingsState.update { known -> if (machineId in known) known + (machineId to listing) else known }
+    }
+
     /** Opens [agentId]; null when that row is already being opened, so a repeat tap does nothing. */
     suspend fun open(machineId: String, agentId: String): OpenClaudeAgentResult? {
         var started = false

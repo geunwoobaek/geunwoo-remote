@@ -1,5 +1,6 @@
 package com.slopus.happy.sync
 
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -41,6 +42,18 @@ const val CLAUDE_AGENTS_UNSUPPORTED = "unsupported"
 
 /** The `unavailable` reason for an answer that could not be read. */
 const val CLAUDE_AGENTS_FAILED = "agents-command-failed"
+
+/**
+ * The longest the home waits on a session sync, after opening a background
+ * session and on pull to refresh. The sync itself retries on its own and goes
+ * on after the wait; offline it never ends, and no spinner or tap should hang on it.
+ */
+const val CLAUDE_AGENTS_SYNC_WAIT_MS = 5_000L
+
+/** Runs [sync] for at most [timeoutMs]; the sync is only waited on, so it carries on past the end of the wait. */
+suspend fun awaitSyncBriefly(timeoutMs: Long = CLAUDE_AGENTS_SYNC_WAIT_MS, sync: suspend () -> Unit) {
+    withTimeoutOrNull(timeoutMs) { sync() }
+}
 
 /**
  * The daemon's `{ agents, unavailable? }`. A row without an id cannot be
