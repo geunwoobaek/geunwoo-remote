@@ -83,14 +83,14 @@
 
 - 새 머신 RPC `open-claude-agent { id }`. 반환은 `{ type: 'success', sessionId }` 또는 `{ type: 'error', errorMessage }`. 앱은 받은 `sessionId`로 기존 채팅 화면을 연다.
 - 같은 백그라운드 세션에 거울이 이미 있으면 새로 만들지 않고 그 ID를 돌려준다. 거울의 기준 키는 **에이전트 `id`**다. `sessionId`는 맥에서 `/clear`하면 바뀌므로 키로 쓰지 않는다.
-- **다시 열기는 고정 태그만으로는 안 된다.** dataKey 암호화 계정에서는 `getOrCreateSession`(`api/api.ts`)이 부를 때마다 새 키를 만든다. 그래서 기존 세션을 같은 태그로 받으면 복호화에 실패한다(코드로 확인). 데몬은 처음 만들 때 `{ agentId → happySessionId, 암호화 키·방식, 마지막으로 올린 기록 uuid }`를 Happy 홈 폴더의 파일에 저장한다(권한 0600). 다시 열 때는 데몬이 이미 쓰는 재연결 방식(저장된 암호화 데이터 + `HAPPY_RECONNECT_*` 환경변수, `daemon/run.ts` 233·855행 부근)으로 같은 세션에 붙는다(나의 결정). 이 파일은 데몬이 재시작돼도 남는다.
+- **다시 열기는 고정 태그만으로는 안 된다.** dataKey 암호화 계정에서는 `getOrCreateSession`(`api/api.ts`)이 부를 때마다 새 키를 만든다. 그래서 기존 세션을 같은 태그로 받으면 복호화에 실패한다(코드로 확인). 거울은 처음 만들어질 때 다른 자식 세션처럼 데몬에 신고(`notifyDaemonSessionStarted`)한다. 그러면 데몬이 이미 하는 대로 암호화 키·방식과 메타데이터(`claudeAgentId` 포함)를 세션 저장 파일에 남긴다(`persistSession`). 다시 열 때는 데몬이 이미 쓰는 재연결 방식(저장된 암호화 데이터 + `HAPPY_RECONNECT_*` 환경변수, `daemon/run.ts` 233·855행 부근)으로 같은 세션에 붙는다(나의 결정). 이 파일은 데몬이 재시작돼도 남는다.
 - 거울은 데몬이 띄우는 **자식 프로세스**로 돈다(나의 결정: 데몬이 `happy claude` 자식을 띄우는 기존 방식과 같고, 세션 단위 RPC 등록(`registerCommonHandlers(metadata.path)`)을 그대로 쓸 수 있다). 예: `happy claude-agent-mirror <id>`. 데몬은 기존 자식 세션처럼 추적하고, `stop-session`이 오면 **거울만** 끝낸다. 백그라운드 세션은 건드리지 않는다.
 
 ### 3. 거울 세션: 대화 올리기
 
 - 메타데이터: `flavor: 'claude'`, `path`·`cwd` = 백그라운드 세션 cwd, `claudeSessionId` = 백그라운드 sessionId, `startedBy: 'daemon'`, 그 외 필수 필드는 `runClaude.ts`와 같다. 거울 표시용 `claudeAgentId: <id>`를 추가한다. 앱은 이 값으로 거울을 알아본다. 공식 앱은 모르는 필드를 무시한다.
 - `createSessionScanner({ sessionId: null, workingDirectory: cwd, onMessage })` 뒤 `onNewSession(bg sessionId)`로 기존 기록부터 다시 읽어 올린다. 올리는 함수는 로컬 모드와 같은 `sendClaudeSessionMessageFromLocalTranscript`다.
-- 거울을 다시 열 때 이미 올린 기록을 또 올리지 않는다. 이미 올린 마지막 기록의 uuid를 위 2절의 데몬 파일에 저장해 두고, 그 뒤부터만 올린다.
+- 거울을 다시 열 때 이미 올린 기록을 또 올리지 않는다. 이미 올린 마지막 기록의 uuid를 거울 전용 파일 `<happyHomeDir>/claude-agent-mirrors/<agentId>.json`(`{ happySessionId, lastUuid }`, 권한 0600)에 저장해 두고, 그 뒤부터만 올린다. 데몬 파일과 따로 두는 이유는 두 프로세스가 같은 파일을 동시에 쓰지 않게 하기 위해서다.
 - **세션 전환 따라가기.** 맥에서 `/clear` 등으로 백그라운드 세션의 `sessionId`가 바뀔 수 있다. 거울에는 Claude 훅이 없으므로, 거울이 `claude agents --json`을 주기적으로 보고 같은 `id`의 `sessionId`가 바뀌면 `onNewSession(새 sessionId)`로 새 기록 파일을 따라간다(나의 결정). 메타데이터의 `claudeSessionId`도 갱신한다.
 - **중복 방지.** 폰이 보낸 말은 이미 서버에 사용자 메시지로 있다. 그래서 거울이 타이핑한 말이 기록 파일에 사용자 메시지로 다시 나타나면 올리지 않는다. 거울이 타이핑한 텍스트를 대기열에 기억해 두고, 기록 파일의 다음 사용자 메시지와 같으면 건너뛴다. 맥에서 직접 입력한 말은 대기열에 없으므로 그대로 올라간다.
 
@@ -107,11 +107,16 @@
 
 ### 5. 보이지 않는 터미널(pty)
 
-attach는 진짜 터미널을 요구한다. 아래 순서로 처음 동작하는 것을 쓴다. 고른 이유를 계획에 적는다.
+attach는 진짜 터미널을 요구한다. **tmux를 쓴다**(2026-11-09 결정).
 
-1. macOS·Linux 기본 `script` 명령으로 감싸기(새 의존성 없음). 입력을 파이프로 넣었을 때 attach가 받는지 먼저 확인한다.
-2. 데몬에 이미 있는 tmux 코드 재사용(`daemon/run.ts`의 tmux 부분). tmux가 없는 맥에선 못 쓴다.
-3. pty npm 패키지(node-pty 등) 추가. 네이티브 빌드가 필요해 배포가 무거워지므로 마지막이다.
+- 근거:
+  - macOS `script`는 자식에게 터미널은 주지만, Node에서 파이프로 넣은 입력이 전달되지 않았다(시험 결과 출력 없음).
+  - tmux는 이 맥에 있다(`/opt/homebrew/bin/tmux`).
+  - `capture-pane -p`로 지금 화면의 글자를 깔끔하게 읽을 수 있어 권한 창 확인에 알맞다.
+  - `paste-buffer -p`로 여러 줄을 bracketed paste로 넣을 수 있다.
+- 사용자의 tmux 세션과 섞이지 않도록 전용 소켓 `tmux -L jarvis-agents`를 쓴다.
+- tmux가 없으면 `list-claude-agents`가 `unavailable: "tmux-missing"`을 돌려준다. 앱은 안내 한 줄을 보인다.
+- 새 npm 의존성은 추가하지 않는다.
 
 터미널 크기는 120×40으로 고정한다(실험값).
 
@@ -155,7 +160,7 @@ attach는 진짜 터미널을 요구한다. 아래 순서로 처음 동작하는
 
 - 홈 목록에 맥별 "Claude 백그라운드 세션" 섹션을 추가한다. 온라인인 머신마다 `list-claude-agents`를 부르고, 이름·폴더 끝부분·상태를 한 줄로 보인다. 홈에 들어올 때와 당겨서 새로고침할 때 다시 부른다.
 - 이미 거울이 있는 항목은 기존 세션 행과 겹치지 않게 한 번만 보인다. 섹션의 항목을 누르면 `open-claude-agent` → 받은 `sessionId`로 채팅 화면을 연다.
-- 거울 세션의 채팅 화면은 기존 화면 그대로다. 단, 거울에서 안 되는 조작은 숨기거나 막는다. 대상은 모델 바꾸기, 권한 모드 바꾸기, 첨부, 그리고 **다시 시작(resume)·포크·사이드챗·복제·되감기**다. 뒤의 다섯 가지는 메타데이터의 `claudeSessionId`로 `happy claude --resume`을 띄우거나 기록 파일을 고친다. 그러면 살아 있는 맥 세션에 두 번째 Claude 프로세스가 붙어 세션이 갈라진다. 앱은 `claudeAgentId`가 있는 세션에서 이 조작들을 숨긴다. 데몬의 `resume-happy-session`과 fork·duplicate·rewind 처리기도 `claudeAgentId`가 있는 세션이면 거절한다. 기존 처리기에 짧은 거절 조건만 추가한다(나의 결정, 공식 앱에서 눌러도 안전하도록). 상단에는 "맥 백그라운드 세션" 표시를 단다.
+- 거울 세션의 채팅 화면은 기존 화면 그대로다. 단, 거울에서 안 되는 조작은 숨기거나 막는다. 대상은 모델 바꾸기, 권한 모드 바꾸기, 첨부, 그리고 **다시 시작(resume)·포크·사이드챗·복제·되감기**다. 뒤의 다섯 가지는 메타데이터의 `claudeSessionId`로 `happy claude --resume`을 띄우거나 기록 파일을 고친다. 그러면 살아 있는 맥 세션에 두 번째 Claude 프로세스가 붙어 세션이 갈라진다. 앱은 `claudeAgentId`가 있는 세션에서 이 조작들을 숨긴다. 데몬의 `resume-happy-session`도 `claudeAgentId`가 있는 세션이면 거절한다. 기존 처리기에 짧은 거절 조건만 추가한다(나의 결정, 공식 앱에서 눌러도 안전하도록). fork·duplicate·rewind RPC는 Happy 세션 ID 없이 폴더와 Claude 세션 ID만 받는다. 게다가 기록의 사본으로 새 Claude 세션을 만들 뿐 살아 있는 세션을 건드리지 않으므로, 데몬에서는 막지 않고 앱에서만 숨긴다. 상단에는 "맥 백그라운드 세션" 표시를 단다.
 - 요청 함수는 `sync/MachineOps.kt`에 다른 머신 RPC와 같은 모양으로 추가한다.
 - 새 문구는 `happy-i18n` 카탈로그에 넣고 `generate.mjs`로 생성한다.
 
@@ -177,6 +182,6 @@ attach는 진짜 터미널을 요구한다. 아래 순서로 처음 동작하는
 
 - pty 방식의 최종 선택(위 순서 안에서).
 - `status` 감시와 세션 소멸 감시의 방식·간격.
-- 데몬의 거울 기록 파일 이름과 형식.
+- 거울 전용 파일의 쓰기 방식(원자적 쓰기 등).
 - busy 중 입력을 바로 넣을지 기다릴지(Claude Code 동작 확인 후).
 - 섹션의 시각 디자인(기존 홈 행 스타일을 따른다).
