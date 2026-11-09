@@ -922,6 +922,65 @@ describe('ApiSessionClient v3 messages API migration', () => {
         expect((client as any).lastReceivedSeq).toBe(4);
     });
 
+    describe('skipExistingMessages survives failed fetches', () => {
+        const phoneMessage = (seq: number, text: string, hasMore: boolean) => ({
+            data: {
+                messages: [{
+                    id: `msg-${seq}`,
+                    seq,
+                    content: { t: 'encrypted', c: encryptContent(session, { role: 'user', content: { type: 'text', text } }) },
+                    localId: null,
+                    createdAt: seq * 1000,
+                    updatedAt: seq * 1000,
+                }],
+                hasMore,
+            },
+        });
+
+        it('a retry after a failed first request still routes nothing historical', async () => {
+            const client = new ApiSessionClient('fake-token', session);
+            const onUserMessage = vi.fn();
+            client.onUserMessage(onUserMessage);
+            client.skipExistingMessages();
+
+            mockAxiosGet
+                .mockRejectedValueOnce(new Error('timeout'))
+                .mockResolvedValueOnce(phoneMessage(1, 'old', false));
+
+            await expect((client as any).fetchMessages()).rejects.toThrow('timeout');
+            await (client as any).fetchMessages();
+
+            expect(onUserMessage).not.toHaveBeenCalled();
+            expect((client as any).lastReceivedSeq).toBe(1);
+
+            // The skip is spent once a fetch completed: a new phone message is delivered.
+            mockAxiosGet.mockResolvedValueOnce(phoneMessage(2, 'new', false));
+            await (client as any).fetchMessages();
+            expect(onUserMessage).toHaveBeenCalledTimes(1);
+            expect(onUserMessage.mock.calls[0][0].content.text).toBe('new');
+        });
+
+        it('a retry after page 2 failed does not replay the rest of the history', async () => {
+            const client = new ApiSessionClient('fake-token', session);
+            const onUserMessage = vi.fn();
+            client.onUserMessage(onUserMessage);
+            client.skipExistingMessages();
+
+            mockAxiosGet
+                .mockResolvedValueOnce(phoneMessage(1, 'old 1', true))
+                .mockRejectedValueOnce(new Error('503'))
+                .mockResolvedValueOnce(phoneMessage(2, 'old 2', true))
+                .mockResolvedValueOnce(phoneMessage(3, 'old 3', false));
+
+            await expect((client as any).fetchMessages()).rejects.toThrow('503');
+            expect((client as any).lastReceivedSeq).toBe(1);
+            await (client as any).fetchMessages();
+
+            expect(onUserMessage).not.toHaveBeenCalled();
+            expect((client as any).lastReceivedSeq).toBe(3);
+        });
+    });
+
     it('fetchMessages stops pagination when hasMore is true but seq cursor does not advance', async () => {
         const client = new ApiSessionClient('fake-token', session);
         (client as any).lastReceivedSeq = 2;

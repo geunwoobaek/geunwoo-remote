@@ -602,10 +602,11 @@ export class ApiSessionClient extends EventEmitter {
     }
 
     private async fetchMessages() {
-        // On reconnect, skip processing existing messages — just advance the cursor
+        // On reconnect, skip processing existing messages — just advance the cursor.
+        // The flag is cleared only once the whole catch-up succeeded: a failed request is retried
+        // (backoff) from the cursor, and that retry must keep skipping instead of replaying history.
         const skipRouting = this.skipInitialMessages;
         if (skipRouting) {
-            this.skipInitialMessages = false;
             logger.debug('[API] Reconnect mode: skipping existing messages, advancing lastReceivedSeq');
         }
 
@@ -662,6 +663,9 @@ export class ApiSessionClient extends EventEmitter {
             if (!hasMore) {
                 break;
             }
+        }
+        if (skipRouting) {
+            this.skipInitialMessages = false;
         }
     }
 
