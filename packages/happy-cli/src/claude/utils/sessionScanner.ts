@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { logger } from "@/ui/logger";
 import { startFileWatcher } from "@/modules/watcher/startFileWatcher";
-import { getProjectPath } from "./path";
+import { findSessionProjectDir, getProjectPath } from "./path";
 
 /**
  * Known internal Claude Code event types that should be silently skipped.
@@ -34,10 +34,18 @@ export async function createSessionScanner(opts: {
      * its watcher gives up. This does not bound a late transcript file.
      */
     missingFileTimeoutMs?: number
+    /**
+     * Look for each session's transcript in every project directory when it is not under the
+     * working directory's own (a session that moved into a worktree keeps writing where it
+     * started). Off by default: Happy's own sessions always write under their working directory.
+     */
+    searchOtherProjects?: boolean
 }) {
 
     // Resolve project directory
     const projectDir = getProjectPath(opts.workingDirectory);
+    const projectDirFor = (sessionId: string): string =>
+        opts.searchOtherProjects ? findSessionProjectDir(opts.workingDirectory, sessionId) : projectDir;
 
     // Finished, pending finishing and current session
     let finishedSessions = new Set<string>();
@@ -52,7 +60,7 @@ export async function createSessionScanner(opts: {
 
     // Mark existing entries as processed and start watching the initial session
     if (opts.sessionId) {
-        let entries = await readSessionEntries(projectDir, opts.sessionId);
+        let entries = await readSessionEntries(projectDirFor(opts.sessionId), opts.sessionId);
         logger.debug(`[SESSION_SCANNER] Marking ${entries.length} existing entries as processed from session ${opts.sessionId}`);
         for (let entry of entries) {
             processedEntryKeys.add(entry.key);
@@ -86,7 +94,7 @@ export async function createSessionScanner(opts: {
 
         // Process sessions
         for (let session of sessions) {
-            const sessionEntries = await readSessionEntries(projectDir, session);
+            const sessionEntries = await readSessionEntries(projectDirFor(session), session);
             let skipped = 0;
             let sentMessages = 0;
             let sentTranscriptEvents = 0;
@@ -124,7 +132,7 @@ export async function createSessionScanner(opts: {
             if (!watchers.has(p) && !deadSessions.has(p)) {
                 logger.debug(`[SESSION_SCANNER] Starting watcher for session: ${p}`);
                 watchers.set(p, startFileWatcher(
-                    join(projectDir, `${p}.jsonl`),
+                    join(projectDirFor(p), `${p}.jsonl`),
                     () => { sync.invalidate(); },
                     {
                         missingFileTimeoutMs: opts.missingFileTimeoutMs,
@@ -194,7 +202,7 @@ export async function createSessionScanner(opts: {
             // file as fresh user prompts. Without this, every previous
             // user message re-appears in the chat after reconnect.
             if (options?.treatExistingAsProcessed) {
-                const existing = await readSessionEntries(projectDir, sessionId);
+                const existing = await readSessionEntries(projectDirFor(sessionId), sessionId);
                 logger.debug(`[SESSION_SCANNER] Pre-marking ${existing.length} existing entries as processed for new session ${sessionId}`);
                 for (const entry of existing) {
                     processedEntryKeys.add(entry.key);

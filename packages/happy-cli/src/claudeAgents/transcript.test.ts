@@ -213,6 +213,14 @@ describe('readTranscriptEntries', () => {
         expect(findPendingToolUse(entries)?.id).toBe('toolu_1');
     });
 
+    it('reads the transcript of a session that moved into a worktree after it started', () => {
+        const started = getProjectPath('/Users/tester/project');
+        mkdirSync(started, { recursive: true });
+        writeFileSync(join(started, 'sess-3.jsonl'), JSON.stringify(userText('hello')) + '\n');
+
+        expect(readTranscriptEntries('/Users/tester/project/.claude/worktrees/feature', 'sess-3')).toHaveLength(1);
+    });
+
     it('returns an empty list when the transcript does not exist', () => {
         expect(readTranscriptEntries('/Users/tester/project', 'missing')).toEqual([]);
     });

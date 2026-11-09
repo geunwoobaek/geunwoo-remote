@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { getProjectPath } from './path';
+import { findSessionProjectDir, getProjectPath } from './path';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // Store original env
@@ -160,5 +162,39 @@ describe('getProjectPath', () => {
             const result = getProjectPath(workingDir);
             expect(result).toBe(join('/custom/claude/config/', 'projects', '-Users-steve-projects-my-app'));
         });
+    });
+});
+
+describe('findSessionProjectDir', () => {
+    let configDir: string;
+
+    beforeEach(() => {
+        process.env = { ...originalEnv };
+        configDir = mkdtempSync(join(tmpdir(), 'claude-config-'));
+        process.env.CLAUDE_CONFIG_DIR = configDir;
+    });
+
+    afterEach(() => {
+        process.env = { ...originalEnv };
+        rmSync(configDir, { recursive: true, force: true });
+    });
+
+    it('uses the working directory project when the transcript is there', () => {
+        const dir = getProjectPath('/Users/tester/project');
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'sess-1.jsonl'), '');
+        expect(findSessionProjectDir('/Users/tester/project', 'sess-1')).toBe(dir);
+    });
+
+    it('finds the transcript of a session that moved into a worktree after it started', () => {
+        const started = getProjectPath('/Users/tester/project');
+        mkdirSync(started, { recursive: true });
+        writeFileSync(join(started, 'sess-2.jsonl'), '');
+        mkdirSync(getProjectPath('/Users/tester/project/.claude/worktrees/feature'), { recursive: true });
+        expect(findSessionProjectDir('/Users/tester/project/.claude/worktrees/feature', 'sess-2')).toBe(started);
+    });
+
+    it('falls back to the working directory project when the transcript is nowhere', () => {
+        expect(findSessionProjectDir('/Users/tester/project', 'missing')).toBe(getProjectPath('/Users/tester/project'));
     });
 });

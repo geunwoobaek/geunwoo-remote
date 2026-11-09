@@ -56,6 +56,29 @@ describe('sessionScanner', () => {
     }
   })
   
+  it('reads a moved session from the project it started in only when searchOtherProjects is on', async () => {
+    const line = JSON.stringify({ type: 'user', uuid: 'moved-1', message: { role: 'user', content: 'hi' } }) + '\n'
+    await writeFile(join(projectDir, 'moved-session.jsonl'), line)
+    const worktree = join(testDir, '.claude', 'worktrees', 'feature')
+
+    const plain: RawJSONLines[] = []
+    const plainScanner = await createSessionScanner({ sessionId: null, workingDirectory: worktree, onMessage: (m) => plain.push(m) })
+    await plainScanner.onNewSession('moved-session')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    await plainScanner.cleanup()
+    expect(plain).toHaveLength(0)
+
+    scanner = await createSessionScanner({
+      sessionId: null,
+      workingDirectory: worktree,
+      searchOtherProjects: true,
+      onMessage: (m) => collectedMessages.push(m),
+    })
+    await scanner.onNewSession('moved-session')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(collectedMessages.map((m) => m.type === 'summary' ? null : m.uuid)).toEqual(['moved-1'])
+  })
+
   it('should process initial session and resumed session correctly', async () => {
     // TEST SCENARIO:
     // Phase 1: User says "lol" → Assistant responds "lol" → Session closes

@@ -10,7 +10,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { getProjectPath } from '@/claude/utils/path';
+import { findSessionProjectDir } from '@/claude/utils/path';
 import type { ClaudeAgentStatus } from './types';
 
 export type PendingToolUse = { id: string; name: string; input: Record<string, unknown> };
@@ -105,7 +105,7 @@ export function findToolUseOutcome(entries: unknown[], toolUseId: string): ToolU
 
 /** Parsed lines of a session transcript; broken lines are skipped and a missing file yields []. */
 export function readTranscriptEntries(cwd: string, sessionId: string): unknown[] {
-    const file = join(getProjectPath(cwd), `${sessionId}.jsonl`);
+    const file = join(findSessionProjectDir(cwd, sessionId), `${sessionId}.jsonl`);
     if (!existsSync(file)) {
         return [];
     }

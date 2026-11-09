@@ -24,7 +24,7 @@ import { ApiClient } from '@/api/api';
 import type { ApiSessionClient } from '@/api/apiSession';
 import { decodeBase64, encodeBase64 } from '@/api/encryption';
 import type { AgentState, Metadata, Session as ApiSession } from '@/api/types';
-import { getProjectPath } from '@/claude/utils/path';
+import { findSessionProjectDir } from '@/claude/utils/path';
 import { createAgentCwdTracker } from '@/claude/utils/agentCwd';
 import { registerKillSessionHandler } from '@/claude/registerKillSessionHandler';
 import type { PermissionResponse } from '@/claude/utils/permissionHandler';
@@ -308,7 +308,7 @@ function createTranscriptReader(cwd: string): { read(sessionId: string): unknown
     let cached: { file: string; size: number; mtimeMs: number; entries: unknown[] } | null = null;
     return {
         read(sessionId) {
-            const file = join(getProjectPath(cwd), `${sessionId}.jsonl`);
+            const file = join(findSessionProjectDir(cwd, sessionId), `${sessionId}.jsonl`);
             if (!existsSync(file)) {
                 return [];
             }
@@ -530,6 +530,7 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     const scanner = await createSessionScanner({
         sessionId: null,
         workingDirectory: agent.cwd,
+        searchOtherProjects: true,
         onMessage: (message) => {
             agentCwd.observe(message);
             const uuid = message.type === 'summary' ? null : message.uuid;
