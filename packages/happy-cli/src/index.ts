@@ -136,6 +136,23 @@ Conversation history is preserved on the server, but in-flight tool calls are in
       process.exit(1)
     }
     return;
+  } else if (subcommand === 'claude-agent-mirror') {
+    try {
+      const agentId = args[1];
+      if (!agentId) {
+        console.error('Usage: happy claude-agent-mirror <agentId>')
+        process.exit(1)
+      }
+      const { runClaudeAgentMirror } = await import('@/claudeAgents/runClaudeAgentMirror');
+      await runClaudeAgentMirror({ agentId });
+    } catch (error) {
+      console.error(chalk.red('Error:'), error instanceof Error ? error.message : 'Unknown error')
+      if (process.env.DEBUG) {
+        console.error(error)
+      }
+      process.exit(1)
+    }
+    return;
   } else if (subcommand === 'codex') {
     // Handle codex command
     try {

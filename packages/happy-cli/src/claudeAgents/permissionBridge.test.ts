@@ -288,6 +288,24 @@ describe('createPermissionBridge tick', () => {
         expect(h.state.completedRequests?.toolu_write).toMatchObject({ status: 'canceled' });
     });
 
+    it('tick does not count ticks while the session is busy running the approved tool', async () => {
+        const { h, bridge } = setup({ screen: screen('permission-write'), entries: [userText('write it'), toolUse('toolu_write', 'Write', writeInput)] });
+        await bridge.tick();
+
+        // Approved on the Mac: the dialog is gone and the tool runs; its tool_result is written only when it finishes.
+        h.status = 'busy';
+        for (let i = 0; i < 10; i++) {
+            await bridge.tick();
+        }
+        expect(Object.keys(h.state.requests ?? {})).toEqual(['toolu_write']);
+        expect(h.state.completedRequests).toBeUndefined();
+
+        h.entries = [...h.entries, toolResult('toolu_write', 'File created successfully')];
+        await bridge.tick();
+        expect(h.state.requests).toEqual({});
+        expect(h.state.completedRequests?.toolu_write).toMatchObject({ status: 'approved', decision: 'approved' });
+    });
+
     it('a Mac-side answer to a screen: request completes from the later tool_use', async () => {
         const { h, bridge } = setup({ screen: screen('question-single'), entries: [userText('ask me')] });
         await bridge.tick();

@@ -98,7 +98,7 @@ type OpenRequest = {
     fingerprint: string;
     /** Transcript length when the request was made: a Mac answer to a `screen:` request is looked for after it. */
     transcriptLength: number;
-    /** Ticks in a row that found the dialog gone but no outcome. */
+    /** Ticks in a row, none of them while the session was busy, that found the dialog gone but no outcome. */
     misses: number;
     /** A phone answer was refused: it stays completed as `answer-on-mac`, unless the Mac answer shows up. */
     refused: boolean;
@@ -260,11 +260,18 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
         return later === undefined ? null : findToolUseOutcome(entries, later.toolUse.id);
     }
 
-    /** The request's dialog is gone: complete it from the transcript, or cancel after `MAX_MISSES` tries. */
-    function settle(request: OpenRequest, entries: unknown[]): void {
+    /**
+     * The request's dialog is gone: complete it from the transcript, or cancel after `MAX_MISSES` tries.
+     * A tick while the session is `busy` is not a miss: after an approval on the Mac the tool is
+     * running and its `tool_result` is written only when it finishes, however long that takes.
+     */
+    function settle(request: OpenRequest, entries: unknown[], status: ClaudeAgentStatus | null): void {
         const outcome = outcomeOf(request, entries);
         if (outcome !== null) {
             complete(request, { status: outcome.decision, decision: outcome.decision }, entries.length);
+            return;
+        }
+        if (status === 'busy') {
             return;
         }
         request.misses += 1;
@@ -371,7 +378,7 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
         }
         for (const request of [...open.values()]) {
             if (request.key !== shown) {
-                settle(request, entries);
+                settle(request, entries, status);
             }
         }
     }

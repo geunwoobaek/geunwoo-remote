@@ -322,6 +322,8 @@ export type Metadata = {
   machineId?: string,
   gitBranch?: string,
   claudeSessionId?: string, // Claude Code session ID
+  /** Set on a mirror of a `claude agents` background session: the agent id. */
+  claudeAgentId?: string,
   codexThreadId?: string, // Codex app-server thread ID
   tools?: string[],
   slashCommands?: string[],
