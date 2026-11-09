@@ -17,7 +17,7 @@
 - tmux는 전용 소켓 `tmux -L jarvis-agents`로만 부른다. 터미널 크기 120×40. 새 npm 의존성 추가 금지.
 - `claude` 경로는 로그인 셸 `command -v claude`로 찾는다. Agent SDK에 묶인 Claude는 쓰지 않는다.
 - 거울 메타데이터에 `claudeAgentId: <id>`를 넣는다. 앱과 데몬은 이 필드로 거울을 알아본다.
-- 권한·질문·계획에 키를 넣기 전에 네 조건(①`waiting` ②같은 `tool_use` id ③화면에 해당 창 ④화면 내용이 그 도구와 일치)을 모두 확인한다. 하나라도 어긋나면 넣지 않고 폰에 "맥에서 답해 주세요"를 보인다.
+- 권한·질문·계획에 키를 넣기 전에 네 조건(①`waiting` ②폰에 보인 창과 같은 창: 창 지문이 같고, 기록에서 얻은 id가 있으면 id도 같음 ③화면에 해당 창 ④화면 내용이 그 도구와 일치)을 모두 확인한다. 키는 한 번에 하나씩 `DIALOG_KEY_GAP_MS`(600ms) 간격으로 넣는다. 하나라도 어긋나면 넣지 않고 폰에 "맥에서 답해 주세요"를 보인다.
 - 맥에서 먼저 답하면 기록 파일의 tool_result로 `completedRequests[id]`를 `approved`/`denied`로 쓴다. 폰 카드를 지우지 않는다.
 - CLI의 기존 파일은 등록과 짧은 조건 추가만 한다. 새 코드는 `packages/happy-cli/src/claudeAgents/`에 둔다. 앱의 새 컴포저블은 새 파일에 둔다.
 - 공개 포크라 픽스처의 경로·이름은 가짜 값(`/Users/tester/project`, `demo-agent`)으로 바꾼다. 개인·회사 정보 금지.
@@ -129,9 +129,10 @@
   - `type DialogKind = 'none' | 'permission' | 'question' | 'plan' | 'unknown'`
   - `classifyScreen(screen: string): DialogKind`
   - `screenMatchesPending(screen: string, pending: PendingToolUse): boolean` — 조건 ④. 도구별로 화면에 있어야 할 글자: Write·Edit·Read는 `file_path`의 파일 이름, Bash는 `command` 앞 40자, AskUserQuestion은 첫 질문의 `question` 앞 40자, ExitPlanMode는 계획 창 제목. 나머지 도구는 도구 이름. 마지막 `tool_use`가 `Task`/`Agent`이면 항상 false.
-  - `keysForPermission(approved: boolean): AttachKey[]`
+  - `keysForPermission(approved: boolean, screen: string): AttachKey[] | null` — 화면에서 `Yes`/`No` 선택지 번호를 읽는다(창마다 `No`가 2 또는 3). 못 읽으면 null.
   - `keysForQuestion(input: Record<string, unknown>, answers: Record<string, string>): AttachKey[] | null` — `answers`는 앱이 보내는 `updatedInput.answers`(질문 문장 → `"a, b"`). 매핑할 수 없으면 null.
-  - `keysForPlan(approved: boolean, mode: string | undefined, reason: string | undefined): { keys: AttachKey[]; thenType?: string }`
+  - `keysForPlan(approved: boolean, mode: string | undefined, reason: string | undefined): { keys: AttachKey[]; thenType?: string; thenPress?: AttachKey[] }` — 승인은 항상 수동 승인(2번).
+  - `DIALOG_KEY_GAP_MS = 600` — 키 사이 간격.
   - `isInputBoxEmpty(screen: string): boolean` — Review Focus 1용.
 
 - [ ] **Step 1: 화면 수집 스크립트 작성·실행** — `capture-claude-dialogs.mjs`는 `~/workspace`에서 일회용 `claude --bg --model haiku --name jarvis-dialog-capture`를 띄운다. 그다음 attach 터미널로 프롬프트를 넣어 아래 화면을 `capture-pane`으로 찍는다.
@@ -156,10 +157,13 @@
 
 **Files:**
 - Create: `packages/happy-cli/src/claudeAgents/inputDelivery.ts`
+- Modify: `packages/happy-cli/src/claudeAgents/attachTerminal.ts`(`screen()`을 `capture-pane -p -e`로: 색 정보 포함), `attachTerminal.test.ts`
 - Test: `packages/happy-cli/src/claudeAgents/inputDelivery.test.ts`
 
 **Interfaces:**
-- Consumes: `AttachTerminal`, `sanitizeTypedText`(Task 3), `isInputBoxEmpty`(Task 4)
+- Consumes: `AttachTerminal`, `sanitizeTypedText`(Task 3), `isInputBoxEmpty`(Task 4, `-e` 화면에서 흐린 제안 글자를 빈 칸으로 본다)
+- `screen()`은 ANSI가 섞인 화면을 돌려준다. Task 4의 판별 함수들은 ANSI를 지우고 읽는다.
+- 입력창 위에 세션 설문(`1: Bad 2: Fine 3: Good 0: Dismiss`)이 보이면 `0`을 눌러 닫고 화면을 다시 읽은 뒤 넣는다.
 - Produces:
   - `createEchoFilter(): { remember(text: string): void; shouldSkip(userText: string): boolean }` — 공백 정리 후 비교. 기억한 횟수만큼만 건너뛴다.
   - `type DeliveryResult = 'sent' | 'busy-input' | 'failed'`
@@ -172,6 +176,9 @@
   - `send sanitizes control characters before typing`.
   - `echo filter skips only as many copies as were remembered`: remember('hi') 1회 → shouldSkip('hi') true, 다음 shouldSkip('hi') false.
   - `interrupt presses escape once`.
+  - `send treats a dim suggestion as an empty input box` (Task 4 픽스처 `input-suggestion-ansi`).
+  - `send dismisses the session survey with 0 before typing` (Task 4 픽스처 `input-suggestion-and-survey`).
+  - `attachTerminal`: `screen() keeps colour escapes`.
 - [ ] **Step 2: 실패 확인** → FAIL.
 - [ ] **Step 3: 구현.**
 - [ ] **Step 4: 통과 확인** → PASS.
@@ -187,13 +194,16 @@
 - Consumes: Task 2·3·4의 함수와 타입, `AgentState`·`PermissionResponse` 타입(`api/types.ts`, `claude/utils/permissionHandler.ts`)
 - Produces:
   - `createPermissionBridge(deps: { readStatus(): ClaudeAgentStatus | null; readEntries(): unknown[]; openTerminal(): Promise<AttachTerminal>; updateAgentState(update: (s: AgentState) => AgentState): void; notifyPermission(tool: string): void; now(): number }): { tick(): Promise<void>; answer(response: PermissionResponse): Promise<'typed' | 'refused'> }`
+  - `dialogs.ts`에 추가(화면만 보고 창을 읽는 부분):
+    - `dialogFingerprint(screen: string): string | null` — 창 영역(첫 가로줄~맨 아래 가로줄, ANSI 제거, 공백 정리, 상태줄 제외)의 sha1. 창이 없으면 null. 같은 창을 다시 그려도 같아야 한다.
+    - `readDialogFromScreen(screen: string): { tool: string; input: Record<string, unknown> } | null` — 권한 창은 도구 이름과 대상(`file_path`의 파일 이름, Bash `command`), 질문 창은 지금 질문 하나의 `{ questions: [{ question, options: [{label}], multiSelect }] }`, 계획 창은 `{ plan: '' }`. 다 읽을 수 없으면(여러 질문 탭, 잘린 명령, 모르는 문구, `· from the … agent`) null.
   - `tick`:
-    - `waiting`이고 pending이 있으면 `requests[pending.id] = { tool, arguments: input, createdAt }`를 쓴다(이미 있으면 그대로). 처음 쓸 때 한 번 알린다.
-    - `waiting`이 아니고 `requests`에 남은 항목이 있으면 `findToolUseOutcome`으로 결과를 찾아 `completedRequests[id] = { …, completedAt, status, decision }`로 옮긴다. 결과가 없으면 다음 tick에서 다시 본다. 5회 연속 없으면 `canceled`로 옮긴다.
+    - `waiting`이고 `classifyScreen`이 permission/question/plan이면 요청을 만든다. 키는 기록에 결과 없는 `tool_use`가 있고 화면과 맞으면 그 id, 아니면 `screen:<dialogFingerprint>`. 내용은 그 `tool_use` 입력, 없으면 `readDialogFromScreen`. 그것도 null이면 `tool: 'Unknown'` 안내 요청(답하면 거절됨). 요청마다 화면·지문·만든 시점의 기록 길이를 메모리에 둔다. `requests[키]`를 쓰고(이미 있으면 그대로) 처음 쓸 때 한 번 알린다.
+    - 창이 사라졌거나 `waiting`이 아니면 남은 요청을 완료한다. 기록 id 요청은 `findToolUseOutcome`. `screen:` 요청은 만든 뒤 새로 생긴 `tool_use` 중 저장한 화면과 `screenMatchesPending`이 참인 것을 찾아 그 결과를 쓴다. `completedRequests[키] = { …, completedAt, status, decision }`(`screen:`이면 `toolUseId` 없음). 결과가 없으면 다음 tick에서 다시 본다. 5회 연속 없으면 `canceled`.
   - `answer`:
-    - 네 조건을 확인한다(`readStatus()==='waiting'`, `findPendingToolUse()?.id === response.id`, `classifyScreen` 결과가 도구 종류와 일치, `screenMatchesPending`).
-    - 모두 맞으면 도구에 맞는 키를 넣는다(Write 등은 `keysForPermission`, AskUserQuestion은 `keysForQuestion(input, response.updatedInput?.answers)`, ExitPlanMode는 `keysForPlan(response.approved, response.mode, response.reason)`). 그 뒤 `completedRequests`로 옮기고 `'typed'`를 돌려준다.
-    - 하나라도 어긋나거나 키 매핑이 null이면 키를 넣지 않는다. `completedRequests[id]`를 `canceled`로 쓰고 `reason: 'answer-on-mac'`을 붙인 뒤 `'refused'`를 돌려준다.
+    - 네 조건을 확인한다(`readStatus()==='waiting'`, 지금 화면의 `dialogFingerprint`가 저장한 지문과 같고 기록 id 요청이면 `findPendingToolUse()?.id`도 같음, `classifyScreen` 결과가 도구 종류와 일치, `screenMatchesPending`).
+    - 모두 맞으면 도구에 맞는 키를 하나씩 `DIALOG_KEY_GAP_MS` 간격으로 넣는다(권한은 `keysForPermission(approved, screen)`, AskUserQuestion은 `keysForQuestion(input, response.updatedInput?.answers)`, ExitPlanMode는 `keysForPlan(...)`의 `keys` → `thenType` → `thenPress`). 그 뒤 `completedRequests`로 옮기고 `'typed'`를 돌려준다.
+    - 하나라도 어긋나거나 키 매핑이 null이면 키를 넣지 않는다. `completedRequests[키]`를 `canceled`로 쓰고 `reason: 'answer-on-mac'`을 붙인 뒤 `'refused'`를 돌려준다.
 - [ ] **Step 1: 실패하는 테스트 작성** — Task 4 픽스처 화면을 가짜 터미널에 물린다.
   - `tick publishes a request when the session is already waiting` (Review Focus 3).
   - `tick does not notify twice for the same request`.
@@ -203,6 +213,9 @@
   - `answer types plan approval keys for mode acceptEdits`.
   - `tick records a Mac-side approval as approved` / `a Mac-side rejection as denied` (기록 파일에 tool_result 추가 후 status idle).
   - `tick cancels after five ticks without an outcome`.
+  - `tick publishes a screen: request when the transcript has no pending tool_use` / `answer refuses when the dialog fingerprint changed` / `answer presses keys one at a time with the gap` / `a Mac-side answer to a screen: request completes from the later tool_use` / `an unreadable dialog publishes a request that refuses answers`.
+  - `dialogFingerprint is stable across a redraw and differs between dialogs`, `readDialogFromScreen` 픽스처별 기대값.
+  - `transcript.test.ts`: `findPendingToolUse ignores an ExitPlanMode re-emitted after its result`.
 - [ ] **Step 2: 실패 확인** → FAIL.
 - [ ] **Step 3: 구현.**
 - [ ] **Step 4: 통과 확인** → PASS.
@@ -285,6 +298,7 @@
   - `chat/ComposerModes.kt:42,45,48`: 거울이면 모델·추론·권한 모드 선택 false.
   - `ui/attachments/ComposerAttachments.kt:58`, `attachments/AttachmentSupport.kt:56`: 거울이면 첨부 false.
   - `ui/chat/ChatHeader.kt`: 거울이면 제목 아래 "맥 백그라운드 세션" 한 줄.
+  - `chat/ChatReducer.kt`: 거울 세션에서 완료된 `screen:` 권한 카드(독립 도구 메시지) 뒤에 같은 도구 이름의 실제 도구 메시지가 오면 `screen:` 카드를 숨긴다. 계획 승인 카드의 자동 수락 선택지는 거울에서 숨긴다(승인은 항상 수동 승인).
 - Test: `packages/happy-android/app/src/test/kotlin/com/slopus/happy/model/ClaudeAgentMirrorTest.kt`
 
 **Interfaces:**
@@ -296,6 +310,7 @@
   - `model and permission selection are off for a mirror`.
   - `attachments are off for a mirror`.
   - `a normal Claude session keeps fork and resume`(회귀 방지).
+  - `a completed screen: card is hidden once the real tool message arrives`.
 - [ ] **Step 2: 실패 확인** — `cd packages/happy-android && ./gradlew :app:testDebugUnitTest --tests 'com.slopus.happy.model.ClaudeAgentMirrorTest'` → FAIL.
 - [ ] **Step 3: 구현.** 새 문구는 `packages/happy-i18n/translations/*.json`에 넣고 `node packages/happy-android/tools/translations/generate.mjs`로 생성한다(영어 원문 "Mac background session", 다른 로케일은 같은 뜻으로 번역).
 - [ ] **Step 4: 통과 확인** — 같은 명령 → PASS. 그다음 `./gradlew :app:testDebugUnitTest` 전체 → 실패 0.
