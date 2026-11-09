@@ -9,10 +9,17 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.slopus.happy.model.HomeEmptyState
+import com.slopus.happy.model.HomeModelFixtures.machine
+import com.slopus.happy.model.SessionListGrouping
+import com.slopus.happy.net.ConnectionStatus
 import com.slopus.happy.sync.ClaudeAgentEntry
 import com.slopus.happy.ui.PHONE
 import com.slopus.happy.ui.setHappyContent
+import java.time.LocalDate
+import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -83,6 +90,49 @@ class ClaudeAgentsSectionTest {
         show(emptyList())
         rule.onAllNodesWithTag(ClaudeAgentsTags.SECTION).assertCountEquals(0)
         rule.onAllNodesWithTag(ClaudeAgentsTags.TITLE).assertCountEquals(0)
+    }
+
+    private val callbacks = HomeListCallbacks(
+        onOpen = {}, onMenu = {}, onArchive = {}, onSetArchiveHidden = {}, onToggleProject = {},
+        onOpenMachine = {}, onCreateWorkspace = {}, onProjectMenu = { _, _ -> },
+    )
+
+    private fun showEmptyHome(claudeAgents: ClaudeAgentsUi?, onRefresh: (suspend () -> Unit)? = null) {
+        // A linked, online computer and no sessions: the "No sessions yet" home.
+        val state = deriveHomeList(
+            HomeListInputs(HomeSnapshot(emptyList(), listOf(machine("m1"))), SessionListGrouping.Flat, true, emptySet(), emptySet(), emptySet()),
+            ZoneOffset.UTC,
+            LocalDate.of(2026, 10, 16),
+        )
+        assertEquals(HomeEmptyState.NoSessions, state.emptyState)
+        rule.setHappyContent {
+            HomeScreen(
+                state, ConnectionStatus.CONNECTED, SessionListGrouping.Flat, callbacks, HomeScreenActions({}, {}, {}, {}, {}, {}),
+                claudeAgents = claudeAgents, onRefresh = onRefresh,
+            )
+        }
+    }
+
+    @Test
+    fun anEmptyHomeStillShowsTheBackgroundSessionsAboveTheEmptyState() {
+        val ui = ClaudeAgentsUi(listOf(ClaudeAgentsBlock("m1", "Studio", listOf(agent("demo-agent", "Demo", "busy")), null)), emptySet()) { machine, id -> taps += machine to id }
+        showEmptyHome(ui, onRefresh = {})
+        rule.onAllNodesWithTag(HomeStateTags.NO_SESSIONS).assertCountEquals(1)
+        rule.onAllNodesWithTag(ClaudeAgentsTags.ROW).assertCountEquals(1)
+        rule.onNodeWithText("Demo").performClick()
+        assertEquals(listOf("m1" to "demo-agent"), taps)
+        // The section sits above the empty state.
+        val row = rule.onNodeWithTag(ClaudeAgentsTags.ROW).fetchSemanticsNode().boundsInRoot
+        val empty = rule.onNodeWithTag(HomeStateTags.NO_SESSIONS).fetchSemanticsNode().boundsInRoot
+        assertTrue(row.bottom <= empty.top + 1f)
+    }
+
+    @Test
+    fun anEmptyHomeWithNothingToOpenIsTheUsualEmptyState() {
+        showEmptyHome(ClaudeAgentsUi(emptyList(), emptySet()) { _, _ -> })
+        rule.onAllNodesWithTag(HomeStateTags.NO_SESSIONS).assertCountEquals(1)
+        rule.onAllNodesWithTag(ClaudeAgentsTags.SECTION).assertCountEquals(0)
+        rule.onAllNodesWithTag(ClaudeAgentsTags.ROW).assertCountEquals(0)
     }
 
     @Test

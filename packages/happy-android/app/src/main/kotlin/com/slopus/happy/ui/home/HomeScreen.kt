@@ -207,7 +207,13 @@ fun HomeScreen(
                     offlineContent(state.computers, if (state.hasArchivedSessions) showArchived else null)
                 }
                 state.emptyState == HomeEmptyState.NoSessions -> Box(below) {
-                    NoSessionsState(onNewSession = actions.onCompose, onShowArchived = if (state.hasArchivedSessions) showArchived else null)
+                    val onShowArchived = if (state.hasArchivedSessions) showArchived else null
+                    // A Mac's background Claude sessions are the way in on a first, empty home.
+                    if (claudeAgents != null && claudeAgents.blocks.isNotEmpty()) {
+                        NoSessionsWithAgents(claudeAgents, onRefresh, actions.onCompose, onShowArchived)
+                    } else {
+                        NoSessionsState(onNewSession = actions.onCompose, onShowArchived = onShowArchived)
+                    }
                 }
                 else -> HomeRefreshBox(onRefresh, indicatorTop = top, modifier = Modifier.fillMaxSize()) {
                     HomeList(
