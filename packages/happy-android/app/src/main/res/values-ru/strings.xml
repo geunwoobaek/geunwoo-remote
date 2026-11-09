@@ -311,6 +311,7 @@
     <string name="session_inactive_archived">Эта сессия неактивна.</string>
     <string name="session_resume_from_terminal">Чтобы возобновить её из терминала:</string>
     <string name="session_new_chat">Новый чат</string>
+    <string name="session_mac_background_session">Фоновая сессия на Mac</string>
     <string name="session_status_bar_context">Контекст</string>
     <string name="session_status_bar_path_title">Рабочая директория</string>
     <string name="session_fork_action">Форкнуть сессию</string>
@@ -973,6 +974,7 @@
     <string name="claude_permissions_yes_allow_everything">Да, разрешить всё в этой сессии</string>
     <string name="claude_permissions_yes_for_tool">Да, больше не спрашивать для этого инструмента</string>
     <string name="claude_permissions_no_tell_claude">Нет, дать обратную связь</string>
+    <string name="claude_permissions_answer_on_mac">Ответьте на своём Mac</string>
 
     <string name="text_selection_select_text">Выделить диапазон текста</string>
     <string name="text_selection_title">Выделить текст</string>

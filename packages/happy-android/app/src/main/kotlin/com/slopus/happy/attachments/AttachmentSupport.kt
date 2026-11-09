@@ -1,6 +1,7 @@
 package com.slopus.happy.attachments
 
 import com.slopus.happy.model.SessionMetadata
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.model.isRigV1
 import com.slopus.happy.sync.rigCanUseAttachments
 
@@ -53,7 +54,12 @@ fun imageAttachmentSendPlan(metadata: SessionMetadata?, text: String, attachment
     flavor = metadata?.flavor,
     text = text,
     attachmentCount = attachmentCount,
-    supportsAttachments = if (metadata.isRigV1()) metadata.rigCanUseAttachments() else null,
+    // A Mac background session's mirror types text only.
+    supportsAttachments = when {
+        metadata.isClaudeAgentMirror() -> false
+        metadata.isRigV1() -> metadata.rigCanUseAttachments()
+        else -> null
+    },
 )
 
 /** The rig's policy, for rig v1 sessions only. */

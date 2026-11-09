@@ -4,6 +4,7 @@ import com.slopus.happy.model.Machine
 import com.slopus.happy.model.Session
 import com.slopus.happy.model.canLeaveTask
 import com.slopus.happy.model.forkSource
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.model.isRig
 import com.slopus.happy.model.isTask
 import com.slopus.happy.model.taskCanArchive
@@ -25,7 +26,7 @@ data class ResumeAvailability(val canResume: Boolean, val canShowResume: Boolean
  */
 fun resumeAvailability(session: Session, machine: Machine?): ResumeAvailability {
     val metadata = session.metadata
-    if (metadata.isRig() || metadata?.capabilities?.resume == false) return ResumeAvailability.Hidden
+    if (metadata.isRig() || metadata.isClaudeAgentMirror() || metadata?.capabilities?.resume == false) return ResumeAvailability.Hidden
     if (session.isOnline) return ResumeAvailability.Hidden
     if (metadata?.machineId.isNullOrEmpty()) return ResumeAvailability.blocked(ResumeBlock.MissingMachine)
     if (metadata.claudeSessionId.isNullOrEmpty() && metadata.codexThreadId.isNullOrEmpty()) {

@@ -94,6 +94,52 @@ fun permissionOptions(permission: ToolPermission, toolName: String, input: JsonE
     }
 }
 
+/**
+ * What the mirror of a Mac background session answers with: only a plain
+ * Yes or a plain No. The CLI types those keys into the Mac session and never
+ * "allow all edits", "don't ask again" or a plan's auto mode, so those
+ * options are not offered, and a plain approval does not move the composer's
+ * mode.
+ */
+private val MIRROR_HIDDEN_CHOICES = setOf(PermissionChoice.AllowAllEdits, PermissionChoice.AllowEverything, PermissionChoice.AllowForTool)
+
+fun mirrorPermissionOptions(options: List<PermissionOption>): List<PermissionOption> =
+    options.filter { it.choice !in MIRROR_HIDDEN_CHOICES }.map { if (it.mode != null) it.copy(mode = null) else it }
+
+/** Why the mirror refused to press keys: the answer can't be made from here, or the screen changed under it. */
+private val MIRROR_REFUSAL_REASONS = setOf("answer-on-mac", "typing-failed")
+
+/** The tool name the CLI gives a dialog it could not read off the Mac's screen; no answer to it is ever accepted. */
+private const val UNREADABLE_DIALOG_TOOL = "Unknown"
+
+/** True when a mirror's card says "Answer this on your Mac" in place of buttons. */
+fun answersOnMac(permission: ToolPermission, toolName: String, mirror: Boolean): Boolean {
+    if (!mirror) return false
+    return when (permission.status) {
+        PermissionStatus.Pending -> toolName == UNREADABLE_DIALOG_TOOL
+        PermissionStatus.Canceled -> permission.reason in MIRROR_REFUSAL_REASONS
+        else -> false
+    }
+}
+
+/** A permission card's body under the tool: its answer buttons, or the line that sends the user to their Mac. */
+sealed interface PermissionCardBody {
+    data class Buttons(val options: List<PermissionOption>) : PermissionCardBody
+    data object AnswerOnMac : PermissionCardBody
+}
+
+fun permissionCardBody(
+    permission: ToolPermission,
+    toolName: String,
+    input: JsonElement?,
+    flavor: String?,
+    mirror: Boolean,
+): PermissionCardBody {
+    if (answersOnMac(permission, toolName, mirror)) return PermissionCardBody.AnswerOnMac
+    val options = permissionOptions(permission, toolName, input, flavor)
+    return PermissionCardBody.Buttons(if (mirror) mirrorPermissionOptions(options) else options)
+}
+
 /** Which button an answered request was answered with, from its mode, grants or decision. */
 fun answeredChoice(permission: ToolPermission, toolName: String, input: JsonElement?, flavor: String?): PermissionChoice? {
     val approved = permission.status == PermissionStatus.Approved

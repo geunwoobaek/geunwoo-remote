@@ -39,6 +39,7 @@ import com.slopus.happy.attachments.readAttachmentBytes
 import com.slopus.happy.attachments.supportsImageAttachmentsForFlavor
 import com.slopus.happy.model.AgentType
 import com.slopus.happy.model.SessionMetadata
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.model.isRigV1
 import com.slopus.happy.sync.rigCanUseAttachments
 import com.slopus.happy.text.plural
@@ -53,9 +54,10 @@ import android.content.res.Resources
 /** The open chat's image picker; null where the session takes no images (no strip, no add button). */
 val LocalComposerImages = compositionLocalOf<ImagePicker?> { null }
 
-/** SessionView.tsx `canUseAttachments`: the rig's capability for rig v1 sessions, else the flavor. */
+/** SessionView.tsx `canUseAttachments`: the rig's capability for rig v1 sessions, else the flavor; never for a Mac background session's mirror. */
 fun canUseAttachments(metadata: SessionMetadata?): Boolean =
-    if (metadata.isRigV1()) metadata.rigCanUseAttachments() else supportsImageAttachmentsForFlavor(metadata?.flavor)
+    if (metadata.isClaudeAgentMirror()) false
+    else if (metadata.isRigV1()) metadata.rigCanUseAttachments() else supportsImageAttachmentsForFlavor(metadata?.flavor)
 
 /**
  * happy-ios `canUseAttachments(starting:)`: before the session exists, the

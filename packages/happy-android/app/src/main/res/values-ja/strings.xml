@@ -287,6 +287,7 @@
     <string name="session_inactive_archived">このセッションは非アクティブです。</string>
     <string name="session_resume_from_terminal">ターミナルから再開するには:</string>
     <string name="session_new_chat">新規チャット</string>
+    <string name="session_mac_background_session">Macのバックグラウンドセッション</string>
     <string name="session_status_bar_context">コンテキスト</string>
     <string name="session_status_bar_path_title">作業ディレクトリ</string>
     <string name="session_fork_action">セッションをフォーク</string>
@@ -919,6 +920,7 @@
     <string name="claude_permissions_yes_allow_everything">はい、このセッション中のすべてを許可</string>
     <string name="claude_permissions_yes_for_tool">はい、このツールについては確認しない</string>
     <string name="claude_permissions_no_tell_claude">いいえ、フィードバックを提供</string>
+    <string name="claude_permissions_answer_on_mac">Mac上で回答してください</string>
 
     <string name="text_selection_select_text">テキスト範囲を選択</string>
     <string name="text_selection_title">テキストを選択</string>

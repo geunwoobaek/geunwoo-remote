@@ -44,11 +44,12 @@ import androidx.compose.ui.unit.dp
 import com.slopus.happy.chat.PermissionAnswer
 import com.slopus.happy.chat.PermissionStatus
 import com.slopus.happy.chat.ToolPermission
+import com.slopus.happy.chat.tools.PermissionCardBody
 import com.slopus.happy.chat.tools.PermissionChoice
 import com.slopus.happy.chat.tools.PermissionOptionState
 import com.slopus.happy.chat.tools.answeredChoice
+import com.slopus.happy.chat.tools.permissionCardBody
 import com.slopus.happy.chat.tools.permissionOptionState
-import com.slopus.happy.chat.tools.permissionOptions
 import com.slopus.happy.ui.layout.LocalWindowLayout
 import com.slopus.happy.ui.theme.HappyTheme
 import com.slopus.happy.ui.theme.happyTextStyle
@@ -106,8 +107,15 @@ fun PermissionFooter(
     flavor: String?,
     onAnswer: PermissionHandler,
     modifier: Modifier = Modifier,
+    /** The session mirrors a Mac background session: only plain Yes and No, or the line that sends the user to the Mac. */
+    mirror: Boolean = false,
 ) {
-    val options = remember(permission, toolName, toolInput, flavor) { permissionOptions(permission, toolName, toolInput, flavor) }
+    val body = remember(permission, toolName, toolInput, flavor, mirror) { permissionCardBody(permission, toolName, toolInput, flavor, mirror) }
+    if (body is PermissionCardBody.AnswerOnMac) {
+        AnswerOnMacLine(modifier)
+        return
+    }
+    val options = (body as PermissionCardBody.Buttons).options
     val answered = remember(permission, toolName, toolInput, flavor) { answeredChoice(permission, toolName, toolInput, flavor) }
     var loading by remember { mutableStateOf<PermissionChoice?>(null) }
     val scope = rememberCoroutineScope()

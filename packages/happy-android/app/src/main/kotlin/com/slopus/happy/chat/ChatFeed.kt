@@ -5,6 +5,7 @@ import com.slopus.happy.data.MessageRecord
 import com.slopus.happy.data.OutboxKind
 import com.slopus.happy.data.OutboxState
 import com.slopus.happy.model.SessionState
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.sync.MessageSender
 import com.slopus.happy.sync.SendFailure
 import com.slopus.happy.chat.markdown.MarkdownBlock
@@ -133,10 +134,17 @@ class ChatReduction(private val now: () -> Long = System::currentTimeMillis) {
             val result = reducer.reduce(
                 incoming,
                 agentState,
-                ReducerOptions(holdUserMessagesUntilAccepted = session?.sendsMessageReceipts == true),
+                ReducerOptions(
+                    holdUserMessagesUntilAccepted = session?.sendsMessageReceipts == true,
+                    mirror = session?.metadata.isClaudeAgentMirror(),
+                ),
             )
             for (message in result.messages) messages[message.id] = message
-            changed = result.messages.isNotEmpty() || !snapshot.loaded
+            for (id in result.hiddenMessageIds) {
+                messages.remove(id)
+                rows.remove(id)
+            }
+            changed = result.messages.isNotEmpty() || result.hiddenMessageIds.isNotEmpty() || !snapshot.loaded
         }
         val delivery = page.outbox.filter { it.kind == OutboxKind.USER }.associate { it.localId to (it.state to it.error) }
         if (delivery != lastDelivery) {

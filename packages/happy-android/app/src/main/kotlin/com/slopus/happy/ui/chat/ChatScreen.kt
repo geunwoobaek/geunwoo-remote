@@ -46,6 +46,7 @@ import com.slopus.happy.chat.isCurrentTurnComplete
 import com.slopus.happy.connection.LinkState
 import com.slopus.happy.model.GitStatus
 import com.slopus.happy.model.SessionState
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.model.settings.ModeOption
 import com.slopus.happy.sync.AgentModeField
 import com.slopus.happy.ui.components.GlassBarLayout
@@ -258,8 +259,9 @@ fun ChatScreen(
     val pending = slots.pending
     val flavor = session?.metadata?.flavor
     val path = session?.metadata?.path
-    val toolEnvironment = remember(compactToolCalls, showLineNumbersInToolViews, flavor, path) {
-        ToolEnvironment(compactToolCalls = compactToolCalls, showLineNumbers = showLineNumbersInToolViews, flavor = flavor, path = path)
+    val mirror = session?.metadata.isClaudeAgentMirror()
+    val toolEnvironment = remember(compactToolCalls, showLineNumbersInToolViews, flavor, path, mirror) {
+        ToolEnvironment(compactToolCalls = compactToolCalls, showLineNumbers = showLineNumbersInToolViews, flavor = flavor, path = path, mirror = mirror)
     }
     val listState = rememberLazyListState()
     val loadOlder by rememberUpdatedState(actions.loadOlder)

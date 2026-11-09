@@ -303,6 +303,7 @@
     <string name="session_inactive_archived">Aquesta sessió està inactiva.</string>
     <string name="session_resume_from_terminal">Per reprendre-la des del terminal:</string>
     <string name="session_new_chat">Nou xat</string>
+    <string name="session_mac_background_session">Sessió en segon pla del Mac</string>
     <string name="session_status_bar_context">Context</string>
     <string name="session_status_bar_path_title">Directori de treball</string>
     <string name="session_fork_action">Bifurca la sessió</string>
@@ -955,6 +956,7 @@
     <string name="claude_permissions_yes_allow_everything">Sí, permet-ho tot durant aquesta sessió</string>
     <string name="claude_permissions_yes_for_tool">Sí, no tornis a preguntar per aquesta eina</string>
     <string name="claude_permissions_no_tell_claude">No, proporciona comentaris</string>
+    <string name="claude_permissions_answer_on_mac">Respon-ho al teu Mac</string>
 
     <string name="text_selection_select_text">Seleccionar rang de text</string>
     <string name="text_selection_title">Seleccionar text</string>

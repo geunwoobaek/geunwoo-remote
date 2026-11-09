@@ -110,8 +110,9 @@ object WorktreePaths {
     }
 }
 
-/** sessionFork.ts `getSessionForkSource` */
+/** sessionFork.ts `getSessionForkSource`; a mirror of a Mac background session has none, so fork, duplicate, rewind and side chat are closed to it. */
 fun Session.forkSource(): ForkSource? {
+    if (metadata.isClaudeAgentMirror()) return null
     val machineId = metadata?.machineId?.takeIf { it.isNotBlank() } ?: return null
     val directory = metadata.path.takeIf { it.isNotBlank() } ?: return null
     if (metadata.flavor == "codex") {

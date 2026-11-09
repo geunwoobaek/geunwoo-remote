@@ -59,6 +59,7 @@ import com.slopus.happy.chat.tools.ToolPresentation
 import com.slopus.happy.chat.tools.ToolStatusIcon
 import com.slopus.happy.chat.tools.ToolText
 import com.slopus.happy.chat.tools.ToolViewKind
+import com.slopus.happy.chat.tools.answersOnMac
 import com.slopus.happy.chat.tools.presentTool
 import com.slopus.happy.chat.tools.resultText
 import com.slopus.happy.text.plural
@@ -189,6 +190,8 @@ data class ToolEnvironment(
     val flavor: String? = null,
     /** The session's folder, for paths in titles. */
     val path: String? = null,
+    /** The session mirrors a Mac background session ([com.slopus.happy.model.isClaudeAgentMirror]). */
+    val mirror: Boolean = false,
 )
 
 /** Static: a change recomposes every row under it, so it holds only what rarely changes. */
@@ -264,17 +267,21 @@ fun ToolView(message: ChatMessage.ToolCallMessage, callbacks: MessageCallbacks, 
         inline -> ToolTags.INLINE
         else -> ToolTags.CARD
     }
-    val footer: (@Composable () -> Unit)? = tool.permission?.takeIf { tool.name != "AskUserQuestion" }?.let { permission ->
-        {
-            PermissionFooter(
-                permission = permission,
-                toolName = tool.name,
-                toolInput = tool.input,
-                flavor = env.flavor,
-                onAnswer = { answer, mode -> callbacks.onPermission(answer, mode) },
-            )
+    // AskUserQuestion answers in its own form; only its "answer on your Mac" line is a footer.
+    val footer: (@Composable () -> Unit)? = tool.permission
+        ?.takeIf { tool.name != "AskUserQuestion" || answersOnMac(it, tool.name, env.mirror) }
+        ?.let { permission ->
+            {
+                PermissionFooter(
+                    permission = permission,
+                    toolName = tool.name,
+                    toolInput = tool.input,
+                    flavor = env.flavor,
+                    onAnswer = { answer, mode -> callbacks.onPermission(answer, mode) },
+                    mirror = env.mirror,
+                )
+            }
         }
-    }
     Column(
         modifier = modifier
             .fillMaxWidth()

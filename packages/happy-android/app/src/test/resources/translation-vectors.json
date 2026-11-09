@@ -1,4 +1,4 @@
-{"sources":{"en.json":"88ef46cc247ff8fd9f4c9b7af4cce45a5dfac83547f6e1e642ddc0e6853d0e00","ru.json":"adfc884069d8f4290c85d678fb7bd601ad6b0bbf696a2e87a9c7b7a10238f976","pl.json":"cec341f9d5cb21a42e8245171b7434b9cd3103a975760b9fd19a66e72d04538a","es.json":"faaf6aead7258d2cf03336fff78faf2c80a77b5a14081cfa5e04fae4c7537903","it.json":"9829190e075d369c812b0d5c75c87f8de6130b86a29f9f9a150586a954bd0168","pt.json":"11f87a69bc6f3cb108da2db3cf30912798444c3bd09c8b57df3a3b5ae4d8498f","ca.json":"47830abef200a81bc02a72a198b30528e67084945107d4fb5be5ac4b9693807d","zh-Hans.json":"63525b68cc8cae8907d8b75efad77f930410879f0dbb024a87506aa28c94cbe5","zh-Hant.json":"f878f4f70c3e29f526eec1ac03f98d9334b934ba17451ba455cae666845c7e3d","ja.json":"b518c92463f84da3244d6567c220851fdf980947028adfab14cd2427b484926e","parameters.json":"a85bd4f79d210fda0562ce933f6f4d1a12d3c34d5a89427ab838dd1719ade10c"},
+{"sources":{"en.json":"cf8852cefa708b7012d3319cd5efc8337380fd38a0bf9e626f05bbe4762df2d5","ru.json":"46052f1d3d513ce15a6fc037426b051c36c41c7270b3dcb978789e9b7ee5e39f","pl.json":"ed6d096edde34cfe30fe84e2905c5847bfdba687aff20405d65ac6e7fcb99d76","es.json":"4be34928dd2d2117ab4536d0e693af2d69c47257d8db10a2cf717f8ccb8b611a","it.json":"151f68a568420659d86b579291990620897dcd8c2038de9071feda5dbb7fe28b","pt.json":"9369dfdc1f59d9dc4120d331558b9ceadc1f23cb3f1725e714ec314953f240cc","ca.json":"49fa6714f925c5f75b5fd0cae668c880ab5e4a0c48dc77c412f3b538228d7ba5","zh-Hans.json":"483b2fb106a093f323126d9009196db196d82c80a7d906469f464503394422c5","zh-Hant.json":"c0b7945e97baa83e50c5b7b05a05e3047d75d93a384bd70838a515657f7f6f97","ja.json":"48dc85d3642893d422dcd3a3cc631c588ce24f3e5ec0498f3bfd8cc19884bb63","parameters.json":"a85bd4f79d210fda0562ce933f6f4d1a12d3c34d5a89427ab838dd1719ade10c"},
 "keys":{
 "voiceStatusBar.tapToEnd":{"name":"voice_status_bar_tap_to_end","kind":"string","value":"tap to end"},
 "voiceStatusBar.connecting":{"name":"voice_status_bar_connecting","kind":"string","value":"Connecting…"},
@@ -240,6 +240,7 @@
 "session.inactiveArchived":{"name":"session_inactive_archived","kind":"string","value":"This session is inactive."},
 "session.resumeFromTerminal":{"name":"session_resume_from_terminal","kind":"string","value":"To resume it from the terminal:"},
 "session.newChat":{"name":"session_new_chat","kind":"string","value":"New chat"},
+"session.macBackgroundSession":{"name":"session_mac_background_session","kind":"string","value":"Mac background session"},
 "session.statusBarContext":{"name":"session_status_bar_context","kind":"string","value":"Context"},
 "session.statusBarPathTitle":{"name":"session_status_bar_path_title","kind":"string","value":"Working directory"},
 "session.forkAction":{"name":"session_fork_action","kind":"string","value":"Fork session"},
@@ -809,6 +810,7 @@
 "claude.permissions.yesAllowEverything":{"name":"claude_permissions_yes_allow_everything","kind":"string","value":"Yes, allow everything during this session"},
 "claude.permissions.yesForTool":{"name":"claude_permissions_yes_for_tool","kind":"string","value":"Yes, don't ask again for this tool"},
 "claude.permissions.noTellClaude":{"name":"claude_permissions_no_tell_claude","kind":"string","value":"No, and provide feedback"},
+"claude.permissions.answerOnMac":{"name":"claude_permissions_answer_on_mac","kind":"string","value":"Answer this on your Mac"},
 "textSelection.selectText":{"name":"text_selection_select_text","kind":"string","value":"Select text range"},
 "textSelection.title":{"name":"text_selection_title","kind":"string","value":"Select Text"},
 "textSelection.noTextProvided":{"name":"text_selection_no_text_provided","kind":"string","value":"No text provided"},

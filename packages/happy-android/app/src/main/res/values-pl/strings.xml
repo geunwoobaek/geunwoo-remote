@@ -311,6 +311,7 @@
     <string name="session_inactive_archived">Ta sesja jest nieaktywna.</string>
     <string name="session_resume_from_terminal">Aby wznowić ją z terminala:</string>
     <string name="session_new_chat">Nowy czat</string>
+    <string name="session_mac_background_session">Sesja w tle na Macu</string>
     <string name="session_status_bar_context">Kontekst</string>
     <string name="session_status_bar_path_title">Katalog roboczy</string>
     <string name="session_fork_action">Rozwidl sesję</string>
@@ -973,6 +974,7 @@
     <string name="claude_permissions_yes_allow_everything">Tak, zezwól na wszystko podczas tej sesji</string>
     <string name="claude_permissions_yes_for_tool">Tak, nie pytaj ponownie dla tego narzędzia</string>
     <string name="claude_permissions_no_tell_claude">Nie, przekaż opinię</string>
+    <string name="claude_permissions_answer_on_mac">Odpowiedz na swoim Macu</string>
 
     <string name="text_selection_select_text">Wybierz zakres tekstu</string>
     <string name="text_selection_title">Wybierz tekst</string>

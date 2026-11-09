@@ -67,13 +67,17 @@ data class ReducerResult(
     val hasReadyEvent: Boolean = false,
     /** Rows in [messages] that only settled (position, pending); not new content. */
     val settledMessageIds: Set<String> = emptySet(),
+    /** Rows that left the chat in this call (a mirror's answered `screen:` card once the real tool row arrived); never in [messages]. */
+    val hiddenMessageIds: Set<String> = emptySet(),
 )
 
 /**
  * How this session treats a message the user just sent. Only daemons that
  * send acceptance receipts can honestly show a message as not yet seen.
+ * [mirror]: the session mirrors a Mac `claude agents` background session
+ * ([com.slopus.happy.model.isClaudeAgentMirror]).
  */
-data class ReducerOptions(val holdUserMessagesUntilAccepted: Boolean = false)
+data class ReducerOptions(val holdUserMessagesUntilAccepted: Boolean = false, val mirror: Boolean = false)
 
 internal class ReducerMessage(
     val id: String,
@@ -94,7 +98,10 @@ internal class ReducerMessage(
     var turn: String? = null,
     val author: SessionAuthor? = null,
     val unsupported: String? = null,
-)
+) {
+    /** Kept by the reducer for its joins but no longer a row of the chat. */
+    var hidden: Boolean = false
+}
 
 internal data class StoredPermission(
     /** The request id the CLI expects back; may differ from the join key. */
@@ -624,13 +631,47 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
             changed.add(mid)
         }
 
+        val hidden = if (options.mirror) hideAnsweredScreenCards() else emptySet()
+
         return ReducerResult(
-            messages = changed.mapNotNull { id -> messages[id]?.let(::convert) },
+            messages = changed.mapNotNull { id -> messages[id]?.takeIf { !it.hidden }?.let(::convert) },
             todos = latestTodos?.first,
             usage = latestUsage?.usage,
             hasReadyEvent = hasReadyEvent,
             settledMessageIds = settledIds,
+            hiddenMessageIds = hidden,
         )
+    }
+
+    /**
+     * A mirror shows a `screen:` card when the CLI read a dialog off the Mac's
+     * screen before its tool call reached the transcript. Once that card is
+     * answered and the transcript has a later tool row of the same tool, the
+     * row is the same call, so the card leaves the chat. A pending card
+     * stays, whatever arrives. Returns the ids hidden by this call.
+     */
+    private fun hideAnsweredScreenCards(): Set<String> {
+        fun ReducerMessage.isScreenCard() = tool?.callId?.startsWith(SCREEN_REQUEST_PREFIX) == true
+        val answered = messages.values.filter {
+            !it.hidden && it.isScreenCard() && it.tool?.permission?.status != PermissionStatus.Pending
+        }
+        if (answered.isEmpty()) return emptySet()
+        val nested = sidechainToolIdToMessageId.values.toSet()
+        val latestByTool = HashMap<String, Long>()
+        for (message in messages.values) {
+            val tool = message.tool ?: continue
+            if (message.hidden || message.isUser || message.id in nested || message.isScreenCard()) continue
+            latestByTool.merge(tool.name, message.createdAt, ::maxOf)
+        }
+        val newlyHidden = LinkedHashSet<String>()
+        for (card in answered) {
+            val later = latestByTool[card.tool?.name] ?: continue
+            if (later > card.createdAt) {
+                card.hidden = true
+                newlyHidden.add(card.id)
+            }
+        }
+        return newlyHidden
     }
 
     /** Every row the reducer holds at the top level, newest first. */
@@ -638,7 +679,7 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
         val nested = HashSet<String>()
         for (children in sidechains.values) for (child in children) nested.add(child.id)
         return messages.values.asSequence()
-            .filter { it.id !in nested }
+            .filter { it.id !in nested && !it.hidden }
             .mapNotNull(::convert)
             .sortedByDescending { it.sortKey }
             .toList()
@@ -750,6 +791,9 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
         }
     }
 }
+
+/** The CLI's request key for a dialog it read off the Mac's screen before its tool call reached the transcript. */
+private const val SCREEN_REQUEST_PREFIX = "screen:"
 
 private fun errorResult(reason: String) = JsonObject(mapOf("error" to JsonPrimitive(reason)))
 

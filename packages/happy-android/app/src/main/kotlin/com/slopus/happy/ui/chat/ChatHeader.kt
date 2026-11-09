@@ -26,6 +26,7 @@ import com.slopus.happy.chat.resolveChatHeaderGit
 import com.slopus.happy.connection.LinkState
 import com.slopus.happy.model.GitStatus
 import com.slopus.happy.model.compactCount
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.ui.components.HeaderSpec
 import com.slopus.happy.ui.components.HeaderTags
 import com.slopus.happy.ui.components.Icon
@@ -50,7 +51,10 @@ internal fun ChatHeaderTitle(
     val colors = HappyTheme.colors
     val header = remember(session?.metadata, gitStatus) { resolveChatHeaderGit(session?.metadata, gitStatus) }
     val linkWords = linkStatusWords(link)
-    val subtitle = linkWords ?: subtitleOverride ?: header.subtitle
+    // A Mac background session's mirror says so under its title, ahead of the branch.
+    val mirrorLabel = if (session?.metadata.isClaudeAgentMirror()) stringResource(R.string.session_mac_background_session) else null
+    val baseSubtitle = subtitleOverride ?: header.subtitle
+    val subtitle = linkWords ?: if (mirrorLabel != null) listOfNotNull(mirrorLabel, baseSubtitle).joinToString(" · ") else baseSubtitle
     val git = header.changes.takeIf { linkWords == null }
     Column(
         modifier = Modifier

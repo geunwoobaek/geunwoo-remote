@@ -276,6 +276,8 @@ data class SessionMetadata(
     val git: GitCounts? = null,
     val machineId: String? = null,
     val claudeSessionId: String? = null,
+    /** The Mac `claude agents` background session this session mirrors (the agent's id); null for any other session. */
+    val claudeAgentId: String? = null,
     val codexThreadId: String? = null,
     val tools: List<String>? = null,
     val slashCommands: List<String>? = null,
@@ -387,6 +389,7 @@ data class SessionMetadata(
             ),
             machineId = f.optional("machineId", Read.string),
             claudeSessionId = f.optional("claudeSessionId", Read.string),
+            claudeAgentId = f.optional("claudeAgentId", Read.string),
             codexThreadId = f.optional("codexThreadId", Read.string),
             tools = f.optional("tools", Read.arrayOf(Read.string)),
             slashCommands = f.optional("slashCommands", Read.arrayOf(Read.string)),

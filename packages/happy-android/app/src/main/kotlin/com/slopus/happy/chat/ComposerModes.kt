@@ -2,6 +2,7 @@ package com.slopus.happy.chat
 
 import androidx.compose.runtime.Immutable
 import com.slopus.happy.model.SessionMetadata
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.model.isRig
 import com.slopus.happy.model.isRigV1
 import com.slopus.happy.model.qualifyRigModelKey
@@ -39,13 +40,15 @@ data class ComposerModes(
 
 /** rig.ts `isRigModelSelectionEnabled` */
 fun SessionMetadata?.rigModelSelectionEnabled(): Boolean =
-    !isRigV1() || (this?.session?.modelLocked != true && this?.capabilities?.modelSelection != false)
+    !isClaudeAgentMirror() && (!isRigV1() || (this?.session?.modelLocked != true && this?.capabilities?.modelSelection != false))
 
 /** rig.ts `isRigReasoningSelectionEnabled` */
-fun SessionMetadata?.rigReasoningSelectionEnabled(): Boolean = !isRigV1() || this?.capabilities?.reasoningSelection != false
+fun SessionMetadata?.rigReasoningSelectionEnabled(): Boolean =
+    !isClaudeAgentMirror() && (!isRigV1() || this?.capabilities?.reasoningSelection != false)
 
-/** rig.ts `isRigPermissionSelectionEnabled` */
-fun SessionMetadata?.rigPermissionSelectionEnabled(): Boolean = !isRigV1() || this?.capabilities?.permissionModeSelection != false
+/** rig.ts `isRigPermissionSelectionEnabled`; a Mac background session keeps the model, effort and mode it runs with. */
+fun SessionMetadata?.rigPermissionSelectionEnabled(): Boolean =
+    !isClaudeAgentMirror() && (!isRigV1() || this?.capabilities?.permissionModeSelection != false)
 
 object ComposerModeResolver {
     /**

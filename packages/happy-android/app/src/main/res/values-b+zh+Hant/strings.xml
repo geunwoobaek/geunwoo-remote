@@ -287,6 +287,7 @@
     <string name="session_inactive_archived">此會話處於非活動狀態。</string>
     <string name="session_resume_from_terminal">若要從終端恢復它：</string>
     <string name="session_new_chat">新對話</string>
+    <string name="session_mac_background_session">Mac 背景工作階段</string>
     <string name="session_status_bar_context">上下文</string>
     <string name="session_status_bar_path_title">工作目錄</string>
     <string name="session_fork_action">分叉會話</string>
@@ -919,6 +920,7 @@
     <string name="claude_permissions_yes_allow_everything">是，允許本次工作階段的所有操作</string>
     <string name="claude_permissions_yes_for_tool">是，不再詢問此工具</string>
     <string name="claude_permissions_no_tell_claude">否，並告訴 Claude 該如何不同地操作</string>
+    <string name="claude_permissions_answer_on_mac">請在 Mac 上回答</string>
 
     <string name="text_selection_select_text">選擇文字範圍</string>
     <string name="text_selection_title">選擇文字</string>
