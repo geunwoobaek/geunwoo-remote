@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AttachTerminal } from './attachTerminal';
-import { buildMirrorMetadata, decideAgentChange, entriesAfter, mirrorTag, serializeTerminalOpens } from './runClaudeAgentMirror';
+import type { Metadata } from '@/api/types';
+import { buildMirrorMetadata, decideAgentChange, entriesAfter, mirrorTag, resetMirrorMetadata, serializeTerminalOpens, settleStaleRequests, shouldAbortReuse } from './runClaudeAgentMirror';
 import type { ClaudeAgent } from './types';
 
 const agent = (overrides: Partial<ClaudeAgent> = {}): ClaudeAgent => ({
@@ -163,5 +164,118 @@ describe('serializeTerminalOpens', () => {
         await expect(failing).rejects.toThrow('no tmux');
         await (await next).close();
         expect(attempts).toBe(2);
+    });
+});
+
+describe('serializeTerminalOpens drain', () => {
+    const terminal = (): AttachTerminal => ({
+        screen: async () => '',
+        typeText: async () => undefined,
+        pasteText: async () => undefined,
+        press: async () => undefined,
+        close: async () => undefined,
+    });
+
+    it('drain is true at once when nothing is open', async () => {
+        const open = serializeTerminalOpens(async () => terminal());
+        expect(await open.drain(50)).toBe(true);
+    });
+
+    it('drain waits for the open terminal to close and gives up after the timeout', async () => {
+        const open = serializeTerminalOpens(async () => terminal());
+        const held = await open();
+        expect(await open.drain(20)).toBe(false);
+
+        const draining = open.drain(1000);
+        await held.close();
+        expect(await draining).toBe(true);
+    });
+
+    it('drain also waits for opens that were already queued', async () => {
+        const log: string[] = [];
+        const open = serializeTerminalOpens(async () => {
+            log.push('open');
+            return terminal();
+        });
+        const first = await open();
+        const queued = open();
+        const draining = open.drain(1000);
+        await first.close();
+        const second = await queued;
+        let done = false;
+        void draining.then(() => {
+            done = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(done).toBe(false);
+        await second.close();
+        expect(await draining).toBe(true);
+    });
+});
+
+describe('shouldAbortReuse', () => {
+    it('is true when the reused session metadata could not be decrypted', () => {
+        expect(shouldAbortReuse(null)).toBe(true);
+        expect(shouldAbortReuse(undefined)).toBe(true);
+    });
+
+    it('is false when metadata is readable', () => {
+        expect(shouldAbortReuse({ path: '/x' })).toBe(false);
+    });
+});
+
+describe('resetMirrorMetadata', () => {
+    it('un-archives and points a reused session at the current agent', () => {
+        const stale = {
+            ...buildMirrorMetadata(agent({ sessionId: 'old-session' }), base),
+            lifecycleState: 'archived',
+            lifecycleStateSince: 1,
+            archivedBy: 'cli',
+            archiveReason: 'Background session ended',
+            cwd: '/Users/tester/elsewhere',
+        } satisfies Metadata;
+
+        const reset = resetMirrorMetadata(stale, agent({ sessionId: 'session-b' }), 99);
+
+        expect(reset).toMatchObject({
+            claudeSessionId: 'session-b',
+            claudeAgentId: 'demo01',
+            cwd: '/Users/tester/project',
+            lifecycleState: 'running',
+            lifecycleStateSince: 99,
+        });
+        expect(reset.archivedBy).toBeUndefined();
+        expect(reset.archiveReason).toBeUndefined();
+    });
+});
+
+describe('settleStaleRequests', () => {
+    const toolUse = (id: string) => ({ type: 'assistant', message: { id: `m_${id}`, content: [{ type: 'tool_use', id, name: 'Write', input: {} }] } });
+    const toolResult = (id: string, isError = false) => ({
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: 'x' }] },
+    });
+    const request = (tool = 'Write') => ({ tool, arguments: { file_path: '/Users/tester/project/a.md' }, createdAt: 5 });
+
+    it('completes requests answered on the Mac while the mirror was down from the transcript', () => {
+        const state = { requests: { toolu_ok: request(), toolu_no: request(), toolu_open: request(), 'screen:abc': request('Unknown') } };
+        const entries = [toolUse('toolu_ok'), toolResult('toolu_ok'), toolUse('toolu_no'), toolResult('toolu_no', true), toolUse('toolu_open')];
+
+        const settled = settleStaleRequests(state, entries, 77);
+
+        expect(settled.requests).toEqual({});
+        expect(settled.completedRequests?.toolu_ok).toMatchObject({ status: 'approved', decision: 'approved', toolUseId: 'toolu_ok', completedAt: 77, createdAt: 5 });
+        expect(settled.completedRequests?.toolu_no).toMatchObject({ status: 'denied', decision: 'denied', toolUseId: 'toolu_no' });
+        expect(settled.completedRequests?.toolu_open).toMatchObject({ status: 'canceled' });
+        expect(settled.completedRequests?.['screen:abc']).toMatchObject({ status: 'canceled' });
+    });
+
+    it('keeps earlier completed requests and handles a state without requests', () => {
+        const state = { completedRequests: { old: { tool: 'Bash', arguments: {}, createdAt: 1, completedAt: 2, status: 'approved' as const } } };
+
+        const settled = settleStaleRequests(state, [], 77);
+
+        expect(settled.completedRequests).toEqual(state.completedRequests);
+        expect(settled.requests).toEqual({});
     });
 });

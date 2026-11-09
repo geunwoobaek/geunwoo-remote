@@ -13,7 +13,8 @@
  *   would take a leading digit as its answer, so it is dismissed with `0` first. If it will not
  *   go away, nothing is typed.
  * - The text is remembered in the echo filter just before it is typed, so the transcript line
- *   Claude Code writes for it is not uploaded to the phone a second time.
+ *   Claude Code writes for it is not uploaded to the phone a second time. If typing then fails
+ *   the entry is forgotten again.
  */
 
 import { sanitizeTypedText, type AttachTerminal } from './attachTerminal';
@@ -24,6 +25,8 @@ export type DeliveryResult = 'sent' | 'busy-input' | 'failed';
 export type EchoFilter = {
     /** Registers one expected copy of a user line that was typed from the phone. */
     remember(text: string): void;
+    /** Removes one remembered copy of `text` again (typing it failed); no-op if there is none. */
+    forget(text: string): void;
     /** True once per remembered copy of `userText` (compared with whitespace collapsed). */
     shouldSkip(userText: string): boolean;
 };
@@ -77,23 +80,29 @@ export function hasSessionSurvey(screen: string): boolean {
 /** Remembers texts typed from the phone so the mirror can skip their transcript lines. */
 export function createEchoFilter(): EchoFilter {
     const pending = new Map<string, number>();
+    /** Takes one pending copy of `key`; false when there is none. */
+    const consume = (key: string): boolean => {
+        const count = pending.get(key) ?? 0;
+        if (count === 0) {
+            return false;
+        }
+        if (count === 1) {
+            pending.delete(key);
+        } else {
+            pending.set(key, count - 1);
+        }
+        return true;
+    };
     return {
         remember(text) {
             const key = normalize(text);
             pending.set(key, (pending.get(key) ?? 0) + 1);
         },
+        forget(text) {
+            consume(normalize(text));
+        },
         shouldSkip(userText) {
-            const key = normalize(userText);
-            const count = pending.get(key) ?? 0;
-            if (count === 0) {
-                return false;
-            }
-            if (count === 1) {
-                pending.delete(key);
-            } else {
-                pending.set(key, count - 1);
-            }
-            return true;
+            return consume(normalize(userText));
         },
     };
 }
@@ -145,12 +154,18 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
                 return 'busy-input';
             }
             deps.echo.remember(text);
-            if (text.includes('\n')) {
-                await terminal.pasteText(text);
-            } else {
-                await terminal.typeText(text);
+            try {
+                if (text.includes('\n')) {
+                    await terminal.pasteText(text);
+                } else {
+                    await terminal.typeText(text);
+                }
+                await terminal.press(['enter']);
+            } catch (error) {
+                // Not sent: the transcript will never show it, so it must not swallow a later identical Mac line.
+                deps.echo.forget(text);
+                throw error;
             }
-            await terminal.press(['enter']);
             await sleep(closeDelayMs);
             return 'sent';
         } finally {

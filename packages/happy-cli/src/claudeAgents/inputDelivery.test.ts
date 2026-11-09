@@ -98,6 +98,16 @@ describe('createEchoFilter', () => {
         echo.remember('x');
         expect([echo.shouldSkip('x'), echo.shouldSkip('x'), echo.shouldSkip('x')]).toEqual([true, true, false]);
     });
+
+    it('forget removes exactly one remembered copy', () => {
+        const echo = createEchoFilter();
+        echo.remember('x');
+        echo.remember('x');
+        echo.forget('x');
+        expect([echo.shouldSkip('x'), echo.shouldSkip('x')]).toEqual([true, false]);
+        echo.forget('never remembered');
+        expect(echo.shouldSkip('never remembered')).toBe(false);
+    });
 });
 
 describe('hasSessionSurvey', () => {
@@ -172,6 +182,25 @@ describe('createInputDelivery', () => {
         expect(await delivery.send('a\x1b[31mb\x03c\x7f')).toBe('sent');
         expect(log).toContain('type#1:abc');
         expect(echo.shouldSkip('abc')).toBe(true);
+    });
+
+    it('echo entry is forgotten when typing throws', async () => {
+        for (const failing of ['typeText', 'pasteText', 'press'] as const) {
+            const { openTerminal } = createHarness([EMPTY]);
+            const echo = createEchoFilter();
+            const text = failing === 'pasteText' ? 'a\nb' : 'ok';
+            const delivery = createInputDelivery({
+                openTerminal: async () => {
+                    const terminal = await openTerminal();
+                    return { ...terminal, [failing]: async () => { throw new Error('tmux went away'); } };
+                },
+                echo,
+                ...fast,
+            });
+            expect(await delivery.send(text)).toBe('failed');
+            // A later identical line typed on the Mac must still be uploaded.
+            expect(echo.shouldSkip(text)).toBe(false);
+        }
     });
 
     it('send of text that is empty after sanitizing types nothing and opens nothing', async () => {

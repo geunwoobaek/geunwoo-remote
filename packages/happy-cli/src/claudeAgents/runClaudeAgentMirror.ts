@@ -42,7 +42,7 @@ import { fetchClaudeAgents, resolveClaudeBinary } from './agentsList';
 import { isTmuxInstalled, openAttachTerminal, type AttachTerminal } from './attachTerminal';
 import { createEchoFilter, createInputDelivery, type DeliveryResult } from './inputDelivery';
 import { createPermissionBridge } from './permissionBridge';
-import { readSessionStatus, readTranscriptEntries } from './transcript';
+import { findToolUseOutcome, readSessionStatus, readTranscriptEntries } from './transcript';
 import type { ClaudeAgent, ClaudeAgentStatus } from './types';
 
 /** Exit code when no background agent has the given id. */
@@ -55,6 +55,8 @@ const KEEP_ALIVE_MS = 2_000;
 const MAX_LIST_FAILURES = 3;
 /** How long a shutdown waits for a tick that is still driving a terminal. */
 const SHUTDOWN_IDLE_WAIT_MS = 3_000;
+/** How long a shutdown waits for a delivery or answer that holds the attach terminal (input wait is 10s). */
+const SHUTDOWN_DRAIN_MS = 12_000;
 /** At most one "text only" notice per burst of attachments. */
 const ATTACHMENT_NOTICE_GAP_MS = 2_000;
 
@@ -128,9 +130,14 @@ export function decideAgentChange(
  * before it was closed. The lock is released exactly once per terminal, also when the underlying
  * `close` throws, and when opening fails.
  */
-export function serializeTerminalOpens(open: () => Promise<AttachTerminal>): () => Promise<AttachTerminal> {
+export type SerializedOpen = (() => Promise<AttachTerminal>) & {
+    /** True once every terminal opened or queued so far is closed; false if that takes longer than `timeoutMs`. */
+    drain(timeoutMs: number): Promise<boolean>;
+};
+
+export function serializeTerminalOpens(open: () => Promise<AttachTerminal>): SerializedOpen {
     let tail: Promise<void> = Promise.resolve();
-    return async () => {
+    const serialized = async (): Promise<AttachTerminal> => {
         const previous = tail;
         let release: () => void = () => undefined;
         tail = new Promise<void>((resolveTail) => {
@@ -159,6 +166,69 @@ export function serializeTerminalOpens(open: () => Promise<AttachTerminal>): () 
             },
         };
     };
+    const drain = async (timeoutMs: number): Promise<boolean> => {
+        const deadline = Date.now() + timeoutMs;
+        for (;;) {
+            const observed = tail;
+            const left = deadline - Date.now();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const timedOut = new Promise<false>((resolveTimeout) => {
+                timer = setTimeout(() => resolveTimeout(false), Math.max(left, 0));
+            });
+            const drained = await Promise.race([observed.then(() => true as const), timedOut]);
+            clearTimeout(timer);
+            if (!drained) {
+                return false;
+            }
+            // An open that was waiting behind the terminal may have queued a newer tail by now.
+            await new Promise<void>((resolveTick) => setImmediate(resolveTick));
+            if (observed === tail) {
+                return true;
+            }
+        }
+    };
+    return Object.assign(serialized, { drain });
+}
+
+/** True when a reused session's metadata could not be decrypted: the key is not ours, so nothing may be written or reported. */
+export function shouldAbortReuse(metadata: unknown): boolean {
+    return metadata === null || metadata === undefined;
+}
+
+/** Metadata of a session being (re)used by this mirror: running again, on the agent's current session and folder. */
+export function resetMirrorMetadata(metadata: Metadata, agent: ClaudeAgent, now: number): Metadata {
+    return {
+        ...metadata,
+        claudeSessionId: agent.sessionId,
+        claudeAgentId: agent.id,
+        cwd: agent.cwd,
+        lifecycleState: 'running',
+        lifecycleStateSince: now,
+        archivedBy: undefined,
+        archiveReason: undefined,
+    };
+}
+
+const STALE_REQUEST_REASON = 'Previous mirror exited before responding';
+
+/**
+ * Closes the cards a previous mirror process left open (the bridge starts empty and could never
+ * finish them). A card whose tool call was answered on the Mac in the meantime gets that answer
+ * from the transcript; the rest are canceled.
+ */
+export function settleStaleRequests(state: AgentState, entries: unknown[], now: number): AgentState {
+    const completedRequests = { ...state.completedRequests };
+    for (const [key, request] of Object.entries(state.requests ?? {})) {
+        const outcome = findToolUseOutcome(entries, key);
+        completedRequests[key] = {
+            ...request,
+            completedAt: now,
+            ...(outcome === null
+                ? { status: 'canceled' as const, reason: STALE_REQUEST_REASON }
+                : { status: outcome.decision, decision: outcome.decision, toolUseId: key }),
+        };
+    }
+    return { ...state, requests: {}, completedRequests };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -341,6 +411,13 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         console.error('Could not reach the Happy server.');
         process.exit(1);
     }
+    if (!reconnected && shouldAbortReuse(response.metadata)) {
+        // The server returned an existing session for this tag, but its metadata does not decrypt
+        // with the key this process just made. Reporting that key to the daemon would poison the
+        // stored one, so nothing is reported or written.
+        console.error(`The Happy session for agent ${agentId} already exists but cannot be opened without its stored key. Open it from the app (the daemon reconnects with the stored key).`);
+        process.exit(1);
+    }
     logger.debug(`[MIRROR] Happy session ${response.id}`);
 
     try {
@@ -358,31 +435,30 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         logger.debug('[MIRROR] Failed to report to daemon (may not be running):', error);
     }
 
+    const priorLifecycle = reconnected ? null : response.metadata?.lifecycleState;
     const session: ApiSessionClient = api.sessionSyncClient(response);
-    if (reconnected) {
+    // Whatever the phone sent before this process started must never be typed into the Mac session.
+    session.skipExistingMessages();
+    if (reconnected || priorLifecycle === 'archived' || priorLifecycle === 'archiveRequested') {
         session.suppressNextArchiveSignal();
-        session.skipExistingMessages();
-        session.updateMetadata((meta) => ({
-            ...meta,
-            claudeSessionId: currentSessionId,
-            claudeAgentId: agentId,
-            lifecycleState: 'running',
-            archivedBy: undefined,
-        }));
     }
+    session.updateMetadata((meta) => resetMirrorMetadata(meta, agent, Date.now()));
     // Cards left open by a previous mirror process can never be answered (the bridge starts empty).
-    session.updateAgentState((state) => {
-        const completedRequests = { ...state.completedRequests };
-        for (const [key, request] of Object.entries(state.requests ?? {})) {
-            completedRequests[key] = { ...request, completedAt: Date.now(), status: 'canceled', reason: 'Previous mirror exited before responding' };
-        }
-        return { ...state, controlledByUser: false, requests: {}, completedRequests };
-    });
+    const entriesAtStart = readTranscriptEntries(agent.cwd, currentSessionId);
+    session.updateAgentState((state) => ({ ...settleStaleRequests(state, entriesAtStart, Date.now()), controlledByUser: false }));
 
     const notice = (message: string): void => session.sendSessionEvent({ type: 'message', message });
 
-    // One terminal at a time across delivery and bridge.
-    const openTerminal = serializeTerminalOpens(() => openAttachTerminal([claudePath, 'attach', agentId]));
+    let stopping = false;
+    // One terminal at a time across delivery and bridge; once stopping, no new one is opened
+    // (a queued send then fails and the phone is told).
+    const lockedOpen = serializeTerminalOpens(() => openAttachTerminal([claudePath, 'attach', agentId]));
+    const openTerminal = async (): Promise<AttachTerminal> => {
+        if (stopping) {
+            throw new Error('The mirror is stopping');
+        }
+        return lockedOpen();
+    };
     const echo = createEchoFilter();
     const delivery = createInputDelivery({ openTerminal, echo });
 
@@ -453,6 +529,10 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         }
     };
     session.onUserMessage((message) => {
+        if (stopping) {
+            notice(NOTICE_FAILED);
+            return;
+        }
         void delivery.send(message.content.text).then(reportDelivery, () => notice(NOTICE_FAILED));
     });
     let lastAttachmentNotice = 0;
@@ -463,10 +543,14 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         }
     });
     session.rpcHandlerManager.registerHandler('abort', async () => {
-        await delivery.interrupt();
+        if (!stopping) {
+            await delivery.interrupt();
+        }
     });
     session.rpcHandlerManager.registerHandler<PermissionResponse, void>('permission', async (answer) => {
-        await bridge.answer(answer);
+        if (!stopping) {
+            await bridge.answer(answer);
+        }
     });
 
     const permissionLoop = everyWithoutOverlap(PERMISSION_TICK_MS, async () => {
@@ -503,7 +587,6 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     const keepAliveTimer = setInterval(() => session.keepAlive(lastStatus === 'busy', 'remote'), KEEP_ALIVE_MS);
     session.keepAlive(false, 'remote');
 
-    let stopping = false;
     async function shutdown(how: { archive: boolean; reason?: string; code: number }): Promise<void> {
         if (stopping) {
             return;
@@ -516,6 +599,10 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         try {
             // A tick may still hold the terminal: let it close its tmux session first.
             await Promise.race([Promise.all([permissionLoop.idle(), agentsLoop.idle()]), sleep(SHUTDOWN_IDLE_WAIT_MS)]);
+            // A delivery or answer may still hold the attach terminal: let it close its tmux session.
+            if (!(await lockedOpen.drain(SHUTDOWN_DRAIN_MS))) {
+                logger.debug('[MIRROR] A terminal was still open at shutdown');
+            }
             await scanner.cleanup();
             if (how.archive) {
                 session.updateMetadata((current) => ({
