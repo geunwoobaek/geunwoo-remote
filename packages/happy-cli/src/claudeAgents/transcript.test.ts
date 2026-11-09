@@ -99,6 +99,18 @@ describe('findPendingToolUse', () => {
         expect(findPendingToolUse([])).toBeNull();
         expect(findPendingToolUse([null, 'x', 42, {}, { type: 'assistant' }])).toBeNull();
     });
+
+    it('findPendingToolUse ignores an ExitPlanMode re-emitted after its result', () => {
+        // Measured (Claude Code 2.1.319): after a plan rejection the transcript repeats the
+        // ExitPlanMode call with the same id and input {} after its tool_result.
+        const entries = [
+            toolUseEntry([{ id: 'toolu_plan', name: 'ExitPlanMode', input: { plan: '# Plan' } }], 'msg_1'),
+            toolResultEntry('toolu_plan', "The user doesn't want to proceed with this tool use.", true),
+            toolUseEntry([{ id: 'toolu_plan', name: 'ExitPlanMode', input: {} }], 'msg_2'),
+        ];
+
+        expect(findPendingToolUse(entries)).toBeNull();
+    });
 });
 
 describe('findToolUseOutcome', () => {

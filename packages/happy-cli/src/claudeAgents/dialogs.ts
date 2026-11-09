@@ -23,6 +23,7 @@
  *   keys one at a time, `DIALOG_KEY_GAP_MS` apart.
  */
 
+import { createHash } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 import type { AttachKey } from './attachTerminal';
 import { sanitizeTypedText } from './attachTerminal';
@@ -64,6 +65,15 @@ const SUBAGENT_HEADER = /· from the .+ agent/;
 const PLAN_PROMPT = 'Claude has written up a plan and is ready to execute. Would you like to proceed?';
 const PLAN_APPROVE_MANUAL = 'Yes, manually approve edits';
 const PLAN_FEEDBACK = 'Tell Claude what to change';
+/** The ask line of the measured Bash and Read dialogs. */
+const PROCEED = 'Do you want to proceed?';
+/** Headers a measured permission dialog starts with. A second one inside a dialog means a dialog drawn inside it. */
+const KNOWN_HEADERS = ['Bash command', 'Create file', 'Overwrite file', 'Edit file', 'Read file'];
+/** A dialog's last line of key hints. It changes on its own (e.g. with the number of background agents). */
+const FOOTER = /^(?:Esc to cancel|Enter to select|ctrl\+g to edit)/;
+/** The single-question tab bars: `☐ Color` (lone single-select) and `←  ☐ Days  ✔ Submit  →` (lone multi-select). */
+const SINGLE_QUESTION_TAB_BAR = /^(?:☐ [^☐☒✔]+|←\s+☐ [^☐☒✔]+✔ Submit\s+→)$/;
+const TYPE_SOMETHING = /^(?:\[ \]\s*)?Type something\.?$/;
 
 type Option = { digit: number; label: string; focused: boolean };
 
@@ -83,6 +93,8 @@ type ParsedScreen = {
      * with trailing blank lines dropped. [] without a dialog.
      */
     region: string[];
+    /** Index in `lines` of the dialog's own top rule, or -1 without a dialog. */
+    top: number;
 };
 
 function stripAnsi(text: string): string {
@@ -131,7 +143,7 @@ function parseScreen(screen: string): ParsedScreen {
     while (region.length > 0 && region[region.length - 1] === '') {
         region.pop();
     }
-    return { lines, input, region };
+    return { lines, input, region, top };
 }
 
 /**
@@ -261,6 +273,136 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isKnownHeader(line: string): boolean {
+    return KNOWN_HEADERS.includes(line.replace(SUBAGENT_HEADER, '').trim()) || TAB_BAR.test(line);
+}
+
+/**
+ * Whether a permission or question dialog may be drawn inside another one. `dialogTop` takes the
+ * lowest full-width rule, so a command or preview that prints such a rule and a fake header would
+ * otherwise become "the dialog" and its fake block would be checked instead of the real one.
+ * Measured permission and question screens have no full-width rule above their top rule and no
+ * second dialog header before their ask line, so either one means the screen cannot be trusted.
+ */
+function looksStacked(parsed: ParsedScreen, ask: string | null): boolean {
+    const end = ask === null ? parsed.region.length : parsed.region.lastIndexOf(ask);
+    return parsed.lines.slice(0, parsed.top).some((line) => RULE.test(line.trim()))
+        || parsed.region.slice(1, end).some(isKnownHeader);
+}
+
+/**
+ * The identity of the open dialog: the sha1 of its lines from the topmost full-width rule down to
+ * (not including) the closing named rule, with escapes stripped, whitespace collapsed, blank lines
+ * and the key-hint footer dropped. The conversation above, the session name in the closing rule
+ * and the footer are left out so a redraw of the same dialog gives the same value. Starting at
+ * the topmost rule keeps a plan's body (inside the "Ready to code?" box, above the inner rule)
+ * and anything a rule inside a command could hide; when a long plan has pushed its box top off
+ * the screen, the whole screen above is used. Null when no dialog is open.
+ */
+export function dialogFingerprint(screen: string): string | null {
+    const parsed = parseScreen(screen);
+    if (parsed.top < 0 || parsed.region.length === 0) {
+        return null;
+    }
+    const firstRule = parsed.lines.findIndex((line) => RULE.test(line.trim()));
+    const start = analyse(parsed).kind === 'plan' && firstRule === parsed.top ? 0 : firstRule + 1;
+    const body = parsed.lines
+        .slice(start, -1)
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .filter((line) => line.length > 0);
+    if (body.length > 0 && FOOTER.test(body[body.length - 1])) {
+        body.pop();
+    }
+    return createHash('sha1').update(body.join('\n')).digest('hex');
+}
+
+export type ScreenDialog = { tool: string; input: Record<string, unknown> };
+
+/**
+ * Bash: the command block exactly as shown (wrapped lines joined with `\n`, since a wrap cannot be
+ * told from a newline in the command). Write/Edit: the path under the header as shown (relative
+ * to the session cwd) when the ask line names the same file. Read: the `Read(<path>)` argument.
+ */
+function readPermission(region: string[], ask: string | null): ScreenDialog | null {
+    const header = region[0];
+    if (header === 'Bash command' || header === 'Read file') {
+        const block = previewBlock(region)?.map((line) => line.trim());
+        if (ask !== PROCEED || block === undefined || block.some((line) => line.length === 0 || line.endsWith('…'))) {
+            return null;
+        }
+        if (header === 'Bash command') {
+            return { tool: 'Bash', input: { command: block.join('\n') } };
+        }
+        const path = block.length === 1 ? /^Read\((.+)\)$/.exec(block[0])?.[1] : undefined;
+        return path === undefined ? null : { tool: 'Read', input: { file_path: path } };
+    }
+    const path = region[1];
+    const tool = Object.keys(FILE_DIALOGS).find((name) => FILE_DIALOGS[name].some((dialog) => dialog.header === header));
+    const named = tool === undefined || ask === null || path === undefined
+        ? false
+        : FILE_DIALOGS[tool].some((dialog) => dialog.header === header && dialog.ask.exec(ask)?.[1] === path.split('/').at(-1));
+    return tool !== undefined && named && SEPARATOR.test(region[2] ?? '') ? { tool, input: { file_path: path } } : null;
+}
+
+/**
+ * The one question of an untouched lone question dialog: its text and the option labels above
+ * `Type something`. Multi-select when the options carry checkboxes.
+ */
+function readQuestion(region: string[], options: Option[]): ScreenDialog | null {
+    const pristine = SINGLE_QUESTION_TAB_BAR.test(region[0])
+        && !region.some((line) => line.includes('☒') || line.includes('[✔]'))
+        && !region.includes('Ready to submit your answers?')
+        && options.find((o) => o.focused)?.digit === 1;
+    const question = questionText(region);
+    const raw = region.flatMap((line) => {
+        const match = OPTION.exec(line);
+        return match === null ? [] : [match[3]];
+    });
+    const typeAt = raw.findIndex((text) => TYPE_SOMETHING.test(text));
+    if (!pristine || question.length === 0 || typeAt < 1) {
+        return null;
+    }
+    const shown = raw.slice(0, typeAt);
+    const multiSelect = shown.every((text) => text.startsWith('[ ] '));
+    if (!multiSelect && shown.some((text) => CHECKBOX.test(text))) {
+        return null;
+    }
+    const labels = shown.map((text) => text.replace(CHECKBOX, '').trim());
+    if (labels.some((label) => label.length === 0) || options.slice(0, typeAt).some((o, index) => o.digit !== index + 1)) {
+        return null;
+    }
+    return { tool: 'AskUserQuestion', input: { questions: [{ question, options: labels.map((label) => ({ label })), multiSelect }] } };
+}
+
+/**
+ * The open dialog read from the screen alone, for when the transcript does not hold its tool call
+ * yet: the tool name and target of a permission dialog, the one question of a lone question
+ * dialog, or `{ plan: '' }` for an untouched plan dialog (the plan text is not read off the
+ * screen). Null whenever any part cannot be read exactly: several question tabs, a touched
+ * dialog, a truncated command, an unknown header or wording, a subagent's dialog, or a screen
+ * that may hold a dialog drawn inside another.
+ */
+export function readDialogFromScreen(screen: string): ScreenDialog | null {
+    const parsed = parseScreen(screen);
+    const { kind, options, ask } = analyse(parsed);
+    const { region } = parsed;
+    if (region.some((line) => SUBAGENT_HEADER.test(line))) {
+        return null;
+    }
+    switch (kind) {
+        case 'permission':
+            return looksStacked(parsed, ask) ? null : readPermission(region, ask);
+        case 'question':
+            return looksStacked(parsed, null) ? null : readQuestion(region, options);
+        case 'plan':
+            return options.find((o) => o.focused)?.digit === 1 && options.find((o) => o.digit === 3)?.label === PLAN_FEEDBACK
+                ? { tool: 'ExitPlanMode', input: { plan: '' } }
+                : null;
+        default:
+            return null;
+    }
+}
+
 /**
  * Gate ④: whether the open dialog is about `pending`, read only from the dialog's own lines
  * (never the conversation above it, a description line or a file preview):
@@ -271,13 +413,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * - Questions: the question text right under the tab bar equal to the first question, untouched.
  * - Plans: untouched (option 1 focused). Other tools: the name as a whole word of the header.
  * Subagent dialogs and a pending `Task`/`Agent` call never match, because the tool being asked
- * about is not the one in the main transcript.
+ * about is not the one in the main transcript. Neither does a permission or question dialog that
+ * may be drawn inside another (`looksStacked`).
  */
 export function screenMatchesPending(screen: string, pending: PendingToolUse, cwd: string): boolean {
     const parsed = parseScreen(screen);
     const { kind, options, ask } = analyse(parsed);
     const { region } = parsed;
     if (pending.name === 'Task' || pending.name === 'Agent' || region.some((line) => SUBAGENT_HEADER.test(line))) {
+        return false;
+    }
+    if ((kind === 'permission' || kind === 'question') && looksStacked(parsed, ask)) {
         return false;
     }
     switch (pending.name) {
