@@ -15,6 +15,7 @@
 - Claude Remote Control은 어디에도 쓰지 않는다. 세션 간 메시지 소켓(`/tmp/cc-socks/*.sock`)도 쓰지 않는다.
 - 대상은 `kind === 'background'` 세션만. 거울의 기준 키는 에이전트 `id`(sessionId 아님).
 - tmux는 전용 소켓 `tmux -L jarvis-agents`로만 부른다. 터미널 크기 120×40. 새 npm 의존성 추가 금지.
+- 맥 사용자가 cmux에 열어 둔 `claude attach` 창은 Task 12 규칙으로만 쓰고(읽기·입력·키), 절대 닫거나 크기를 바꾸지 않는다. 화면 읽기는 터미널 폭·높이에 기대지 않는다.
 - `claude` 경로는 로그인 셸 `command -v claude`로 찾는다. Agent SDK에 묶인 Claude는 쓰지 않는다.
 - 거울 메타데이터에 `claudeAgentId: <id>`를 넣는다. 앱과 데몬은 이 필드로 거울을 알아본다.
 - 권한·질문·계획에 키를 넣기 전에 네 조건(①`waiting` ②폰에 보인 창과 같은 창: 창 지문이 같고, 기록에서 얻은 id가 있으면 id도 같음 ③화면에 해당 창 ④화면 내용이 그 도구와 일치)을 모두 확인한다. 키는 한 번에 하나씩 `DIALOG_KEY_GAP_MS`(600ms) 간격으로 넣는다. 하나라도 어긋나면 넣지 않고 폰에 "맥에서 답해 주세요"를 보인다.
@@ -371,3 +372,63 @@
   - `claude stop`·`rm` 뒤 폰 세션이 끝남으로 바뀐다.
   - 거울 세션에서 resume·fork·첨부·모델 선택이 안 보인다.
 - [ ] **Step 5: 정리와 커밋** — 일회용 세션 `claude stop`·`claude rm`. 확인 기록을 덧붙여 `docs: record end-to-end check for background session mirroring` 커밋, `git push geunwoo HEAD:remote-ux`.
+
+### Task 12: 맥에 열어 둔 cmux 창 먼저 쓰기 (2단 방식)
+
+스펙 5-1절. 맥 사용자가 cmux 창에서 `claude attach <agentId>`를 열어 두었으면 폰 입력·답을 그 창에 넣고, 없거나 쓸 수 없으면 지금처럼 전용 tmux로 간다. 사용자 창은 절대 닫지 않는다.
+
+**Files:**
+- Create: `packages/happy-cli/src/claudeAgents/cmuxTerminal.ts`, `cmuxTerminal.test.ts`
+- Create fixtures (이미 비식별화됨, 그대로 복사): `<scratch>/t12-fixtures/{w120,w99,q120,q99}.txt` → `__fixtures__/screens/{write-perm-120,write-perm-99,question-long-120,question-long-99}.txt` + README 표에 4행(“같은 대화상자를 tmux 120×40·cmux 99×35에서 캡처”).
+- Modify: `dialogs.ts`(`dialogFingerprint`), `inputDelivery.ts`, `permissionBridge.ts`, `runClaudeAgentMirror.ts`.
+
+**Interfaces:**
+- Consumes: `AttachTerminal`/`AttachKey`(Task 3), `isInputBoxEmpty`·`hasSessionSurvey`·`classifyScreen`·`dialogFingerprint`(Task 4·5), `serializeTerminalOpens`(Task 7).
+- Produces:
+  - `export function attachPidsNewestFirst(psOutput: string, agentId: string): number[]` — 입력은 `ps -axo pid=,etime=,args=` 출력. args 토큰의 마지막 두 개가 `attach`, `<agentId>`인 줄만. `etime`(`[[dd-]hh:]mm:ss`)이 작은 것(새것)부터.
+  - `export function surfaceForPid(topTsv: string, pid: number): string | null` — 입력은 `cmux top --all --processes --format tsv`. 열: cpu, mem, count, type, id, parent, name. 프로세스 행의 parent를 따라 올라가 `surface:N`을 만나면 그 ref, 못 만나면 null(전용 tmux로 띄운 attach는 cmux 표면 밑에 없으므로 자연히 빠진다). 순환·깊이 64 초과는 null.
+  - `export async function findAgentSurface(agentId: string): Promise<string | null>` — 위 두 명령을 매번 새로 실행(캐시 없음), 새 pid부터 처음 찾은 surface. 어떤 실패든 null.
+  - `export function openCmuxTerminal(surface: string): AttachTerminal`:
+    - `screen()` → `cmux read-screen --surface <ref>`.
+    - `typeText(t)` → `t`에 `\n`·`\r`·`\t`·`\\`가 있으면 throw(아무것도 보내지 않음), 아니면 `cmux send --surface <ref> -- <t>`.
+    - `pasteText()` → 항상 throw.
+    - `press(keys)` → 이름 키는 `cmux send-key --surface <ref> <enter|escape|up|down|space|tab|backspace>`, `{digit}`은 `cmux send --surface <ref> -- <d>`.
+    - `close()` → 아무것도 안 함.
+  - `export function cmuxTypable(text: string): boolean` — 위 typeText가 받아들이는지.
+  - cmux 실행 파일: PATH의 `cmux`, 없으면 `/Applications/cmux.app/Contents/Resources/bin/cmux`. 둘 다 없으면 `findAgentSurface`가 null. 새 npm 의존성 없음(`child_process.execFile`).
+  - `InputDeliveryDeps`·`PermissionBridgeDeps`에 선택 필드 `openUserTerminal?: () => Promise<AttachTerminal | null>` 추가. 없으면 지금 동작 그대로(기존 테스트 무수정 통과).
+
+**동작 규칙(구현 판단 지점):**
+- 잠금: 거울에서 cmux 창과 tmux 여는 일은 같은 `serializeTerminalOpens` 잠금 하나를 쓴다(한 번에 한 터미널). `openUserTerminal`은 잠금 안에서 `findAgentSurface`를 부르고, null이면 잠금을 바로 푼다.
+- 입력(`deliver`): 사용자 창이 있고, 화면 한 번 읽어 `isInputBoxEmpty && !hasSessionSurvey`이고, 글이 한 줄이며 `cmuxTypable`이면 → `echo.remember` → `typeText` → `enter` → `'sent'`(기다리지 않음). 조건 하나라도 아니면, 또는 글자를 보내기 전에 cmux 명령이 실패하면 → 지금의 tmux 경로. `typeText`가 시작된 뒤 실패하면 tmux로 다시 보내지 않고 `'failed'` + `echo.forget`(같은 글이 두 번 들어가는 일 금지).
+- 멈춤(`interrupt`): 사용자 창이 있으면 그 창에 `escape`, cmux가 실패하면 tmux.
+- 다리 `tick`: 사용자 창이 있으면 그 화면을, 없거나 읽기 실패면 tmux 화면을 쓴다.
+- 다리 `answer`: 먼저 사용자 창에서 지금의 네 가지 확인 + `stepsFor`. 결과가 null/빈 목록이거나, 단계 중 `typeText` 글이 `cmuxTypable`이 아니거나, 첫 키 전에 cmux가 실패하면 → 그 창은 두고 tmux를 열어 같은 확인부터 다시. 둘 다 안 되면 지금처럼 refuse. 키를 하나라도 누른 뒤의 실패는 지금처럼 canceled(다른 터미널로 재시도 금지).
+- 지문: `dialogFingerprint`는 지금 고른 영역에서 모든 공백과 줄긋기 문자(`─━│┃╭╮╰╯┌┐└┘├┤┬┴┼`)를 지운 뒤 해시한다. 그래서 폭이 달라 줄바꿈 위치가 달라도 같은 대화상자는 같은 값.
+
+- [ ] **Step 1: 실패하는 테스트 작성**
+  - `cmuxTerminal.test.ts`:
+    - `attachPidsNewestFirst picks only attach <id> and orders newest first` — 고정 ps 문자열(같은 id 2개 etime `01:02:03`·`00:05`, 다른 id 1개, `attach 19f0c660x` 같은 접두 비슷한 것 1개) → 새 pid 하나, 옛 pid 하나 순서.
+    - `surfaceForPid walks parents to a surface` — 고정 tsv: pid → zsh pid → `surface:8` → `surface:8`. 표면 밑에 없는 pid → null. 순환 → null.
+    - `typeText refuses newline, tab and backslash without sending` — `openCmuxTerminal`이 실행기를 주입받을 수 있게 둘째 인자 `run?: (args: string[]) => Promise<string>`(테스트 전용, 기본은 실제 실행). 거절 시 `run` 호출 0회.
+    - `press sends named keys with send-key and digits with send` — 기록된 args 비교.
+    - `close does nothing` — `run` 호출 0회.
+  - `dialogs.test.ts`:
+    - `fingerprint ignores terminal width` — `dialogFingerprint(write-perm-120) === dialogFingerprint(write-perm-99)`, `question-long-120` === `question-long-99`, 둘 다 null 아님.
+    - `width does not change what is read` — 두 폭에서 `classifyScreen`·`readDialogFromScreen`이 같다.
+    - 기존 지문 테스트는 값이 바뀌어도 “같다/다르다” 관계만 유지되면 된다(다른 대화상자끼리는 여전히 다름).
+  - `inputDelivery.test.ts`(가짜 터미널, 기존 스타일):
+    - `sends through the user terminal when its box is empty` — tmux opener 호출 0회.
+    - `falls back to tmux when the user is typing` — 사용자 창 화면의 입력칸에 글자 → tmux로 전달, 사용자 창엔 키 0개.
+    - `falls back to tmux for multi-line or backslash text`.
+    - `falls back to tmux when the user terminal fails before typing`.
+    - `does not resend through tmux after typing started` — 사용자 창 `press(enter)`가 throw → `'failed'`, tmux 호출 0회.
+  - `permissionBridge.test.ts`:
+    - `answers on the user terminal when the four checks pass` — tmux opener 0회.
+    - `answers through tmux when the user terminal shows another screen` — 사용자 창 화면이 다른 대화상자 → tmux에서 같은 확인 후 키.
+    - `does not retry on tmux after a key was pressed on the user terminal`.
+    - `tick publishes from the user terminal screen` — 사용자 창 99폭 화면으로 만든 요청을 tmux 120폭 화면에서 답할 수 있다(지문 같음).
+- [ ] **Step 2: 실패 확인** — `cd packages/happy-cli && npx vitest run src/claudeAgents/cmuxTerminal.test.ts src/claudeAgents/dialogs.test.ts src/claudeAgents/inputDelivery.test.ts src/claudeAgents/permissionBridge.test.ts` → FAIL.
+- [ ] **Step 3: 구현.** 위 규칙대로. `runClaudeAgentMirror.ts`에서 `openUserTerminal = () => findAgentSurface(agentId)` 결과로 `openCmuxTerminal`을 만들어 delivery·bridge 둘 다에 넘긴다(잠금 공유). cmux 경로를 탔는지는 디버그 로그 한 줄(`[claude-agent] input via cmux surface:N` / `via tmux`).
+- [ ] **Step 4: 통과 확인** — 같은 명령 PASS, 이어서 `npx vitest run src/claudeAgents` 전체 PASS, `npx tsc --noEmit` 오류 0.
+- [ ] **Step 5: 커밋** — `feat(cli): drive the Mac's open cmux attach pane before the private tmux`.
