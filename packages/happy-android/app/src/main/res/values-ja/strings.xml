@@ -288,6 +288,13 @@
     <string name="session_resume_from_terminal">ターミナルから再開するには:</string>
     <string name="session_new_chat">新規チャット</string>
     <string name="session_mac_background_session">Macのバックグラウンドセッション</string>
+    <string name="session_claude_agents_title">Claudeのバックグラウンドセッション</string>
+    <string name="session_claude_agent_working">作業中</string>
+    <string name="session_claude_agent_idle">アイドル</string>
+    <string name="session_claude_agent_waiting">許可待ち</string>
+    <string name="session_claude_agents_tmux_missing">バックグラウンドセッションを開くには、このMacにtmuxをインストールしてください</string>
+    <string name="session_claude_agents_claude_missing">このMacでClaude Codeが見つかりませんでした</string>
+    <string name="session_claude_agents_could_not_list">バックグラウンドセッションを一覧表示できませんでした</string>
     <string name="session_status_bar_context">コンテキスト</string>
     <string name="session_status_bar_path_title">作業ディレクトリ</string>
     <string name="session_fork_action">セッションをフォーク</string>

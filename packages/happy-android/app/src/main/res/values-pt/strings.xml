@@ -304,6 +304,13 @@
     <string name="session_resume_from_terminal">Para retomá-la pelo terminal:</string>
     <string name="session_new_chat">Novo chat</string>
     <string name="session_mac_background_session">Sessão em segundo plano do Mac</string>
+    <string name="session_claude_agents_title">Sessões em segundo plano do Claude</string>
+    <string name="session_claude_agent_working">Trabalhando</string>
+    <string name="session_claude_agent_idle">Inativo</string>
+    <string name="session_claude_agent_waiting">Aguardando permissão</string>
+    <string name="session_claude_agents_tmux_missing">Instale o tmux neste Mac para abrir sessões em segundo plano</string>
+    <string name="session_claude_agents_claude_missing">O Claude Code não foi encontrado neste Mac</string>
+    <string name="session_claude_agents_could_not_list">Não foi possível listar as sessões em segundo plano</string>
     <string name="session_status_bar_context">Contexto</string>
     <string name="session_status_bar_path_title">Diretório de trabalho</string>
     <string name="session_fork_action">Bifurcar sessão</string>

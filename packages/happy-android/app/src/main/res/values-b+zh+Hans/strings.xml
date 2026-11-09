@@ -288,6 +288,13 @@
     <string name="session_resume_from_terminal">要从终端恢复它：</string>
     <string name="session_new_chat">新对话</string>
     <string name="session_mac_background_session">Mac 后台会话</string>
+    <string name="session_claude_agents_title">Claude 后台会话</string>
+    <string name="session_claude_agent_working">工作中</string>
+    <string name="session_claude_agent_idle">空闲</string>
+    <string name="session_claude_agent_waiting">等待授权</string>
+    <string name="session_claude_agents_tmux_missing">请在这台 Mac 上安装 tmux 以打开后台会话</string>
+    <string name="session_claude_agents_claude_missing">在这台 Mac 上未找到 Claude Code</string>
+    <string name="session_claude_agents_could_not_list">无法列出后台会话</string>
     <string name="session_status_bar_context">上下文</string>
     <string name="session_status_bar_path_title">工作目录</string>
     <string name="session_fork_action">分叉会话</string>

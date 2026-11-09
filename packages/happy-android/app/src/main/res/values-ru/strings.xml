@@ -312,6 +312,13 @@
     <string name="session_resume_from_terminal">Чтобы возобновить её из терминала:</string>
     <string name="session_new_chat">Новый чат</string>
     <string name="session_mac_background_session">Фоновая сессия на Mac</string>
+    <string name="session_claude_agents_title">Фоновые сессии Claude</string>
+    <string name="session_claude_agent_working">Работает</string>
+    <string name="session_claude_agent_idle">Простаивает</string>
+    <string name="session_claude_agent_waiting">Ожидает разрешения</string>
+    <string name="session_claude_agents_tmux_missing">Установите tmux на этом Mac, чтобы открывать фоновые сессии</string>
+    <string name="session_claude_agents_claude_missing">Claude Code не найден на этом Mac</string>
+    <string name="session_claude_agents_could_not_list">Не удалось получить список фоновых сессий</string>
     <string name="session_status_bar_context">Контекст</string>
     <string name="session_status_bar_path_title">Рабочая директория</string>
     <string name="session_fork_action">Форкнуть сессию</string>

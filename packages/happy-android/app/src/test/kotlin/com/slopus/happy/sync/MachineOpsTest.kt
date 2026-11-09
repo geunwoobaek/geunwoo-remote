@@ -3,6 +3,9 @@ package com.slopus.happy.sync
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.slopus.happy.crypto.encodeBase64
 import com.slopus.happy.data.SessionRecord
+import com.slopus.happy.ui.home.ClaudeAgentsModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -362,6 +365,95 @@ class MachineOpsTest {
             RewindPointsResult.Error("RPC method not available"),
             ops.codexRewindPoints("m1", "/project", "thread-1"),
         )
+    }
+
+    // list-claude-agents / open-claude-agent (the Mac's `claude agents` background sessions)
+
+    @Test
+    fun listClaudeAgentsReadsTheDaemonsAnswer() = runBlocking {
+        h.startAndSync()
+        val calls = respond("list-claude-agents") {
+            buildJsonObject {
+                putJsonArray("agents") {
+                    add(buildJsonObject {
+                        put("id", "demo-agent"); put("sessionId", "claude-1"); put("name", "Demo")
+                        put("cwd", "/Users/tester/project"); put("pid", 1); put("status", "busy")
+                        put("state", "working"); put("startedAt", 5)
+                    })
+                }
+                put("unavailable", "tmux-missing")
+            }
+        }
+        assertEquals(
+            ClaudeAgentsListing(
+                listOf(ClaudeAgentEntry("demo-agent", "claude-1", "Demo", "/Users/tester/project", "busy", 5, null)),
+                "tmux-missing",
+            ),
+            ops.listClaudeAgents("m1"),
+        )
+        assertEquals(JsonObject(emptyMap()), calls.single())
+    }
+
+    @Test
+    fun listClaudeAgentsMapsAnRpcErrorToUnsupported() = runBlocking {
+        h.startAndSync()
+        // No handler registered: what a daemon from before this feature answers.
+        assertEquals(ClaudeAgentsListing(emptyList(), "unsupported"), ops.listClaudeAgents("m1"))
+        assertEquals(ClaudeAgentsListing(emptyList(), "unsupported"), ops.listClaudeAgents("nope"))
+    }
+
+    @Test
+    fun openClaudeAgentReturnsSuccessWithSessionIdAndPullsItIn() = runBlocking {
+        h.startAndSync()
+        val calls = respond("open-claude-agent") {
+            server.addSession("mirror-1", updatedAt = 200)
+            success("mirror-1")
+        }
+        assertEquals(OpenClaudeAgentResult.Success("mirror-1"), ops.openClaudeAgent("m1", "demo-agent"))
+        assertEquals(buildJsonObject { put("id", "demo-agent") }, calls.single())
+        // Refreshed before returning, so the chat can open on a session the app already has.
+        assertNotNull(h.store.session("mirror-1"))
+    }
+
+    @Test
+    fun openClaudeAgentReturnsErrorWithTheDaemonsMessage() = runBlocking {
+        h.startAndSync()
+        val answers = ArrayDeque(listOf(
+            buildJsonObject { put("type", "error"); put("errorMessage", "That agent is gone.") },
+            buildJsonObject { put("type", "error") },
+            buildJsonObject { put("type", "success") },
+            JsonPrimitive("garbage"),
+        ))
+        respond("open-claude-agent") { answers.removeFirst() }
+        assertEquals(OpenClaudeAgentResult.Error("That agent is gone."), ops.openClaudeAgent("m1", "demo-agent"))
+        assertEquals(OpenClaudeAgentResult.Error("Failed to open session"), ops.openClaudeAgent("m1", "demo-agent"))
+        assertEquals(OpenClaudeAgentResult.Error(SpawnSessionResult.UNREADABLE), ops.openClaudeAgent("m1", "demo-agent"))
+        assertEquals(OpenClaudeAgentResult.Error(SpawnSessionResult.UNREADABLE), ops.openClaudeAgent("m1", "demo-agent"))
+    }
+
+    @Test
+    fun openClaudeAgentMapsAnRpcFailureToAReadableError() = runBlocking {
+        h.startAndSync()
+        assertEquals(OpenClaudeAgentResult.Error("RPC method not available"), ops.openClaudeAgent("m1", "demo-agent"))
+    }
+
+    @Test
+    fun theHomeModelListsOnlineMachinesOnlyAndIgnoresARepeatTapOnARowBeingOpened() = runBlocking {
+        h.startAndSync()
+        respond("list-claude-agents") { buildJsonObject { putJsonArray("agents") { } } }
+        val model = ClaudeAgentsModel { ops }
+        model.refresh(listOf("m1", "m2"))
+        assertEquals(setOf("m1", "m2"), model.listings.value.keys)
+        // m2 is no longer online: what was read of it goes.
+        model.refresh(listOf("m1"))
+        assertEquals(setOf("m1"), model.listings.value.keys)
+
+        respond("open-claude-agent") { Thread.sleep(300); success("mirror-1") }
+        val first = async(Dispatchers.Default) { model.open("m1", "demo-agent") }
+        eventually(message = "open in flight") { "demo-agent" in model.opening.value }
+        assertNull(model.open("m1", "demo-agent"))
+        assertEquals(OpenClaudeAgentResult.Success("mirror-1"), first.await())
+        assertTrue(model.opening.value.isEmpty())
     }
 
     // The rest of ops.ts's machine calls.

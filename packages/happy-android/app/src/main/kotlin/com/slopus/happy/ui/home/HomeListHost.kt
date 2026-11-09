@@ -2,6 +2,15 @@ package com.slopus.happy.ui.home
 
 import com.slopus.happy.ui.migration.MigrationPath
 
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import com.slopus.happy.model.displayName
+import com.slopus.happy.model.isRigMachine
+import com.slopus.happy.sync.OpenClaudeAgentResult
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import com.slopus.happy.ui.rememberHomeAccountSwitch
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
@@ -51,6 +60,10 @@ class HomeListScope(
     val syncing: Boolean = false,
     /** The migration card over the list, if it shows. */
     val migration: MigrationPath? = null,
+    /** The Mac's background Claude sessions, over the chats. */
+    val claudeAgents: ClaudeAgentsUi? = null,
+    /** Pull to refresh: syncs, and lists the Mac's background sessions again. */
+    val onRefresh: (suspend () -> Unit)? = null,
 )
 
 /**
@@ -183,8 +196,49 @@ fun HomeListHost(graph: AppGraph, navigation: HomeNavigation, phone: Boolean = f
             .collect { services.homeListOffsets[accountKey] = it }
     }
 
+    // The Mac's background Claude sessions: listed when home is shown and on pull to refresh, never on a timer.
+    val snapshot by services.snapshots.collectAsStateWithLifecycle()
+    val agentsModel = remember(services) { ClaudeAgentsModel { services.machineOps } }
+    val agentListings by agentsModel.listings.collectAsStateWithLifecycle()
+    val agentsOpening by agentsModel.opening.collectAsStateWithLifecycle()
+    // Happy Agent machines (rig) have no such daemon.
+    val agentMachines = remember(snapshot?.machines) { snapshot?.machines.orEmpty().filter { it.isOnline && !it.metadata.isRigMachine() } }
+    val agentMachineIds = remember(agentMachines) { agentMachines.map { it.id } }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(agentsModel, agentMachineIds, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { agentsModel.refresh(agentMachineIds) }
+    }
+    // A mirror that is live in the list has its own row; one whose row sits in the archive is still opened from here.
+    val liveSessionIds = remember(snapshot?.sessions) { snapshot?.sessions.orEmpty().filter { it.active }.mapTo(HashSet()) { it.id } }
+    val agentBlocks = remember(agentMachines, agentListings, liveSessionIds) {
+        claudeAgentBlocks(agentMachineIds, agentMachines.associate { it.id to it.displayName() }, agentListings, liveSessionIds)
+    }
+    val openScope = rememberCoroutineScope()
+    val errorTitle = stringResource(R.string.common_error)
+    val okLabel = stringResource(R.string.common_ok)
+    val claudeAgents = remember(agentBlocks, agentsOpening, agentsModel, onOpenSession, errorTitle, okLabel) {
+        ClaudeAgentsUi(agentBlocks, agentsOpening) { machineId, agentId ->
+            openScope.launch {
+                when (val result = agentsModel.open(machineId, agentId)) {
+                    null -> Unit
+                    is OpenClaudeAgentResult.Success -> onOpenSession(result.sessionId)
+                    is OpenClaudeAgentResult.Error ->
+                        showAlert(Alert(errorTitle, result.message.ifEmpty { errorTitle }, listOf(AlertButton(okLabel))))
+                }
+            }
+        }
+    }
+    val refresh = remember(agentsModel, agentMachineIds, graph) {
+        suspend {
+            coroutineScope {
+                launch { graph.account.value?.syncNow() }
+                agentsModel.refresh(agentMachineIds)
+            }
+        }
+    }
+
     ProvideAvatarSettings(settings) {
-        content(HomeListScope(state, connection, settings.sessionListGrouping, callbacks, actions, update, navigation, listState, syncing, migration))
+        content(HomeListScope(state, connection, settings.sessionListGrouping, callbacks, actions, update, navigation, listState, syncing, migration, claudeAgents, refresh))
     }
     duplicating?.let { session ->
         DuplicateSheet(

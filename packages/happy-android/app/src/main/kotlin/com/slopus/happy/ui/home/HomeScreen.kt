@@ -163,6 +163,10 @@ fun HomeScreen(
     syncing: Boolean = false,
     /** What the title shows of the link, debounced ([com.slopus.happy.ui.chat.rememberShownLinkState]) by [LegacyHome]; as the socket stands by default. */
     link: LinkState = accountLinkState(connectionStatus == ConnectionStatus.CONNECTED, catchingUp = syncing || state == null, network = true),
+    /** The Mac's background Claude sessions, over the list; null shows none. */
+    claudeAgents: ClaudeAgentsUi? = null,
+    /** Pull to refresh over the list; null leaves the list as it is. */
+    onRefresh: (suspend () -> Unit)? = null,
 ) {
     val colors = HappyTheme.colors
     // As the tablet's sidebar, home wears its chrome: no settings in the bar, settings and compose at its foot.
@@ -205,22 +209,25 @@ fun HomeScreen(
                 state.emptyState == HomeEmptyState.NoSessions -> Box(below) {
                     NoSessionsState(onNewSession = actions.onCompose, onShowArchived = if (state.hasArchivedSessions) showArchived else null)
                 }
-                else -> HomeList(
-                    state,
-                    callbacks,
-                    actions,
-                    update,
-                    migration = migration,
-                    contentTop = top + HomeCardSpec.contentTop,
-                    listState = listState,
-                    // Room for the last card to scroll clear of the compose button, or the sidebar's foot.
-                    bottomSpacer = {
-                        if (sidebar != null) Spacer(Modifier.height(SidebarSpec.listClearance()))
-                        else Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars).height(AgentHomeSpec.fabClearance))
-                    },
-                    carded = true,
-                    selectedSessionId = MainPanelKey.sessionId(sidebar?.selected),
-                )
+                else -> HomeRefreshBox(onRefresh, indicatorTop = top, modifier = Modifier.fillMaxSize()) {
+                    HomeList(
+                        state,
+                        callbacks,
+                        actions,
+                        update,
+                        migration = migration,
+                        contentTop = top + HomeCardSpec.contentTop,
+                        listState = listState,
+                        // Room for the last card to scroll clear of the compose button, or the sidebar's foot.
+                        bottomSpacer = {
+                            if (sidebar != null) Spacer(Modifier.height(SidebarSpec.listClearance()))
+                            else Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars).height(AgentHomeSpec.fabClearance))
+                        },
+                        carded = true,
+                        selectedSessionId = MainPanelKey.sessionId(sidebar?.selected),
+                        claudeAgents = claudeAgents,
+                    )
+                }
             }
             // With no computer there is nothing to start work on.
             val canStart = state != null && state.emptyState != HomeEmptyState.Link
@@ -283,6 +290,8 @@ fun HomeList(
     listState: LazyListState = rememberLazyListState(),
     carded: Boolean = false,
     migration: MigrationPath? = null,
+    /** The Mac's background Claude sessions, ahead of the chats. */
+    claudeAgents: ClaudeAgentsUi? = null,
 ) {
     val colors = HappyTheme.colors
     val flat = state.grouping == SessionListGrouping.Flat
@@ -304,6 +313,9 @@ fun HomeList(
             item(key = "banners", contentType = "banners") {
                 HomeBanners(state.offlineBanner, update, actions, migration)
             }
+        }
+        if (claudeAgents != null && claudeAgents.blocks.isNotEmpty()) {
+            item(key = "claude-agents", contentType = "claude-agents") { ClaudeAgentsSection(claudeAgents) }
         }
         if (carded) {
             items(state.cards, key = { it.key }, contentType = { (it.row as? HomeRow.Project)?.row?.let { row -> row::class } ?: it.row::class }) { entry ->

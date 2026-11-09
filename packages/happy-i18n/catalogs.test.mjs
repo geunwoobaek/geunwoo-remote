@@ -5,7 +5,7 @@ import { languages, parameters, readCatalog, render } from './catalogs.mjs';
 
 test('all locales have the same keys and declared template parameters', () => {
     const keys = Object.keys(readCatalog('en').entries).sort();
-    assert.equal(keys.length, 911);
+    assert.equal(keys.length, 918);
     for (const code of languages) {
         const catalog = readCatalog(code);
         assert.equal(catalog.code, code);

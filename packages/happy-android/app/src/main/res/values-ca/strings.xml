@@ -304,6 +304,13 @@
     <string name="session_resume_from_terminal">Per reprendre-la des del terminal:</string>
     <string name="session_new_chat">Nou xat</string>
     <string name="session_mac_background_session">Sessió en segon pla del Mac</string>
+    <string name="session_claude_agents_title">Sessions en segon pla de Claude</string>
+    <string name="session_claude_agent_working">Treballant</string>
+    <string name="session_claude_agent_idle">Inactiu</string>
+    <string name="session_claude_agent_waiting">Esperant permís</string>
+    <string name="session_claude_agents_tmux_missing">Instal·la tmux en aquest Mac per obrir sessions en segon pla</string>
+    <string name="session_claude_agents_claude_missing">No s\'ha trobat Claude Code en aquest Mac</string>
+    <string name="session_claude_agents_could_not_list">No s\'han pogut llistar les sessions en segon pla</string>
     <string name="session_status_bar_context">Context</string>
     <string name="session_status_bar_path_title">Directori de treball</string>
     <string name="session_fork_action">Bifurca la sessió</string>

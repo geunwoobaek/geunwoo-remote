@@ -312,6 +312,13 @@
     <string name="session_resume_from_terminal">Aby wznowić ją z terminala:</string>
     <string name="session_new_chat">Nowy czat</string>
     <string name="session_mac_background_session">Sesja w tle na Macu</string>
+    <string name="session_claude_agents_title">Sesje Claude w tle</string>
+    <string name="session_claude_agent_working">Pracuje</string>
+    <string name="session_claude_agent_idle">Bezczynna</string>
+    <string name="session_claude_agent_waiting">Czeka na zgodę</string>
+    <string name="session_claude_agents_tmux_missing">Zainstaluj tmux na tym Macu, aby otwierać sesje w tle</string>
+    <string name="session_claude_agents_claude_missing">Nie znaleziono Claude Code na tym Macu</string>
+    <string name="session_claude_agents_could_not_list">Nie udało się wyświetlić sesji w tle</string>
     <string name="session_status_bar_context">Kontekst</string>
     <string name="session_status_bar_path_title">Katalog roboczy</string>
     <string name="session_fork_action">Rozwidl sesję</string>

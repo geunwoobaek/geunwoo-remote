@@ -288,6 +288,13 @@
     <string name="session_resume_from_terminal">若要從終端恢復它：</string>
     <string name="session_new_chat">新對話</string>
     <string name="session_mac_background_session">Mac 背景工作階段</string>
+    <string name="session_claude_agents_title">Claude 背景工作階段</string>
+    <string name="session_claude_agent_working">工作中</string>
+    <string name="session_claude_agent_idle">閒置</string>
+    <string name="session_claude_agent_waiting">等待授權</string>
+    <string name="session_claude_agents_tmux_missing">請在這台 Mac 上安裝 tmux 以開啟背景工作階段</string>
+    <string name="session_claude_agents_claude_missing">在這台 Mac 上找不到 Claude Code</string>
+    <string name="session_claude_agents_could_not_list">無法列出背景工作階段</string>
     <string name="session_status_bar_context">上下文</string>
     <string name="session_status_bar_path_title">工作目錄</string>
     <string name="session_fork_action">分叉會話</string>

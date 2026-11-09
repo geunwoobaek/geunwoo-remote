@@ -296,6 +296,13 @@
     <string name="session_resume_from_terminal">To resume it from the terminal:</string>
     <string name="session_new_chat">New chat</string>
     <string name="session_mac_background_session">Mac background session</string>
+    <string name="session_claude_agents_title">Claude background sessions</string>
+    <string name="session_claude_agent_working">Working</string>
+    <string name="session_claude_agent_idle">Idle</string>
+    <string name="session_claude_agent_waiting">Waiting for permission</string>
+    <string name="session_claude_agents_tmux_missing">Install tmux on this Mac to open background sessions</string>
+    <string name="session_claude_agents_claude_missing">Claude Code was not found on this Mac</string>
+    <string name="session_claude_agents_could_not_list">Couldn\'t list background sessions</string>
     <string name="session_status_bar_context">Context</string>
     <string name="session_status_bar_path_title">Working directory</string>
     <string name="session_fork_action">Fork session</string>

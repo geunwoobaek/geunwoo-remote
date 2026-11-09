@@ -270,6 +270,47 @@ class MachineOps internal constructor(
     /** ops.ts `spawnSideChat`: a fork kept out of the session list, shown only beside its parent. */
     suspend fun spawnSideChat(source: ForkSource): SpawnSessionResult = forkAndSpawn(source, ForkOptions(isSideChat = true))
 
+    /**
+     * The Mac's `claude agents` background sessions. A daemon from before the
+     * feature has no such method and its RPC fails, which reads as
+     * [CLAUDE_AGENTS_UNSUPPORTED]; so does a machine that cannot be reached.
+     */
+    suspend fun listClaudeAgents(machineId: String): ClaudeAgentsListing = try {
+        parseClaudeAgentsListing(rpc.machineRpc(machineId, "list-claude-agents", JsonObject(emptyMap())))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        ClaudeAgentsListing(emptyList(), CLAUDE_AGENTS_UNSUPPORTED)
+    }
+
+    /**
+     * Opens one background session as a mirror session and answers the Happy
+     * session to show. The daemon refuses in a normal answer (`type: error`);
+     * a failed call is an error too. On success the session list is refreshed
+     * before returning, so the caller can open it (as [forkAndSpawn] does).
+     */
+    suspend fun openClaudeAgent(machineId: String, id: String): OpenClaudeAgentResult = try {
+        val answer = rpc.machineRpc(machineId, "open-claude-agent", buildJsonObject { put("id", id) }) as? JsonObject
+        when (answer?.string("type")) {
+            "success" -> answer.string("sessionId")?.takeIf { it.isNotEmpty() }?.let { sessionId ->
+                try {
+                    refreshSessions()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Best effort: the broadcast brings the session in shortly anyway.
+                }
+                OpenClaudeAgentResult.Success(sessionId)
+            } ?: OpenClaudeAgentResult.Error(SpawnSessionResult.UNREADABLE)
+            "error" -> OpenClaudeAgentResult.Error(answer.string("errorMessage")?.takeIf { it.isNotEmpty() } ?: "Failed to open session")
+            else -> OpenClaudeAgentResult.Error(SpawnSessionResult.UNREADABLE)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        OpenClaudeAgentResult.Error(e.message ?: "Failed to open session")
+    }
+
     private suspend fun fork(machineId: String, method: String, idField: String, fallback: String, params: JsonObject): ForkResult = try {
         val answer = rpc.machineRpc(machineId, method, params) as? JsonObject
         when (answer?.string("type")) {
