@@ -645,28 +645,42 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
 
     /**
      * A mirror shows a `screen:` card when the CLI read a dialog off the Mac's
-     * screen before its tool call reached the transcript. Once that card is
-     * answered and the transcript has a later tool row of the same tool, the
-     * row is the same call, so the card leaves the chat. A pending card
-     * stays, whatever arrives. Returns the ids hidden by this call.
+     * screen before its tool call reached the transcript. An approved card is
+     * the same call as the transcript's tool row that follows it, so it
+     * leaves the chat once it has paired with one. A denied, canceled or
+     * pending card never has a row (the tool didn't run, or hasn't yet), so it
+     * stays.
+     *
+     * Pairing is one to one, per tool name: cards in the order they were
+     * raised each claim the earliest unclaimed transcript row of that tool
+     * inside their window, so one row never hides two cards and an unrelated
+     * later call never hides an unmatched card. A row is only a transcript
+     * `tool_use` (it has a record behind it), never a row built from an agent
+     * state request alone. Claims are recomputed each call and a hidden card
+     * keeps its claim, so a card never reappears. Returns the ids hidden by
+     * this call.
      */
     private fun hideAnsweredScreenCards(): Set<String> {
         fun ReducerMessage.isScreenCard() = tool?.callId?.startsWith(SCREEN_REQUEST_PREFIX) == true
-        val answered = messages.values.filter {
-            !it.hidden && it.isScreenCard() && it.tool?.permission?.status != PermissionStatus.Pending
-        }
-        if (answered.isEmpty()) return emptySet()
+        val cards = messages.values
+            .filter { it.isScreenCard() && it.tool?.permission?.status == PermissionStatus.Approved }
+            .sortedWith(compareBy<ReducerMessage> { it.createdAt }.thenBy { it.id.removePrefix("m").toLongOrNull() ?: Long.MAX_VALUE })
+        if (cards.none { !it.hidden }) return emptySet()
         val nested = sidechainToolIdToMessageId.values.toSet()
-        val latestByTool = HashMap<String, Long>()
-        for (message in messages.values) {
-            val tool = message.tool ?: continue
-            if (message.hidden || message.isUser || message.id in nested || message.isScreenCard()) continue
-            latestByTool.merge(tool.name, message.createdAt, ::maxOf)
-        }
+        // Earliest first, so a card claims the earliest row it can.
+        val rowsByTool = messages.values
+            .filter { it.tool != null && !it.isUser && it.realID != null && it.id !in nested && !it.isScreenCard() }
+            .sortedBy { it.createdAt }
+            .groupBy { it.tool!!.name }
+        val claimed = HashSet<String>()
         val newlyHidden = LinkedHashSet<String>()
-        for (card in answered) {
-            val later = latestByTool[card.tool?.name] ?: continue
-            if (later > card.createdAt) {
+        for (card in cards) {
+            val from = card.createdAt - SCREEN_CARD_CLOCK_SKEW_MS
+            val to = (permissions[card.tool?.callId]?.completedAt ?: card.createdAt) + SCREEN_CARD_ROW_WINDOW_MS
+            val row = rowsByTool[card.tool?.name].orEmpty()
+                .firstOrNull { it.id !in claimed && it.createdAt > from && it.createdAt <= to } ?: continue
+            claimed.add(row.id)
+            if (!card.hidden) {
                 card.hidden = true
                 newlyHidden.add(card.id)
             }
@@ -794,6 +808,12 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
 
 /** The CLI's request key for a dialog it read off the Mac's screen before its tool call reached the transcript. */
 private const val SCREEN_REQUEST_PREFIX = "screen:"
+
+/** A card's time is the Mac CLI's clock and a row's is the server's record time, so a row may look a few seconds older than its card. */
+private const val SCREEN_CARD_CLOCK_SKEW_MS = 5_000L
+
+/** How long after a card was answered its tool row may still arrive; a later same-tool row is a different call. */
+private const val SCREEN_CARD_ROW_WINDOW_MS = 120_000L
 
 private fun errorResult(reason: String) = JsonObject(mapOf("error" to JsonPrimitive(reason)))
 

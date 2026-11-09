@@ -240,9 +240,10 @@ class ClaudeAgentMirrorTest {
         assertEquals(listOf("toolu_1"), state.rows().map { it.tool.callId })
     }
 
-    @Test fun `a screen card is hidden when the real tool message came first and the card is answered later`() {
-        // The order the CLI produces: the transcript gets the tool_use while the dialog is still open,
-        // then the CLI completes the screen: request once it matches the two.
+    @Test fun `a pending screen card stays while its row arrives and hides once it is approved`() {
+        // The card is raised when the dialog is read; the tool row reaches the transcript after it
+        // (while the card is still pending, or after it is answered). Only the approved card hides.
+        // (A tool_use already in the transcript when the dialog appears gets a toolu_ key, not screen:.)
         val state = ReducerState(now = { 999_999 })
         val first = state.reduce(
             listOf(agentMsg("a1", 2000, toolUse("toolu_1", "Bash", """{"command":"ls"}"""))),
@@ -302,15 +303,95 @@ class ClaudeAgentMirrorTest {
         assertEquals(setOf("screen:abc", "toolu_1"), state.rows().map { it.tool.callId }.toSet())
     }
 
-    @Test fun `a screen card stays when the same tool came before it`() {
+    private fun screenCard(key: String, createdAt: Long, status: String, tool: String = "Bash") =
+        """"$key":{"tool":"$tool","arguments":{"command":"ls"},"createdAt":$createdAt,"completedAt":${createdAt + 500},"status":"$status"}"""
+
+    private fun completedCards(vararg cards: String) = agentState("""{"completedRequests":{${cards.joinToString(",")}}}""")
+
+    private fun bashRow(id: String, toolId: String, createdAt: Long) =
+        agentMsg(id, createdAt, toolUse(toolId, "Bash", """{"command":"ls"}"""))
+
+    @Test fun `a screen card stays when the same tool came well before it`() {
         val state = ReducerState(now = { 999_999 })
         val result = state.reduce(
-            listOf(agentMsg("a1", 500, toolUse("toolu_old", "Bash", """{"command":"pwd"}"""))),
-            agentState(screenCompleted),
+            listOf(bashRow("a1", "toolu_old", 5_000)),
+            completedCards(screenCard("screen:abc", 20_000, "approved")),
             mirrorOptions,
         )
         assertTrue(result.hiddenMessageIds.isEmpty())
         assertEquals(setOf("screen:abc", "toolu_old"), state.rows().map { it.tool.callId }.toSet())
+    }
+
+    @Test fun `a row stamped a few seconds before its card still hides it`() {
+        // The card's time is the Mac CLI's clock, the row's is the server's.
+        val state = ReducerState(now = { 999_999 })
+        val result = state.reduce(
+            listOf(bashRow("a1", "toolu_1", 7_000)),
+            completedCards(screenCard("screen:abc", 10_000, "approved")),
+            mirrorOptions,
+        )
+        assertEquals(1, result.hiddenMessageIds.size)
+        assertEquals(listOf("toolu_1"), state.rows().map { it.tool.callId })
+    }
+
+    @Test fun `a denied or canceled screen card stays whatever row follows`() {
+        for (status in listOf("denied", "canceled")) {
+            val state = ReducerState(now = { 999_999 })
+            val result = state.reduce(
+                listOf(bashRow("a1", "toolu_1", 2_000)),
+                completedCards(screenCard("screen:abc", 1_000, status)),
+                mirrorOptions,
+            )
+            assertTrue(status, result.hiddenMessageIds.isEmpty())
+            assertEquals(status, setOf("screen:abc", "toolu_1"), state.rows().map { it.tool.callId }.toSet())
+        }
+    }
+
+    @Test fun `an approved card stays when the only same-tool row is minutes later`() {
+        val state = ReducerState(now = { 999_999 })
+        val result = state.reduce(
+            listOf(bashRow("a1", "toolu_1", 1_000 + 600_000)),
+            completedCards(screenCard("screen:abc", 1_000, "approved")),
+            mirrorOptions,
+        )
+        assertTrue(result.hiddenMessageIds.isEmpty())
+        assertEquals(setOf("screen:abc", "toolu_1"), state.rows().map { it.tool.callId }.toSet())
+    }
+
+    @Test fun `two dialogs in a row hide only the card that has its row`() {
+        val state = ReducerState(now = { 999_999 })
+        val cards = completedCards(screenCard("screen:one", 1_000, "approved"), screenCard("screen:two", 3_000, "approved"))
+        // Both cards are answered, but only the first call has reached the transcript.
+        val result = state.reduce(listOf(bashRow("a1", "toolu_1", 2_000)), cards, mirrorOptions)
+        assertEquals(1, result.hiddenMessageIds.size)
+        assertEquals(setOf("screen:two", "toolu_1"), state.rows().map { it.tool.callId }.toSet())
+
+        // The second call's row arrives later and hides the second card.
+        val later = state.reduce(listOf(bashRow("a2", "toolu_2", 4_000)), cards, mirrorOptions)
+        assertEquals(1, later.hiddenMessageIds.size)
+        assertEquals(setOf("toolu_1", "toolu_2"), state.rows().map { it.tool.callId }.toSet())
+    }
+
+    @Test fun `one row hides only the earlier of two approved cards`() {
+        val state = ReducerState(now = { 999_999 })
+        val result = state.reduce(
+            listOf(bashRow("a1", "toolu_1", 3_000)),
+            completedCards(screenCard("screen:one", 1_000, "approved"), screenCard("screen:two", 2_000, "approved")),
+            mirrorOptions,
+        )
+        assertEquals(1, result.hiddenMessageIds.size)
+        assertEquals(setOf("screen:two", "toolu_1"), state.rows().map { it.tool.callId }.toSet())
+    }
+
+    @Test fun `a placeholder row from a pending tool use request does not hide a screen card`() {
+        val state = ReducerState(now = { 999_999 })
+        val placeholder = agentState(
+            """{"requests":{"toolu_p":{"tool":"Bash","arguments":{"command":"ls"},"createdAt":2000}},""" +
+                """"completedRequests":{${screenCard("screen:abc", 1_000, "approved")}}}""",
+        )
+        val result = state.reduce(emptyList(), placeholder, mirrorOptions)
+        assertTrue(result.hiddenMessageIds.isEmpty())
+        assertEquals(setOf("screen:abc", "toolu_p"), state.rows().map { it.tool.callId }.toSet())
     }
 
     @Test fun `a completed card keyed by a tool use id is never hidden`() {
