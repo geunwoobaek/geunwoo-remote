@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { openAttachTerminal, sanitizeTypedText, type AttachTerminal } from './attachTerminal';
 
 const execFileAsync = promisify(execFile);
-const SOCKET = 'jarvis-agents';
+/** Production socket. Tests never kill or list-and-kill on it. */
+const PRODUCTION_SOCKET = 'jarvis-agents';
+/** Private to this test process so a live mirror on the production socket is never affected. */
+const SOCKET = `jarvis-agents-test-${process.pid}`;
 
 function tmuxPresent(): boolean {
     try {
@@ -27,8 +30,8 @@ async function tmuxRun(args: string[]): Promise<{ stdout: string; stderr: string
     }
 }
 
-async function sessionNames(): Promise<string[]> {
-    const result = await tmuxRun(['-L', SOCKET, 'list-sessions', '-F', '#{session_name}']);
+async function sessionNames(socket: string = SOCKET): Promise<string[]> {
+    const result = await tmuxRun(['-L', socket, 'list-sessions', '-F', '#{session_name}']);
     return result.code === 0 ? result.stdout.split('\n').filter(Boolean) : [];
 }
 
@@ -65,8 +68,9 @@ describe('sanitizeTypedText', () => {
 describe.skipIf(!hasTmux)('attachTerminal (tmux)', () => {
     const opened: AttachTerminal[] = [];
 
-    async function open(...args: Parameters<typeof openAttachTerminal>): Promise<AttachTerminal> {
-        const terminal = await openAttachTerminal(...args);
+    /** Opens on the test-private socket. */
+    async function open(command: string[], opts: Parameters<typeof openAttachTerminal>[1] = {}): Promise<AttachTerminal> {
+        const terminal = await openAttachTerminal(command, { socketName: SOCKET, ...opts });
         opened.push(terminal);
         return terminal;
     }
@@ -75,15 +79,12 @@ describe.skipIf(!hasTmux)('attachTerminal (tmux)', () => {
         while (opened.length > 0) {
             await opened.pop()!.close();
         }
-        // Safety net: only ever touch our own sessions on our own socket.
-        for (const name of await sessionNames()) {
-            if (name.startsWith('attach-')) {
-                await tmuxRun(['-L', SOCKET, 'kill-session', '-t', name]);
-            }
-        }
+        // Safety net: the test-private server belongs to this process alone, so it can go entirely.
+        await tmuxRun(['-L', SOCKET, 'kill-server']);
     });
 
     const readyShell = ['sh', '-c', 'printf READY; read a; echo "got:$a"; sleep 5'];
+    const rawShell = ['sh', '-c', 'printf READY; read -r a; echo "got:[$a]"; sleep 5'];
     const sawReady = (screen: string) => screen.includes('READY');
 
     it('opens, types and reads the screen', async () => {
@@ -146,9 +147,9 @@ describe.skipIf(!hasTmux)('attachTerminal (tmux)', () => {
     });
 
     it('close kills the tmux session', async () => {
-        const terminal = await openAttachTerminal(readyShell, { isReady: sawReady });
-        const [name] = (await sessionNames()).filter((n) => n.startsWith('attach-'));
-        expect(name).toBeDefined();
+        const terminal = await open(readyShell, { isReady: sawReady });
+        const [name] = await sessionNames();
+        expect(name).toMatch(/^attach-/);
         await terminal.close();
         const result = await tmuxRun(['-L', SOCKET, 'has-session', '-t', name]);
         expect(result.code).not.toBe(0);
@@ -158,10 +159,56 @@ describe.skipIf(!hasTmux)('attachTerminal (tmux)', () => {
 
     it('closes the session and throws when it never becomes ready', async () => {
         await expect(
-            openAttachTerminal(['sh', '-c', 'sleep 5'], { isReady: () => false, readyTimeoutMs: 600 }),
+            open(['sh', '-c', 'sleep 5'], { isReady: () => false, readyTimeoutMs: 600 }),
         ).rejects.toThrow(/ready/i);
-        const leftovers = (await sessionNames()).filter((n) => n.startsWith('attach-'));
-        expect(leftovers).toEqual([]);
+        expect(await sessionNames()).toEqual([]);
+    });
+
+    it('uses the jarvis-agents socket by default', async () => {
+        const marker = `DEFAULT-SOCKET-${process.pid}`;
+        const before = new Set(await sessionNames(PRODUCTION_SOCKET));
+        const terminal = await openAttachTerminal(['sh', '-c', `echo ${marker}; sleep 5`], {
+            isReady: (screen) => screen.includes(marker),
+        });
+        try {
+            const added = (await sessionNames(PRODUCTION_SOCKET)).filter((name) => !before.has(name));
+            const screens = await Promise.all(
+                added.map((name) => tmuxRun(['-L', PRODUCTION_SOCKET, 'capture-pane', '-p', '-t', name])),
+            );
+            expect(screens.some((result) => result.stdout.includes(marker))).toBe(true);
+            // and nothing leaked onto the test socket
+            expect(await sessionNames()).toEqual([]);
+        } finally {
+            await terminal.close();
+        }
+    });
+
+    it('types and pastes text ending in a semicolon verbatim', async () => {
+        for (const text of ['abc;', ';', 'abc\\;', 'a;b', ';;']) {
+            for (const method of ['typeText', 'pasteText'] as const) {
+                const terminal = await open(rawShell, { isReady: sawReady });
+                await terminal[method](text);
+                await terminal.press(['enter']);
+                await waitFor(async () => (await terminal.screen()).includes(`got:[${text}]`));
+                await terminal.close();
+            }
+        }
+    });
+
+    it('typeText and pasteText ignore empty text', async () => {
+        const terminal = await open(rawShell, { isReady: sawReady });
+        await terminal.typeText('');
+        await terminal.pasteText('');
+        await terminal.press(['enter']);
+        await waitFor(async () => (await terminal.screen()).includes('got:[]'));
+    });
+
+    it('passes a command argument ending in a semicolon through unchanged', async () => {
+        const terminal = await open(
+            ['sh', '-c', 'echo "[$1]"; sleep 5', 'sh', 'x;'],
+            { isReady: (screen) => screen.includes('[x;]') },
+        );
+        expect(await terminal.screen()).toContain('[x;]');
     });
 
     it('gives concurrent terminals independent paste buffers', async () => {

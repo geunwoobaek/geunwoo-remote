@@ -39,7 +39,11 @@ export type AttachTerminal = {
      * should pass user input through `sanitizeTypedText` first.
      */
     typeText(text: string): Promise<void>;
-    /** Pastes text (newlines included) as a single paste through a per-terminal tmux buffer. */
+    /**
+     * Pastes text (newlines included) as a single paste through a per-terminal tmux buffer.
+     * Sends exactly what it is given, so callers should pass user input through
+     * `sanitizeTypedText` first.
+     */
     pasteText(text: string): Promise<void>;
     /** Presses keys in order. Throws before sending anything if a key is invalid. */
     press(keys: AttachKey[]): Promise<void>;
@@ -53,6 +57,11 @@ export type OpenAttachTerminalOptions = {
     readyTimeoutMs?: number;
     /** Decides whether the program has drawn enough to be driven. Defaults to "screen is not blank". */
     isReady?: (screen: string) => boolean;
+    /**
+     * Name of the tmux server socket. Internal, for tests that must not share the production
+     * server; production callers leave it unset and always get `jarvis-agents`.
+     */
+    socketName?: string;
 };
 
 const NAMED_KEYS: Record<Exclude<AttachKey, { digit: number }>, string> = {
@@ -80,12 +89,24 @@ export function sanitizeTypedText(text: string): string {
         .replace(CONTROL_BYTES, '');
 }
 
-async function tmux(args: string[]): Promise<string> {
-    const { stdout } = await execFileAsync('tmux', ['-L', TMUX_SOCKET, ...args], {
+async function tmux(socket: string, args: string[], stdin?: string): Promise<string> {
+    const pending = execFileAsync('tmux', ['-L', socket, ...args], {
         timeout: TMUX_TIMEOUT_MS,
         maxBuffer: TMUX_MAX_BUFFER,
     });
-    return stdout;
+    if (stdin !== undefined) {
+        pending.child.stdin?.end(stdin);
+    }
+    return (await pending).stdout;
+}
+
+/**
+ * tmux treats a trailing `;` in an argv element as a command separator and silently drops it.
+ * An element ending in `\;` keeps a literal `;` (one backslash is consumed), so a trailing
+ * `;` gets one extra backslash in front of it. This also round-trips text that already ends in `\;`.
+ */
+function escapeTrailingSemicolon(arg: string): string {
+    return arg.endsWith(';') ? `${arg.slice(0, -1)}\\;` : arg;
 }
 
 /** True when a `tmux` binary can be run. */
@@ -121,34 +142,41 @@ export async function openAttachTerminal(command: string[], opts: OpenAttachTerm
     const readyTimeoutMs = opts.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
     const isReady = opts.isReady ?? ((screen: string) => screen.trim().length > 0);
 
+    const socket = opts.socketName ?? TMUX_SOCKET;
     const suffix = randomBytes(6).toString('hex');
     const session = `attach-${suffix}`;
     const buffer = `paste-${suffix}`;
 
-    await tmux(['new-session', '-d', '-s', session, '-x', String(cols), '-y', String(rows), '--', ...command]);
+    await tmux(socket, ['new-session', '-d', '-s', session, '-x', String(cols), '-y', String(rows), '--', ...command.map(escapeTrailingSemicolon)]);
 
     const terminal: AttachTerminal = {
-        screen: () => tmux(['capture-pane', '-p', '-t', session]),
+        screen: () => tmux(socket, ['capture-pane', '-p', '-t', session]),
         typeText: async (text) => {
-            await tmux(['send-keys', '-l', '-t', session, '--', text]);
+            if (text.length > 0) {
+                await tmux(socket, ['send-keys', '-l', '-t', session, '--', escapeTrailingSemicolon(text)]);
+            }
         },
         pasteText: async (text) => {
-            await tmux(['set-buffer', '-b', buffer, '--', text]);
+            if (text.length === 0) {
+                return;
+            }
+            // The text goes through stdin so tmux never parses it as a command line.
+            await tmux(socket, ['load-buffer', '-b', buffer, '-'], text);
             try {
-                await tmux(['paste-buffer', '-p', '-d', '-b', buffer, '-t', session]);
+                await tmux(socket, ['paste-buffer', '-p', '-d', '-b', buffer, '-t', session]);
             } catch (error) {
-                await tmux(['delete-buffer', '-b', buffer]).catch(() => undefined);
+                await tmux(socket, ['delete-buffer', '-b', buffer]).catch(() => undefined);
                 throw error;
             }
         },
         press: async (keys) => {
             const names = keys.map(toTmuxKey);
             if (names.length > 0) {
-                await tmux(['send-keys', '-t', session, ...names]);
+                await tmux(socket, ['send-keys', '-t', session, ...names]);
             }
         },
         close: async () => {
-            await tmux(['kill-session', '-t', session]).catch(() => undefined);
+            await tmux(socket, ['kill-session', '-t', session]).catch(() => undefined);
         },
     };
 
