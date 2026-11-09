@@ -76,11 +76,18 @@ export async function resolveClaudeBinary(): Promise<string | null> {
     }
 }
 
-/** Runs `claude agents --json` (10s limit) and returns the background agents. Throws on command failure. */
+/**
+ * Runs `claude agents --json` (10s limit) and returns the background agents.
+ * Throws on command failure and when stdout is not a JSON array, so garbage output
+ * from a zero-exit run is never mistaken for "no agents".
+ */
 export async function fetchClaudeAgents(claudePath: string): Promise<ClaudeAgent[]> {
     const { stdout } = await execFileAsync(claudePath, ['agents', '--json'], {
         timeout: AGENTS_TIMEOUT_MS,
         maxBuffer: AGENTS_MAX_BUFFER,
     });
+    if (!Array.isArray(JSON.parse(stdout))) {
+        throw new Error('claude agents --json did not print a JSON array');
+    }
     return parseClaudeAgents(stdout);
 }

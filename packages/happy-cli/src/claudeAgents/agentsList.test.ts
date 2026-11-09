@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { parseClaudeAgents } from './agentsList';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { fetchClaudeAgents, parseClaudeAgents } from './agentsList';
 
 const background = (overrides: Record<string, unknown> = {}) => ({
     pid: 1001,
@@ -85,5 +88,53 @@ describe('parseClaudeAgents', () => {
             state: null,
             startedAt: 1794025195936,
         });
+    });
+});
+
+describe('fetchClaudeAgents', () => {
+    let dir: string;
+
+    beforeEach(async () => {
+        dir = await mkdtemp(join(tmpdir(), 'fake-claude-'));
+    });
+
+    afterEach(async () => {
+        await rm(dir, { recursive: true, force: true });
+    });
+
+    async function fakeClaude(stdout: string): Promise<string> {
+        const path = join(dir, 'claude');
+        await writeFile(path, `#!/bin/sh\ncat <<'JSON'\n${stdout}\nJSON\n`);
+        await chmod(path, 0o755);
+        return path;
+    }
+
+    it('rejects when a zero-exit run prints non-JSON', async () => {
+        const claudePath = await fakeClaude('not json at all');
+
+        await expect(fetchClaudeAgents(claudePath)).rejects.toThrow();
+    });
+
+    it('rejects when a zero-exit run prints a JSON object instead of an array', async () => {
+        const claudePath = await fakeClaude('{"error": "boom"}');
+
+        await expect(fetchClaudeAgents(claudePath)).rejects.toThrow();
+    });
+
+    it('resolves to the background entries for a valid array', async () => {
+        const claudePath = await fakeClaude(JSON.stringify([
+            { pid: 1, cwd: '/Users/tester/project', kind: 'interactive', startedAt: 1794025195936, sessionId: 'interactive-1' },
+            background({ id: 'aaaa1111', sessionId: 's-1' }),
+        ]));
+
+        const agents = await fetchClaudeAgents(claudePath);
+
+        expect(agents.map((a) => a.id)).toEqual(['aaaa1111']);
+    });
+
+    it('resolves to [] for an empty array', async () => {
+        const claudePath = await fakeClaude('[]');
+
+        await expect(fetchClaudeAgents(claudePath)).resolves.toEqual([]);
     });
 });
