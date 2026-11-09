@@ -29,7 +29,7 @@
 
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir, userInfo } from 'node:os';
+import { homedir, tmpdir, userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -43,6 +43,8 @@ const HOME = homedir();
 const WORKSPACE = join(HOME, 'workspace');
 const SCRATCH = join(WORKSPACE, '.jarvis-dialog-capture-tmp');
 const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../src/claudeAgents/__fixtures__/screens');
+/** Screens of scenarios that could not be provoked: kept for debugging, never in the tracked fixtures. */
+const FAILED_DIR = join(tmpdir(), 'jarvis-dialog-capture-failed');
 const PLANS_DIR = join(HOME, '.claude', 'plans');
 /** Reads ask only inside the scratch folder (`//` marks an absolute path in a permission rule). */
 const SETTINGS = JSON.stringify({ permissions: { ask: ['Bash', 'Write', 'Edit', `Read(/${SCRATCH}/**)`] } });
@@ -368,7 +370,10 @@ async function attempt(scenario, body) {
     try {
         await body();
     } catch (error) {
-        save(`${scenario}-failed`, await screen());
+        mkdirSync(FAILED_DIR, { recursive: true });
+        const failedPath = join(FAILED_DIR, `${scenario}.txt`);
+        writeFileSync(failedPath, scrub(await screen()));
+        console.log(`  ${scenario} not provoked; screen in ${failedPath}`);
         state.outcomes.push({ scenario, result: `not provoked: ${error.message}` });
         if ((await myAgent())?.status === 'waiting') await press('Escape');
     }

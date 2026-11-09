@@ -23,6 +23,7 @@
  *   keys one at a time, `DIALOG_KEY_GAP_MS` apart.
  */
 
+import { isAbsolute, resolve } from 'node:path';
 import type { AttachKey } from './attachTerminal';
 import { sanitizeTypedText } from './attachTerminal';
 import type { PendingToolUse } from './transcript';
@@ -200,12 +201,13 @@ function withoutWhitespace(text: string): string {
 }
 
 /**
- * The lines between the first two separators, with the `│` border of a wrapped block removed.
- * Null unless the block sits right under the header and the optional description line.
+ * The lines between the dialog's two separators, with the `│` border of a wrapped block removed.
+ * Null unless the region has exactly two separators below the header (the description above the
+ * block may wrap over several lines) with at least one line between them.
  */
 function previewBlock(region: string[]): string[] | null {
     const separators = region.flatMap((line, index) => (SEPARATOR.test(line) ? [index] : []));
-    if (separators.length < 2 || separators[0] < 1 || separators[0] > 2 || separators[1] === separators[0] + 1) {
+    if (separators.length !== 2 || separators[0] < 1 || separators[1] === separators[0] + 1) {
         return null;
     }
     return region.slice(separators[0] + 1, separators[1]).map((line) => line.replace(/^│\s?/, ''));
@@ -217,16 +219,26 @@ function sameText(shown: string, expected: unknown): boolean {
 }
 
 /**
- * Write/Edit: the measured header, a one-line relative path under it that the pending file path
- * ends with, the preview right below, and the ask line naming the same file.
+ * Whether the path shown in a dialog is `filePath`. Claude Code shows paths relative to the
+ * session's cwd (a file at the cwd root as its bare name, `../x` outside it) or absolute, so the
+ * shown path is resolved against `cwd` and compared exactly. A `~/` path was never seen in a file
+ * dialog and is refused, as is any comparison without an absolute cwd.
  */
-function fileDialogMatches(region: string[], ask: string | null, name: string, filePath: unknown): boolean {
+function isShownPath(shown: string, filePath: unknown, cwd: string): boolean {
+    return typeof filePath === 'string' && shown.length > 0 && !shown.startsWith('~') && isAbsolute(cwd)
+        && filePath === resolve(cwd, shown);
+}
+
+/**
+ * Write/Edit: the measured header, a one-line path under it that resolves to the pending file
+ * path, the preview right below, and the ask line naming the same file.
+ */
+function fileDialogMatches(region: string[], ask: string | null, name: string, filePath: unknown, cwd: string): boolean {
     const path = region[1];
-    if (typeof filePath !== 'string' || ask === null || path === undefined || path.length === 0 || !SEPARATOR.test(region[2] ?? '')) {
+    if (ask === null || path === undefined || !SEPARATOR.test(region[2] ?? '') || !isShownPath(path, filePath, cwd)) {
         return false;
     }
-    const pathMatches = filePath === path || filePath.endsWith(`/${path}`);
-    return pathMatches && (FILE_DIALOGS[name] ?? []).some((dialog) => region[0] === dialog.header && dialog.ask.exec(ask)?.[1] === path.split('/').at(-1));
+    return (FILE_DIALOGS[name] ?? []).some((dialog) => region[0] === dialog.header && dialog.ask.exec(ask)?.[1] === path.split('/').at(-1));
 }
 
 /** The question text: the lines after the tab bar up to the first blank line below it. */
@@ -253,14 +265,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Gate ④: whether the open dialog is about `pending`, read only from the dialog's own lines
  * (never the conversation above it, a description line or a file preview):
  * - Bash: header `Bash command` and the command block equal to the whole command.
- * - Write/Edit: the measured header and ask wording, and the relative path under the header
- *   ending the pending file path. Read: header `Read file` and the block `Read(<file_path>)`.
+ * - Write/Edit: the measured header and ask wording, and the path under the header resolving
+ *   (against the session's `cwd`) to the pending file path. Read: header `Read file` and the
+ *   block `Read(<path>)` resolving to the pending file path. Other tools ignore `cwd`.
  * - Questions: the question text right under the tab bar equal to the first question, untouched.
  * - Plans: untouched (option 1 focused). Other tools: the name as a whole word of the header.
  * Subagent dialogs and a pending `Task`/`Agent` call never match, because the tool being asked
  * about is not the one in the main transcript.
  */
-export function screenMatchesPending(screen: string, pending: PendingToolUse): boolean {
+export function screenMatchesPending(screen: string, pending: PendingToolUse, cwd: string): boolean {
     const parsed = parseScreen(screen);
     const { kind, options, ask } = analyse(parsed);
     const { region } = parsed;
@@ -270,12 +283,10 @@ export function screenMatchesPending(screen: string, pending: PendingToolUse): b
     switch (pending.name) {
         case 'Write':
         case 'Edit':
-            return kind === 'permission' && fileDialogMatches(region, ask, pending.name, pending.input.file_path);
+            return kind === 'permission' && fileDialogMatches(region, ask, pending.name, pending.input.file_path, cwd);
         case 'Read': {
-            const block = previewBlock(region);
-            const filePath = pending.input.file_path;
-            return kind === 'permission' && region[0] === 'Read file' && block !== null && block.length === 1
-                && typeof filePath === 'string' && filePath.length > 0 && block[0] === `Read(${filePath})`;
+            const shown = previewBlock(region)?.join('\n').match(/^Read\((.+)\)$/)?.[1];
+            return kind === 'permission' && region[0] === 'Read file' && shown !== undefined && isShownPath(shown, pending.input.file_path, cwd);
         }
         case 'Bash': {
             const block = previewBlock(region);

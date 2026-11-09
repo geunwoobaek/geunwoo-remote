@@ -82,6 +82,12 @@ const badgeQuestions = {
     ],
 };
 
+/**
+ * The capture session's cwd after scrubbing. The scrub maps the scratch folder `<cwd>/<scratch>`
+ * to `/Users/tester/project` and the dialogs show it as `project/…`, so the cwd is `/Users/tester`.
+ */
+const CWD = '/Users/tester';
+
 const SEPARATOR = '╌'.repeat(120);
 const FULL_RULE = '─'.repeat(120);
 
@@ -142,7 +148,7 @@ describe('classifyScreen', () => {
         const numbered = screen('plan').replace('   - Use the Write tool', '   1. Use the Write tool').replace('   - Confirm the file', '   2. Confirm the file');
         expect(numbered).toContain('1. Use the Write tool');
         expect(classifyScreen(numbered)).toBe('plan');
-        expect(screenMatchesPending(numbered, pending('ExitPlanMode', { plan: '# Plan' }))).toBe(true);
+        expect(screenMatchesPending(numbered, pending('ExitPlanMode', { plan: '# Plan' }), CWD)).toBe(true);
     });
 
     it('tolerates trailing blank lines and spaces like a raw 40-row capture', () => {
@@ -152,118 +158,169 @@ describe('classifyScreen', () => {
 
 describe('screenMatchesPending', () => {
     it('matches a Write by file name and rejects another file name', () => {
-        expect(screenMatchesPending(screen('permission-write'), pending('Write', { file_path: '/Users/tester/project/report-draft.md', content: 'draft' }))).toBe(true);
-        expect(screenMatchesPending(screen('permission-write'), pending('Write', { file_path: '/Users/tester/project/other.md', content: 'draft' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Write', { file_path: '/Users/tester/project/report-draft.md', content: 'draft' }), CWD)).toBe(true);
+        expect(screenMatchesPending(screen('permission-write'), pending('Write', { file_path: '/Users/tester/project/other.md', content: 'draft' }), CWD)).toBe(false);
     });
 
     it('takes the file name from the dialog question, not from elsewhere on the screen', () => {
         // A Write dialog that names greeting.txt somewhere other than its question line.
         const mentioned = screen('permission-write').replace('Create file', 'Create file (see greeting.txt)');
-        expect(screenMatchesPending(mentioned, pending('Write', { file_path: '/Users/tester/project/greeting.txt' }))).toBe(false);
+        expect(screenMatchesPending(mentioned, pending('Write', { file_path: '/Users/tester/project/greeting.txt' }), CWD)).toBe(false);
     });
 
     it('requires the Write dialog wording and the shown relative path to end the file path', () => {
-        expect(screenMatchesPending(screen('permission-write'), pending('Write', { file_path: '/Users/tester/other/report-draft.md' }))).toBe(false);
-        expect(screenMatchesPending(screen('permission-write'), pending('Write', { file_path: 'report-draft.md' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Write', { file_path: '/Users/tester/other/report-draft.md' }), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Write', { file_path: 'report-draft.md' }), CWD)).toBe(false);
         // Hand-derived from the captured create dialog with the overwrite wording seen while exploring.
         const overwrite = screen('permission-write').replace(' Create file', ' Overwrite file').replace('Do you want to create', 'Do you want to overwrite');
-        expect(screenMatchesPending(overwrite, pending('Write', { file_path: '/Users/tester/project/report-draft.md' }))).toBe(true);
+        expect(screenMatchesPending(overwrite, pending('Write', { file_path: '/Users/tester/project/report-draft.md' }), CWD)).toBe(true);
         const mixed = screen('permission-write').replace('Do you want to create', 'Do you want to overwrite');
-        expect(screenMatchesPending(mixed, pending('Write', { file_path: '/Users/tester/project/report-draft.md' }))).toBe(false);
+        expect(screenMatchesPending(mixed, pending('Write', { file_path: '/Users/tester/project/report-draft.md' }), CWD)).toBe(false);
+    });
+
+    it('resolves the shown path against the session cwd, so a bare name at the cwd root matches only that file', () => {
+        // Hand-made from the captured Edit dialog: a file at the cwd root is shown as its bare name.
+        const root = screen('permission-edit').replace('\n project/edit-me.txt\n', '\n edit-me.txt\n');
+        expect(root).not.toBe(screen('permission-edit'));
+        const edit = (file_path: string, cwd: string = CWD): boolean => screenMatchesPending(root, pending('Edit', { file_path }), cwd);
+        expect(edit('/Users/tester/edit-me.txt')).toBe(true);
+        expect(edit('/Users/tester/project/packages/x/edit-me.txt')).toBe(false);
+        expect(edit('/tmp/edit-me.txt')).toBe(false);
+        expect(edit('/Users/tester/project/edit-me.txt')).toBe(false);
+        expect(edit('/Users/tester/project/edit-me.txt', '/Users/tester/project')).toBe(true);
+    });
+
+    it('refuses a shown relative path under the wrong cwd, and any file dialog without an absolute cwd', () => {
+        const write = pending('Write', { file_path: '/Users/tester/project/report-draft.md' });
+        expect(screenMatchesPending(screen('permission-write'), write, '/Users/tester/project')).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), write, '/Users/other')).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), write, '')).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), write, 'tester')).toBe(false);
+        expect(screenMatchesPending(screen('permission-edit'), pending('Edit', { file_path: '/Users/tester/project/edit-me.txt' }), '')).toBe(false);
+        expect(screenMatchesPending(screen('permission-read'), pending('Read', { file_path: '/Users/tester/project/edit-me.txt' }), '')).toBe(false);
+    });
+
+    it('resolves a ../ path outside the cwd and refuses a ~/ path', () => {
+        // Hand-made from the captured create dialog with the `../` form seen while exploring.
+        const outside = screen('permission-write').replace('\n project/report-draft.md\n', '\n ../notes/report-draft.md\n');
+        expect(screenMatchesPending(outside, pending('Write', { file_path: '/Users/notes/report-draft.md' }), CWD)).toBe(true);
+        expect(screenMatchesPending(outside, pending('Write', { file_path: '/Users/tester/notes/report-draft.md' }), CWD)).toBe(false);
+        const home = screen('permission-write').replace('\n project/report-draft.md\n', '\n ~/project/report-draft.md\n');
+        expect(screenMatchesPending(home, pending('Write', { file_path: '/Users/tester/project/report-draft.md' }), CWD)).toBe(false);
+    });
+
+    it('ignores cwd for Bash, questions and plans', () => {
+        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la /Users/tester/project' }), '')).toBe(true);
+        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', colorQuestion), '')).toBe(true);
+        expect(screenMatchesPending(screen('plan'), pending('ExitPlanMode', { plan: '# Plan' }), '')).toBe(true);
     });
 
     it('matches Edit only on the captured Edit dialog and Read only on the captured Read dialog', () => {
         const file = '/Users/tester/project/edit-me.txt';
-        expect(screenMatchesPending(screen('permission-edit'), pending('Edit', { file_path: file, old_string: 'alpha', new_string: 'beta' }))).toBe(true);
-        expect(screenMatchesPending(screen('permission-edit'), pending('Edit', { file_path: '/Users/tester/elsewhere/edit-me.txt' }))).toBe(false);
-        expect(screenMatchesPending(screen('permission-edit'), pending('Write', { file_path: file }))).toBe(false);
-        expect(screenMatchesPending(screen('permission-write'), pending('Edit', { file_path: '/Users/tester/project/report-draft.md' }))).toBe(false);
-        expect(screenMatchesPending(screen('permission-read'), pending('Read', { file_path: file }))).toBe(true);
-        expect(screenMatchesPending(screen('permission-read'), pending('Read', { file_path: '/Users/tester/project/edit-me.txt.bak' }))).toBe(false);
-        expect(screenMatchesPending(screen('permission-read'), pending('Edit', { file_path: file }))).toBe(false);
-        expect(screenMatchesPending(screen('permission-write'), pending('Read', { file_path: '/Users/tester/project/report-draft.md' }))).toBe(false);
-        expect(screenMatchesPending(screen('permission-edit'), pending('Read', { file_path: file }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-edit'), pending('Edit', { file_path: file, old_string: 'alpha', new_string: 'beta' }), CWD)).toBe(true);
+        expect(screenMatchesPending(screen('permission-edit'), pending('Edit', { file_path: '/Users/tester/elsewhere/edit-me.txt' }), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-edit'), pending('Write', { file_path: file }), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Edit', { file_path: '/Users/tester/project/report-draft.md' }), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-read'), pending('Read', { file_path: file }), CWD)).toBe(true);
+        expect(screenMatchesPending(screen('permission-read'), pending('Read', { file_path: '/Users/tester/project/edit-me.txt.bak' }), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-read'), pending('Edit', { file_path: file }), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Read', { file_path: '/Users/tester/project/report-draft.md' }), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-edit'), pending('Read', { file_path: file }), CWD)).toBe(false);
     });
 
     it('matches a Bash call only when the command block shows the whole command', () => {
-        expect(screenMatchesPending(screen('permission-bash'), pending('Bash', { command: bashCommand }))).toBe(true);
-        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(true);
-        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'rm -rf /Users/tester/project' }))).toBe(false);
-        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la /Users/tester/project && rm -rf /' }))).toBe(false);
-        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash'), pending('Bash', { command: bashCommand }), CWD)).toBe(true);
+        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la /Users/tester/project' }), CWD)).toBe(true);
+        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'rm -rf /Users/tester/project' }), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la /Users/tester/project && rm -rf /' }), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la' }), CWD)).toBe(false);
     });
 
     it('refuses a Bash dialog showing another command with the same long prefix (probe a)', () => {
         const status = withCommandBlock(screen('permission-bash-short'), [' cd /Users/tester/project/packages/happy-cli && git status']);
-        expect(screenMatchesPending(status, pending('Bash', { command: 'cd /Users/tester/project/packages/happy-cli && git push --force origin main' }))).toBe(false);
-        expect(screenMatchesPending(status, pending('Bash', { command: 'cd /Users/tester/project/packages/happy-cli && git status' }))).toBe(true);
+        expect(screenMatchesPending(status, pending('Bash', { command: 'cd /Users/tester/project/packages/happy-cli && git push --force origin main' }), CWD)).toBe(false);
+        expect(screenMatchesPending(status, pending('Bash', { command: 'cd /Users/tester/project/packages/happy-cli && git status' }), CWD)).toBe(true);
+    });
+
+    it('reads the command block under a description that wraps to two lines', () => {
+        // Hand-made from the captured long Bash dialog with its description wrapped onto a second line.
+        const wrapped = screen('permission-bash').replace(
+            ' Write test line to bash-out.txt and list the temp directory\n',
+            ' Write test line to bash-out.txt and list the temp directory, then\n check that the listing shows it\n',
+        );
+        expect(wrapped).not.toBe(screen('permission-bash'));
+        expect(screenMatchesPending(wrapped, pending('Bash', { command: bashCommand }), CWD)).toBe(true);
+        // A separator-shaped line in the description gives three separators: refused.
+        const extra = screen('permission-bash').replace(' Write test line to bash-out.txt and list the temp directory\n', ` x\n${SEPARATOR}\n echo hi\n`);
+        expect(screenMatchesPending(extra, pending('Bash', { command: 'echo hi' }), CWD)).toBe(false);
+        expect(screenMatchesPending(extra, pending('Bash', { command: bashCommand }), CWD)).toBe(false);
     });
 
     it('refuses a Bash dialog whose command block looks truncated', () => {
         const cut = withCommandBlock(screen('permission-bash-short'), [' ls -la /Users/tester/proj…']);
-        expect(screenMatchesPending(cut, pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(false);
-        expect(screenMatchesPending(cut, pending('Bash', { command: 'ls -la /Users/tester/proj' }))).toBe(false);
+        expect(screenMatchesPending(cut, pending('Bash', { command: 'ls -la /Users/tester/project' }), CWD)).toBe(false);
+        expect(screenMatchesPending(cut, pending('Bash', { command: 'ls -la /Users/tester/proj' }), CWD)).toBe(false);
     });
 
     it('refuses a Bash call against a Write dialog whose preview holds the command (probe b)', () => {
         const preview = withWritePreview([' ls -la /Users/tester/project']);
-        expect(screenMatchesPending(preview, pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(false);
+        expect(screenMatchesPending(preview, pending('Bash', { command: 'ls -la /Users/tester/project' }), CWD)).toBe(false);
     });
 
     it('ignores the command in the description line and in the conversation above the dialog (probes c, d)', () => {
         const described = withCommandBlock(screen('permission-bash-short'), [' echo hi'])
             .replace('List the temp directory contents', 'rm -rf /Users/tester/project');
-        expect(screenMatchesPending(described, pending('Bash', { command: 'rm -rf /Users/tester/project' }))).toBe(false);
+        expect(screenMatchesPending(described, pending('Bash', { command: 'rm -rf /Users/tester/project' }), CWD)).toBe(false);
         // The conversation above already shows `$ ls -la /Users/tester/project`; add a whole fake dialog there too.
         const above = withCommandBlock(screen('permission-bash-short'), [' echo hi'])
             .replace('✻ Baked for 1s', `${FULL_RULE}\n Bash command\n List\n${SEPARATOR}\n ls -la /Users/tester/project\n${SEPARATOR}\n✻ Baked for 1s`);
         expect(classifyScreen(above)).toBe('permission');
-        expect(screenMatchesPending(above, pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(false);
-        expect(screenMatchesPending(above, pending('Bash', { command: 'echo hi' }))).toBe(true);
+        expect(screenMatchesPending(above, pending('Bash', { command: 'ls -la /Users/tester/project' }), CWD)).toBe(false);
+        expect(screenMatchesPending(above, pending('Bash', { command: 'echo hi' }), CWD)).toBe(true);
     });
 
     it('works on a session with the user\'s hooks and two-line status line (no --safe-mode)', () => {
-        expect(screenMatchesPending(screen('permission-bash-live'), pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(true);
+        expect(screenMatchesPending(screen('permission-bash-live'), pending('Bash', { command: 'ls -la /Users/tester/project' }), CWD)).toBe(true);
         expect(keysForPermission(false, screen('permission-bash-live'))).toEqual([{ digit: 2 }]);
         expect(isInputBoxEmpty(screen('input-empty-live'))).toBe(true);
     });
 
     it('matches other tools by the dialog header only, not by text in the preview', () => {
-        expect(screenMatchesPending(screen('permission-bash'), pending('printf', {}))).toBe(false);
-        expect(screenMatchesPending(screen('permission-bash'), pending('Bash command', {}))).toBe(true);
+        expect(screenMatchesPending(screen('permission-bash'), pending('printf', {}), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash'), pending('Bash command', {}), CWD)).toBe(true);
     });
 
     it('needs a non-empty tool name that is a whole word of the header', () => {
-        expect(screenMatchesPending(screen('permission-write'), pending('', {}))).toBe(false);
-        expect(screenMatchesPending(screen('permission-write'), pending('C', {}))).toBe(false);
-        expect(screenMatchesPending(screen('permission-write'), pending('Creat', {}))).toBe(false);
-        expect(screenMatchesPending(screen('permission-bash'), pending('Bash comm', {}))).toBe(false);
-        expect(screenMatchesPending(screen('permission-bash'), pending('.*', {}))).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('', {}), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('C', {}), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Creat', {}), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash'), pending('Bash comm', {}), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash'), pending('.*', {}), CWD)).toBe(false);
     });
 
     it('never matches a subagent dialog', () => {
         const subagentScreen = screen('permission-subagent');
-        expect(screenMatchesPending(subagentScreen, pending('Task', { prompt: 'write sub-note.txt' }))).toBe(false);
-        expect(screenMatchesPending(subagentScreen, pending('Agent', { prompt: 'write sub-note.txt' }))).toBe(false);
-        expect(screenMatchesPending(subagentScreen, pending('Write', { file_path: '/Users/tester/project/sub-note.txt' }))).toBe(false);
+        expect(screenMatchesPending(subagentScreen, pending('Task', { prompt: 'write sub-note.txt' }), CWD)).toBe(false);
+        expect(screenMatchesPending(subagentScreen, pending('Agent', { prompt: 'write sub-note.txt' }), CWD)).toBe(false);
+        expect(screenMatchesPending(subagentScreen, pending('Write', { file_path: '/Users/tester/project/sub-note.txt' }), CWD)).toBe(false);
     });
 
     it('never matches when the pending call is Task or Agent', () => {
-        expect(screenMatchesPending(screen('permission-write'), pending('Task', { file_path: '/Users/tester/project/report-draft.md' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Task', { file_path: '/Users/tester/project/report-draft.md' }), CWD)).toBe(false);
     });
 
     it('matches an untouched question by its first question text only', () => {
-        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', colorQuestion))).toBe(true);
-        expect(screenMatchesPending(screen('question-multi'), pending('AskUserQuestion', pizzaQuestions))).toBe(true);
-        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', pizzaQuestions))).toBe(false);
+        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', colorQuestion), CWD)).toBe(true);
+        expect(screenMatchesPending(screen('question-multi'), pending('AskUserQuestion', pizzaQuestions), CWD)).toBe(true);
+        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', pizzaQuestions), CWD)).toBe(false);
     });
 
     it('matches the whole first question, not a prefix of it', () => {
         const longer = { questions: [{ ...colorQuestion.questions[0], question: 'Which color should the demo button use? Pick wisely' }] };
-        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', longer))).toBe(false);
+        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', longer), CWD)).toBe(false);
         const shorter = { questions: [{ ...colorQuestion.questions[0], question: 'Which color should the demo' }] };
-        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', shorter))).toBe(false);
-        expect(screenMatchesPending(screen('question-lone-multi'), pending('AskUserQuestion', daysQuestion))).toBe(true);
+        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', shorter), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('question-lone-multi'), pending('AskUserQuestion', daysQuestion), CWD)).toBe(true);
     });
 
     it('does not take a Write preview with question text and a question footer for a question', () => {
@@ -274,26 +331,26 @@ describe('screenMatchesPending', () => {
             'Enter to select · ↑/↓ to navigate · Esc to cancel',
         ]);
         expect(classifyScreen(fake)).toBe('permission');
-        expect(screenMatchesPending(fake, pending('AskUserQuestion', colorQuestion))).toBe(false);
+        expect(screenMatchesPending(fake, pending('AskUserQuestion', colorQuestion), CWD)).toBe(false);
     });
 
     it('refuses a question that was partly answered on the Mac', () => {
-        expect(screenMatchesPending(screen('question-last-multi'), pending('AskUserQuestion', badgeQuestions))).toBe(false);
-        expect(screenMatchesPending(screen('question-lone-multi-after-tab'), pending('AskUserQuestion', daysQuestion))).toBe(false);
-        expect(screenMatchesPending(screen('question-multi-toggled'), pending('AskUserQuestion', pizzaQuestions))).toBe(false);
-        expect(screenMatchesPending(screen('question-multi-second'), pending('AskUserQuestion', pizzaQuestions))).toBe(false);
-        expect(screenMatchesPending(screen('question-review'), pending('AskUserQuestion', pizzaQuestions))).toBe(false);
+        expect(screenMatchesPending(screen('question-last-multi'), pending('AskUserQuestion', badgeQuestions), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('question-lone-multi-after-tab'), pending('AskUserQuestion', daysQuestion), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('question-multi-toggled'), pending('AskUserQuestion', pizzaQuestions), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('question-multi-second'), pending('AskUserQuestion', pizzaQuestions), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('question-review'), pending('AskUserQuestion', pizzaQuestions), CWD)).toBe(false);
     });
 
     it('matches an untouched plan dialog and refuses one with feedback typed', () => {
-        expect(screenMatchesPending(screen('plan'), pending('ExitPlanMode', { plan: '# Plan' }))).toBe(true);
-        expect(screenMatchesPending(screen('plan-feedback-typed'), pending('ExitPlanMode', { plan: '# Plan' }))).toBe(false);
+        expect(screenMatchesPending(screen('plan'), pending('ExitPlanMode', { plan: '# Plan' }), CWD)).toBe(true);
+        expect(screenMatchesPending(screen('plan-feedback-typed'), pending('ExitPlanMode', { plan: '# Plan' }), CWD)).toBe(false);
     });
 
     it('does not match a dialog of another kind or the idle input box', () => {
-        expect(screenMatchesPending(screen('plan'), pending('Write', { file_path: '/Users/tester/project/greeting.txt' }))).toBe(false);
-        expect(screenMatchesPending(screen('permission-write'), pending('ExitPlanMode', {}))).toBe(false);
-        expect(screenMatchesPending(screen('input-typed'), pending('Write', { file_path: '/Users/tester/project/report-draft.md' }))).toBe(false);
+        expect(screenMatchesPending(screen('plan'), pending('Write', { file_path: '/Users/tester/project/greeting.txt' }), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('ExitPlanMode', {}), CWD)).toBe(false);
+        expect(screenMatchesPending(screen('input-typed'), pending('Write', { file_path: '/Users/tester/project/report-draft.md' }), CWD)).toBe(false);
     });
 });
 
