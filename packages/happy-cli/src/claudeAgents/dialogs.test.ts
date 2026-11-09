@@ -622,7 +622,7 @@ describe('dialogFingerprint', () => {
         expect(dialogFingerprint(withColours(screen('plan')))).toBe(plan);
     });
 
-    it('fingerprint ignores terminal width', () => {
+    it('the cmux capture and the tmux-client capture of one dialog have the same fingerprint', () => {
         for (const name of ['write-perm', 'question-long']) {
             const wide = dialogFingerprint(screen(`${name}-120`));
             const narrow = dialogFingerprint(screen(`${name}-99`));
@@ -649,8 +649,38 @@ describe('dialogFingerprint', () => {
     });
 });
 
+/**
+ * Hand-derived: redraws a captured screen as a 120-column terminal would, by stretching every
+ * full-width `─` rule (at column 0) and every `╌` separator line (indentation kept) to 120 columns.
+ * Text wrapping is left as captured; only the line-drawing characters change with the width here.
+ */
+function widenedTo120(text: string): string {
+    return text
+        .split('\n')
+        .map((line) => {
+            if (/^─{20,}$/.test(line)) {
+                return '─'.repeat(120);
+            }
+            const separator = /^(\s*)╌{10,}$/.exec(line);
+            return separator === null ? line : `${separator[1]}${'╌'.repeat(120)}`;
+        })
+        .join('\n');
+}
+
 describe('terminal width', () => {
-    it('width does not change what is read', () => {
+    it.each(['write-perm-99', 'plan'])('a %s dialog stretched to 120 columns reads and fingerprints the same', (name) => {
+        const narrow = screen(name);
+        const wide = widenedTo120(narrow);
+        expect(wide).not.toBe(narrow);
+        expect(dialogFingerprint(narrow)).not.toBeNull();
+        expect(dialogFingerprint(wide)).toBe(dialogFingerprint(narrow));
+        expect(classifyScreen(wide)).toBe(classifyScreen(narrow));
+        expect(classifyScreen(wide)).not.toBe('none');
+        expect(readDialogFromScreen(wide)).toEqual(readDialogFromScreen(narrow));
+        expect(readDialogProgress(wide)).toEqual(readDialogProgress(narrow));
+    });
+
+    it('the cmux capture and the tmux-client capture of one dialog read the same', () => {
         for (const name of ['write-perm', 'question-long']) {
             const wide = screen(`${name}-120`);
             const narrow = screen(`${name}-99`);

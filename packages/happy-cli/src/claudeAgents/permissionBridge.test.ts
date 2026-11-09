@@ -885,18 +885,26 @@ describe('createPermissionBridge with a user terminal', () => {
     });
 
     it('goes to tmux when the answer needs text the user terminal cannot type', async () => {
-        // Hand-derived: the captured plan dialog with option 3 focused; a rejection with a reason types a reason that contains a backslash.
+        // Hand-derived: the captured plan dialog with option 3 focused, then with the reason (it contains a backslash) typed into option 3.
+        const reason = 'use C:\\temp instead';
         const focused = planFocusedOnFeedback();
+        const typed = screen('plan-feedback-typed').replace('Please name the file hello.txt instead', reason);
+        expect(typed).not.toBe(screen('plan-feedback-typed'));
         const { h, bridge } = setup({ screen: screen('plan'), userScreen: screen('plan'), entries: [userText('plan it'), toolUse('toolu_plan', 'ExitPlanMode', { plan: '# Plan' })] });
         await bridge.tick();
         h.log = [];
         h.userLog = [];
-        h.after = { 1: () => { h.screen = focused; } };
+        h.after = {
+            1: () => { h.screen = focused; },
+            2: () => { h.screen = typed; },
+        };
 
-        await bridge.answer(response('toolu_plan', false, { reason: 'use C:\\temp instead' }));
+        expect(await bridge.answer(response('toolu_plan', false, { reason }))).toBe('typed');
 
-        expect(h.userLog.filter((line) => line.startsWith('press') || line.startsWith('type'))).toEqual([]);
-        expect(h.opened).toBeGreaterThan(0);
+        expect(h.userLog).toEqual(['open', 'close']);
+        expect(typing(h.log)).toEqual(['press:3', `sleep:${DIALOG_KEY_GAP_MS}`, `type:${reason}`, `sleep:${DIALOG_KEY_GAP_MS}`, 'press:enter']);
+        expect(h.opened).toBe(1);
+        expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'denied', decision: 'denied' });
     });
 
     it('does not retry on tmux after a key was pressed on the user terminal', async () => {
@@ -942,7 +950,7 @@ describe('createPermissionBridge with a user terminal', () => {
         const key = onlyRequestKey(h.state);
         expect(key).toMatch(new RegExp(`^screen:${dialogFingerprint(screen('write-perm-99'))}:.+`));
         expect(h.opened).toBe(0);
-        // The same dialog on the 120-column tmux terminal answers it: the fingerprint ignores the width.
+        // The same dialog captured in the tmux client answers it (width independence itself is proved in dialogs.test.ts).
         h.userScreen = null;
 
         expect(await bridge.answer(response(key, true))).toBe('typed');
