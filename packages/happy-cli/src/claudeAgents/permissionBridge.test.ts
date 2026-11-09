@@ -657,15 +657,37 @@ describe('createPermissionBridge answer', () => {
         expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'canceled', reason: 'typing-failed' });
     });
 
-    it('answer refuses a plan rejection without a reason (its screen before Enter was never captured)', async () => {
+    it('answer rejects a plan without a reason with 3, then Enter once option 3 shows the empty feedback', async () => {
+        // The phone clients send no reason on deny; outcomes.json "plan reject without reason": 3, Enter.
         for (const extra of [{}, { reason: ' \n ' }]) {
             const { h, bridge } = await publishedPlan();
+            h.after = { 1: () => { h.screen = planFocusedOnFeedback(); } };
 
-            expect(await bridge.answer(response('toolu_plan', false, extra))).toBe('refused');
+            expect(await bridge.answer(response('toolu_plan', false, extra))).toBe('typed');
 
-            expect(typing(h.log)).toEqual([]);
-            expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'canceled', reason: 'answer-on-mac' });
+            expect(typing(h.log)).toEqual(['press:3', `sleep:${DIALOG_KEY_GAP_MS}`, 'press:enter']);
+            expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'denied', decision: 'denied' });
         }
+    });
+
+    it('answer presses no Enter for a plan rejection without a reason when option 3 is not focused after 3', async () => {
+        const { h, bridge } = await publishedPlan();
+        // Still the untouched plan: Enter here would pick option 1 "Yes, and use auto mode".
+
+        expect(await bridge.answer(response('toolu_plan', false))).toBe('typed');
+
+        expect(typing(h.log)).toEqual(['press:3', `sleep:${DIALOG_KEY_GAP_MS}`]);
+        expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'canceled', reason: 'typing-failed' });
+    });
+
+    it('answer presses no Enter for a plan rejection without a reason when option 3 holds text typed on the Mac', async () => {
+        const { h, bridge } = await publishedPlan();
+        h.after = { 1: () => { h.screen = screen('plan-feedback-typed'); } };
+
+        expect(await bridge.answer(response('toolu_plan', false))).toBe('typed');
+
+        expect(typing(h.log)).toEqual(['press:3', `sleep:${DIALOG_KEY_GAP_MS}`]);
+        expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'canceled', reason: 'typing-failed' });
     });
 
     it('answer refuses an unknown key without opening the terminal', async () => {

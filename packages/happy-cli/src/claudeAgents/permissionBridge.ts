@@ -18,13 +18,14 @@
  *   ④ the dialog is about that call: `screenMatchesPending` for a transcript-keyed request, or the
  *      dialog read off the screen again equal to the card the phone was shown for `screen:` keys.
  * Then each key is pressed on its own, `DIALOG_KEY_GAP_MS` apart. If any check fails or the
- * answer has no key mapping (free text, unknown dialog, a plan rejection without a reason), nothing
- * is pressed and the request is completed as `canceled` with `reason: 'answer-on-mac'`.
+ * answer has no key mapping (free text, unknown dialog), nothing is pressed and the request is
+ * completed as `canceled` with `reason: 'answer-on-mac'`.
  * Before every key after the first the screen is read again: the session must still be waiting
  * on a dialog of the same kind (for questions, the same tab names), and the committing key must
- * see its measured screen (the review screen before a question's final `1`, the typed feedback in
- * plan option 3 before Enter). Otherwise no further key is pressed and the request is completed as
- * `canceled` with `reason: 'typing-failed'`.
+ * see its screen (the review screen before a question's final `1`; before a plan rejection's
+ * Enter, option 3 focused showing the typed feedback, or the empty placeholder when there is no
+ * reason). Otherwise no further key is pressed and the request is completed as `canceled` with
+ * `reason: 'typing-failed'`.
  *
  * `tick` and `answer` run one at a time. Each opens its own terminal and closes it in `finally`
  * (close errors swallowed), so a caller may serialise terminal use around them.
@@ -41,6 +42,7 @@ import {
     keysForPermission,
     keysForPlan,
     keysForQuestion,
+    PLAN_FEEDBACK,
     readDialogFromScreen,
     readDialogProgress,
     screenMatchesPending,
@@ -414,11 +416,13 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
                 if (response.approved) {
                     return keys(plan.keys);
                 }
-                // A rejection without a reason is 3 then Enter, and the screen between them was
-                // never captured, so Enter could not be checked: the Mac answers it instead.
+                // A rejection without a reason (the phone clients send none) is 3 then Enter
+                // (measured outcome). Enter only once option 3 is focused with its hint and still
+                // shows the empty placeholder: on option 1 Enter would approve, and text the Mac
+                // user typed into option 3 must not be submitted.
                 const feedback = plan.thenType;
                 if (feedback === undefined) {
-                    return null;
+                    return plan.keys.map((key, index) => (index === 0 ? { key } : { key, expect: (p: DialogProgress) => p.planFeedback === PLAN_FEEDBACK }));
                 }
                 // Text goes in only once option 3 is focused with its feedback hint (typed digits
                 // on any other screen could pick an option), and Enter only once option 3 shows

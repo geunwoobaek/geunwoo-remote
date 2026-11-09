@@ -64,7 +64,8 @@ const CHECKBOX = /^\[[ ✔]\]\s*/;
 const SUBAGENT_HEADER = /· from the .+ agent/;
 const PLAN_PROMPT = 'Claude has written up a plan and is ready to execute. Would you like to proceed?';
 const PLAN_APPROVE_MANUAL = 'Yes, manually approve edits';
-const PLAN_FEEDBACK = 'Tell Claude what to change';
+/** Plan option 3's label, and what it shows while focused with nothing typed. */
+export const PLAN_FEEDBACK = 'Tell Claude what to change';
 /** The ask line of the measured Bash and Read dialogs. */
 const PROCEED = 'Do you want to proceed?';
 /** Headers a measured permission dialog starts with. A second one inside a dialog means a dialog drawn inside it. */
