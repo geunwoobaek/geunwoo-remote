@@ -10,12 +10,20 @@ which come from the manual exploration run that preceded the script (same Claude
 setup, scrubbed the same way). That run is where a session survey and a dim prompt suggestion
 showed up on their own; the script cannot provoke them.
 
+The two `*-live` files come from one extra session started WITHOUT `--safe-mode` (the user's hooks,
+plugins and custom two-line status line active; only `--settings` with an ask rule for Bash). They
+check that a real everyday session looks the same at the bottom of the screen. Hook output above
+the first prompt held the user's own notes and was blanked (rows kept, so the screen is still 40
+rows).
+
 | File | Screen |
 | --- | --- |
 | `input-empty` | idle, empty input box |
 | `input-typed` | idle, text typed into the input box |
 | `input-suggestion-and-survey` | idle with a session survey (`1: Bad 2: Fine …`) and a dim suggestion in the input box; plain capture, so the suggestion looks like typed text |
 | `input-suggestion-ansi` | the same screen captured with `capture-pane -e` (the suggestion is drawn with SGR 2) |
+| `input-empty-live` | idle, empty input box, non-safe-mode session with a two-line status line |
+| `permission-bash-live` | Bash permission in the same non-safe-mode session |
 | `permission-write` | Write permission for a new file (`1. Yes / 2. Yes, and … / 3. No`) |
 | `permission-bash` | Bash permission for a long command that wraps (`1. Yes / 2. No`) |
 | `permission-bash-short` | Bash permission for a one-line command |

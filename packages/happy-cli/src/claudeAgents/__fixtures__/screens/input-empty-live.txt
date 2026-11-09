@@ -1,0 +1,40 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+❯ Run exactly this single Bash command and nothing else: ls -la
+  /Users/tester/project
+
+  Listed 1 directory
+  ⎿  Interrupted · What should Claude do instead?
+
+✻ Cogitated for 3s · done 오전 11:25
+                                                                                                    ◐ medium · /effort
+─────────────────────────────────────────────────────────────────────────────────────────────────────────── demo-agent ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ✉demo-agent | ✅haiku-5-5(medium) | 1턴 | 5h:66% 7d:43% | 💰 $0.01 | 🧠 71,753 (7%)
+  ⏸ manual mode on

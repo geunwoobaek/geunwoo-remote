@@ -62,6 +62,7 @@ describe('classifyScreen', () => {
         ['permission-bash', 'permission'],
         ['permission-bash-short', 'permission'],
         ['permission-subagent', 'permission'],
+        ['permission-bash-live', 'permission'],
         ['question-single', 'question'],
         ['question-multi', 'question'],
         ['question-multi-toggled', 'question'],
@@ -75,6 +76,7 @@ describe('classifyScreen', () => {
         ['input-empty', 'none'],
         ['input-typed', 'none'],
         ['input-suggestion-and-survey', 'none'],
+        ['input-empty-live', 'none'],
     ])('%s is %s', (name, kind) => {
         expect(classifyScreen(screen(name))).toBe(kind);
     });
@@ -113,6 +115,17 @@ describe('screenMatchesPending', () => {
         expect(screenMatchesPending(screen('permission-bash'), pending('Bash', { command: bashCommand }))).toBe(true);
         expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(true);
         expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'rm -rf /Users/tester/project' }))).toBe(false);
+    });
+
+    it('works on a session with the user\'s hooks and two-line status line (no --safe-mode)', () => {
+        expect(screenMatchesPending(screen('permission-bash-live'), pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(true);
+        expect(keysForPermission(false, screen('permission-bash-live'))).toEqual([{ digit: 2 }]);
+        expect(isInputBoxEmpty(screen('input-empty-live'))).toBe(true);
+    });
+
+    it('matches other tools by the dialog header only, not by text in the preview', () => {
+        expect(screenMatchesPending(screen('permission-bash'), pending('printf', {}))).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash'), pending('Bash command', {}))).toBe(true);
     });
 
     it('never matches a subagent dialog', () => {

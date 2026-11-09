@@ -229,7 +229,9 @@ export function screenMatchesPending(screen: string, pending: PendingToolUse): b
                 && options.find((o) => o.focused)?.digit === 1
                 && options.find((o) => o.digit === 3)?.label === PLAN_FEEDBACK;
         default:
-            return kind === 'permission' && region.some((line) => line.includes(pending.name));
+            // Only the header right under the top rule (`Bash command`, `Create file`, …); the lines
+            // below it are model-written descriptions and previews.
+            return kind === 'permission' && region[0] !== undefined && region[0].includes(pending.name);
     }
 }
 
