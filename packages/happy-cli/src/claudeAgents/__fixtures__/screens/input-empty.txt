@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.319
+▝▜██████▀  Haiku 5.5 · Claude Team
+ ▝▝   ▝▝   ~/project
+
+⚠ Safe mode: all customizations are disabled (CLAUDE.md, skills, plugins, hooks, MCP, agents, and more)
+  Run /stop, then claude --resume from your shell to re-enable
+
+❯ Reply with just the word READY and nothing else. Do not use any tools.
+
+⏺ READY
+
+✻ Cooked for 3s · done 오전 11:09
+
+※ recap: Your overall goal here is still open: so far I've only confirmed I'm ready, and no task has been given yet. The
+  next action is for you to tell me what you want done in the workspace at /Users/tester/workspace. (disable
+  recaps in /config)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                    ◐ medium · /effort
+─────────────────────────────────────────────────────────────────────────────────────────────────────────── demo-agent ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · ← for agents

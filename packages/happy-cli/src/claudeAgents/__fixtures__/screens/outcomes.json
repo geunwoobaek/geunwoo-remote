@@ -1,0 +1,252 @@
+[
+  {
+    "scenario": "permission-write approve",
+    "keys": [
+      "1"
+    ],
+    "tool": "Write",
+    "input": {
+      "file_path": "/Users/tester/project/report-draft.md",
+      "content": "draft"
+    },
+    "isError": false,
+    "result": "File created successfully at: /Users/tester/project/report-draft.md (file state is current in your context — no need to Read it back)",
+    "toolUseResult": "{\"type\":\"create\",\"filePath\":\"/Users/tester/project/report-draft.md\",\"content\":\"draft\",\"structuredPatch\":[],\"originalFile\":null,\"userModified\":false}"
+  },
+  {
+    "scenario": "permission-write deny",
+    "keys": [
+      "3"
+    ],
+    "tool": "Write",
+    "input": {
+      "file_path": "/Users/tester/project/denied.txt",
+      "content": "no"
+    },
+    "isError": true,
+    "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+    "toolUseResult": "User rejected tool use"
+  },
+  {
+    "scenario": "permission-bash deny",
+    "keys": [
+      "2"
+    ],
+    "tool": "Bash",
+    "input": {
+      "command": "printf 'jarvis capture check with some padding text to make it long\\n' > /Users/tester/project/bash-out.txt && ls -la /Users/tester/project",
+      "description": "Write test line to bash-out.txt and list the temp directory"
+    },
+    "isError": true,
+    "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+    "toolUseResult": "User rejected tool use"
+  },
+  {
+    "scenario": "permission-bash approve",
+    "keys": [
+      "1"
+    ],
+    "tool": "Bash",
+    "input": {
+      "command": "ls -la /Users/tester/project",
+      "description": "List the temp directory contents"
+    },
+    "isError": false,
+    "result": "total 8\ndrwxr-xr-x@   3 tester  staff    96 11월  9 11:09 .\ndrwxr-xr-x@ 164 tester  staff  5248 11월  9 11:09 ..\n-rw-r--r--@   1 tester  staff     5 11월  9 11:09 report-draft.md",
+    "toolUseResult": "{\"stdout\":\"total 8\\ndrwxr-xr-x@   3 tester  staff    96 11월  9 11:09 .\\ndrwxr-xr-x@ 164 tester  staff  5248 11월  9 11:09 ..\\n-rw-r--r--@   1 tester  staff     5 11월  9 11:09 report-draft.md\",\"stderr\":\"\",\"interrupted\":false,\"isImage\":false,\"noOutputExpected\":false}"
+  },
+  {
+    "scenario": "question-single",
+    "keys": [
+      "2"
+    ],
+    "tool": "AskUserQuestion",
+    "input": {
+      "questions": [
+        {
+          "question": "Which color should the demo button use?",
+          "header": "Color",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "Red",
+              "description": "A bold, high-attention color for the button."
+            },
+            {
+              "label": "Green",
+              "description": "A positive, go-ahead color for the button."
+            },
+            {
+              "label": "Blue",
+              "description": "A neutral, calm color for the button."
+            }
+          ]
+        }
+      ]
+    },
+    "isError": false,
+    "result": "Your questions have been answered: \"Which color should the demo button use?\"=\"Green\". You can now continue with these answers in mind.",
+    "toolUseResult": "{\"questions\":[{\"question\":\"Which color should the demo button use?\",\"header\":\"Color\",\"options\":[{\"label\":\"Red\",\"description\":\"A bold, high-attention color for the button.\"},{\"label\":\"Green\",\"description\":\"A positive, go-ahead color for the button.\"},{\"label\":\"Blue\",\"description\":\"A neutral, calm color for the button.\"}],\"multiSelect\":false}],\"answers\":{\"Which color should the demo button use?\":\"Gr"
+  },
+  {
+    "scenario": "question-multi",
+    "keys": [
+      "1",
+      "3",
+      "Tab",
+      "2",
+      "1"
+    ],
+    "tool": "AskUserQuestion",
+    "input": {
+      "questions": [
+        {
+          "question": "Which toppings should the demo pizza have?",
+          "header": "Toppings",
+          "multiSelect": true,
+          "options": [
+            {
+              "label": "Cheese",
+              "description": "A classic layer of melted mozzarella."
+            },
+            {
+              "label": "Olives",
+              "description": "Sliced black or green olives for a salty bite."
+            },
+            {
+              "label": "Basil",
+              "description": "Fresh basil leaves added after baking."
+            }
+          ]
+        },
+        {
+          "question": "Which size should the demo pizza be?",
+          "header": "Size",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "Small",
+              "description": "A personal-sized pizza, about 8 inches."
+            },
+            {
+              "label": "Medium",
+              "description": "A standard pizza, about 12 inches."
+            },
+            {
+              "label": "Large",
+              "description": "A family-sized pizza, about 16 inches."
+            }
+          ]
+        }
+      ]
+    },
+    "isError": false,
+    "result": "Your questions have been answered: \"Which toppings should the demo pizza have?\"=\"Cheese, Basil\", \"Which size should the demo pizza be?\"=\"Medium\". You can now continue with these answers in mind.",
+    "toolUseResult": "{\"questions\":[{\"question\":\"Which toppings should the demo pizza have?\",\"header\":\"Toppings\",\"options\":[{\"label\":\"Cheese\",\"description\":\"A classic layer of melted mozzarella.\"},{\"label\":\"Olives\",\"description\":\"Sliced black or green olives for a salty bite.\"},{\"label\":\"Basil\",\"description\":\"Fresh basil leaves added after baking.\"}],\"multiSelect\":true},{\"question\":\"Which size should the demo pizza be?"
+  },
+  {
+    "scenario": "question-other",
+    "keys": [
+      "Down",
+      "Down",
+      "Down",
+      "type:Sparkle",
+      "Tab",
+      "Enter",
+      "1"
+    ],
+    "tool": "AskUserQuestion",
+    "input": {
+      "questions": [
+        {
+          "question": "Which extras should the demo logo get?",
+          "header": "Extras",
+          "multiSelect": true,
+          "options": [
+            {
+              "label": "Shadow",
+              "description": "A soft drop shadow behind the logo."
+            },
+            {
+              "label": "Outline",
+              "description": "A thin border around the logo's edges."
+            },
+            {
+              "label": "Gradient",
+              "description": "A smooth color fade across the logo."
+            }
+          ]
+        }
+      ]
+    },
+    "isError": false,
+    "result": "The user answered: \"Which extras should the demo logo get?\"=\"Sparkle\". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.",
+    "toolUseResult": "{\"questions\":[{\"question\":\"Which extras should the demo logo get?\",\"header\":\"Extras\",\"options\":[{\"label\":\"Shadow\",\"description\":\"A soft drop shadow behind the logo.\"},{\"label\":\"Outline\",\"description\":\"A thin border around the logo's edges.\"},{\"label\":\"Gradient\",\"description\":\"A smooth color fade across the logo.\"}],\"multiSelect\":true}],\"answers\":{\"Which extras should the demo logo get?\":\"Sparkle\"}"
+  },
+  {
+    "scenario": "permission-subagent deny",
+    "keys": [
+      "3"
+    ],
+    "parentPending": "use:Agent result:toolu_01DyeMHBBnxePxTSf8pFyPcU"
+  },
+  {
+    "scenario": "plan reject with reason",
+    "keys": [
+      "3",
+      "type:reason",
+      "Enter"
+    ],
+    "tool": "ExitPlanMode",
+    "input": {
+      "plan": "# Plan: hello-world greeting.txt\n\n## Context\nCreate a small hello-world text file in the existing temp directory `/Users/tester/project`.\n\n## Steps\n- Use the Write tool to create `/Users/tester/project/greeting.txt` with the content `Hello, world!`.\n- Confirm the file exists with a read-only `ls -la` on the directory.\n- Report the result, and stop (no other files touched).\n\n## Verification\n`ls -la` shows `greeting.txt`, and reading it returns `Hello, world!`.\n",
+      "planFilePath": "/Users/tester/.claude/plans/demo-plan.md"
+    },
+    "isError": true,
+    "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\nPlease name the file hello.txt instead",
+    "toolUseResult": "Error: The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\nPlease name the file hello.txt instead"
+  },
+  {
+    "scenario": "plan reject without reason",
+    "keys": [
+      "3",
+      "Enter"
+    ],
+    "tool": "ExitPlanMode",
+    "input": {
+      "plan": "# Plan: hello-world hello.txt\n\n## Context\nCreate a small hello-world text file in the existing temp directory `/Users/tester/project`.\n\n## Steps\n- Use the Write tool to create `/Users/tester/project/hello.txt` with the content `Hello, world!`.\n- Confirm the file exists with a read-only `ls -la` on the directory.\n- Report the result, and stop (no other files touched).\n\n## Verification\n`ls -la` shows `hello.txt`, and reading it returns `Hello, world!`.\n",
+      "planFilePath": "/Users/tester/.claude/plans/demo-plan.md"
+    },
+    "isError": true,
+    "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+    "toolUseResult": "User rejected tool use"
+  },
+  {
+    "scenario": "plan approve manual",
+    "keys": [
+      "2"
+    ],
+    "tool": "ExitPlanMode",
+    "input": {
+      "plan": "# Plan: hello-world hello.txt\n\n## Context\nCreate a small hello-world text file in the existing temp directory `/Users/tester/project`.\n\n## Steps\n- Use the Write tool to create `/Users/tester/project/hello.txt` with the content `Hello, world!`.\n- Confirm the file exists with a read-only `ls -la` on the directory.\n- Report the result, and stop (no other files touched).\n\n## Verification\n`ls -la` shows `hello.txt`, and reading it returns `Hello, world!`.\n",
+      "planFilePath": "/Users/tester/.claude/plans/demo-plan.md"
+    },
+    "isError": false,
+    "result": "User has approved your plan. You can now start coding. Start with updating your todo list if applicable\n\nYour plan has been saved to: /Users/tester/.claude/plans/demo-plan.md\nYou can refer back to it if needed during implementation.\n\n## Approved Plan:\n# Plan: hello-world hello.txt\n\n## Context\nCreate a small hello-world text file in the existing temp directory `/Users/tester/project`.\n\n## Steps\n- U",
+    "toolUseResult": "{\"plan\":\"# Plan: hello-world hello.txt\\n\\n## Context\\nCreate a small hello-world text file in the existing temp directory `/Users/tester/project`.\\n\\n## Steps\\n- Use the Write tool to create `/Users/tester/project/hello.txt` with the content `Hello, world!`.\\n- Confirm the file exists with a read-only `ls -la` on the directory.\\n- Report the result, and stop (no other files touched).\\n\\n## Verific"
+  },
+  {
+    "scenario": "write after plan approval deny",
+    "keys": [
+      "3"
+    ],
+    "tool": "Write",
+    "input": {
+      "file_path": "/Users/tester/project/hello.txt",
+      "content": "Hello, world!"
+    },
+    "isError": true,
+    "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+    "toolUseResult": "User rejected tool use"
+  }
+]
