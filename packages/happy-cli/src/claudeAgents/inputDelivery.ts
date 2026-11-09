@@ -53,6 +53,18 @@ const SURVEY_OPTIONS = /^\s*1: Bad\s+2: Fine\s+3: Good\s+0: Dismiss\s*$/m;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Best-effort cleanup: the outcome of a delivery is decided by the work, never by closing the
+ * terminal, so a failing `close` must not turn a typed message into `'failed'` (callers may retry).
+ */
+async function closeQuietly(terminal: AttachTerminal): Promise<void> {
+    try {
+        await terminal.close();
+    } catch {
+        // Nothing to do: the tmux session is gone or will be reaped with the server.
+    }
+}
+
 function normalize(text: string): string {
     return text.replace(/\s+/g, ' ').trim();
 }
@@ -142,7 +154,7 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
             await sleep(closeDelayMs);
             return 'sent';
         } finally {
-            await terminal.close();
+            await closeQuietly(terminal);
         }
     }
 
@@ -161,7 +173,7 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
                 try {
                     await terminal.press(['escape']);
                 } finally {
-                    await terminal.close();
+                    await closeQuietly(terminal);
                 }
             }).catch(() => undefined);
         },

@@ -255,6 +255,54 @@ describe('createInputDelivery', () => {
         expect(log).toContain('type#2:ok');
     });
 
+    /** Opens through `openTerminal` but makes `close` throw (after the real close ran). */
+    function withThrowingClose(openTerminal: () => Promise<AttachTerminal>): () => Promise<AttachTerminal> {
+        return async () => {
+            const terminal = await openTerminal();
+            const close = terminal.close;
+            terminal.close = async () => {
+                await close();
+                throw new Error('kill-session failed');
+            };
+            return terminal;
+        };
+    }
+
+    it('send still returns sent when close throws after a successful send', async () => {
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const delivery = createInputDelivery({ openTerminal: withThrowingClose(openTerminal), echo: createEchoFilter(), ...fast });
+        expect(await delivery.send('once')).toBe('sent');
+        expect(log).toEqual(['open#1', 'type#1:once', 'press#1:enter', 'close#1']);
+    });
+
+    it('send still returns busy-input when close throws', async () => {
+        const { openTerminal } = createHarness([TYPED]);
+        const delivery = createInputDelivery({ openTerminal: withThrowingClose(openTerminal), echo: createEchoFilter(), waitInputMs: 30, ...fast });
+        expect(await delivery.send('hello')).toBe('busy-input');
+    });
+
+    it('send reports the typing error, not the close error, when both throw', async () => {
+        const { openTerminal } = createHarness([EMPTY]);
+        const broken = async (): Promise<AttachTerminal> => {
+            const terminal = await withThrowingClose(openTerminal)();
+            terminal.typeText = async () => {
+                throw new Error('tmux died');
+            };
+            return terminal;
+        };
+        const delivery = createInputDelivery({ openTerminal: broken, echo: createEchoFilter(), ...fast });
+        expect(await delivery.send('x')).toBe('failed');
+    });
+
+    it('interrupt resolves when close throws and does not break the queue', async () => {
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const delivery = createInputDelivery({ openTerminal: withThrowingClose(openTerminal), echo: createEchoFilter(), ...fast });
+        await expect(delivery.interrupt()).resolves.toBeUndefined();
+        expect(await delivery.send('after')).toBe('sent');
+        expect(log).toContain('press#1:escape');
+        expect(log).toContain('type#2:after');
+    });
+
     it('send returns failed when the terminal cannot be opened', async () => {
         const delivery = createInputDelivery({
             openTerminal: async () => {
