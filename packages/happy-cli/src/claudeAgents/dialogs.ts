@@ -72,6 +72,8 @@ const PROCEED = 'Do you want to proceed?';
 const KNOWN_HEADERS = ['Bash command', 'Create file', 'Overwrite file', 'Edit file', 'Read file'];
 /** A dialog's last line of key hints. It changes on its own (e.g. with the number of background agents). */
 const FOOTER = /^(?:Esc to cancel|Enter to select|ctrl\+g to edit)/;
+/** What changes with the terminal width in a dialog's text: whitespace and the rule and box drawing characters. */
+const WIDTH_DEPENDENT = /[\s─━│┃╭╮╰╯┌┐└┘├┤┬┴┼]/g;
 /** The single-question tab bars: `☐ Color` (lone single-select) and `←  ☐ Days  ✔ Submit  →` (lone multi-select). */
 const SINGLE_QUESTION_TAB_BAR = /^(?:☐ [^☐☒✔]+|←\s+☐ [^☐☒✔]+✔ Submit\s+→)$/;
 const TYPE_SOMETHING = /^(?:\[ \]\s*)?Type something\.?$/;
@@ -326,7 +328,9 @@ function looksStacked(parsed: ParsedScreen, kind: DialogKind, ask: string | null
 /**
  * The identity of the open dialog: the sha1 of its lines from the topmost structural rule
  * (`isStructuralRule`) down to (not including) the closing named rule, with escapes stripped,
- * whitespace collapsed, the `❯` focus marker, blank lines and the key-hint footer dropped. The
+ * the `❯` focus marker, blank lines and the key-hint footer dropped, then every whitespace and
+ * rule/box drawing character removed (the terminal width moves line breaks, so a dialog read in a
+ * 99-column cmux pane and in a 120-column tmux must match). The
  * conversation above, the session name in the closing rule, the footer and the focus are left out
  * so a redraw of the same dialog, or the Mac user moving the cursor in it, gives the same value
  * (answers press absolute digits, and the question and plan gates check focus themselves).
@@ -349,7 +353,9 @@ export function dialogFingerprint(screen: string): string | null {
     if (body.length > 0 && FOOTER.test(body[body.length - 1])) {
         body.pop();
     }
-    return createHash('sha1').update(body.join('\n')).digest('hex');
+    // Whitespace and line-drawing characters go too: a narrower terminal wraps the same text at
+    // other places (and the question box redraws its `│` margin on every wrapped line).
+    return createHash('sha1').update(body.join('').replace(WIDTH_DEPENDENT, '')).digest('hex');
 }
 
 export type ScreenDialog = { tool: string; input: Record<string, unknown> };

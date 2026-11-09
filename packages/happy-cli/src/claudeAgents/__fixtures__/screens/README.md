@@ -46,6 +46,10 @@ rows).
 | `plan` | ExitPlanMode approval dialog |
 | `plan-feedback-typed` | the same with rejection feedback typed into option 3 |
 | `after-plan-approve`, `plan-after-empty-reject` | what follows a plan approval / an empty rejection |
+| `write-perm-120` | the Write permission dialog, captured in tmux 120×40 |
+| `write-perm-99` | the same dialog captured in cmux 99×35 (`cmux read-screen`) |
+| `question-long-120` | a single-select question with a long question text, captured in tmux 120×40 |
+| `question-long-99` | the same dialog captured in cmux 99×35 (`cmux read-screen`) |
 | `outcomes.json` | keys pressed in each scenario and the `tool_result` that came back (scrubbed) |
 
 `question-lone-multi-plan-mode` was captured by hand from a plan-mode session (the plan path, the user name and the session name are scrubbed), not by the capture script.

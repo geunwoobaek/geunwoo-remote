@@ -167,6 +167,79 @@ describe('serializeTerminalOpens', () => {
     });
 });
 
+describe('serializeTerminalOpens with a user terminal', () => {
+    const terminal = (log: string[], name: string): AttachTerminal => ({
+        screen: async () => '',
+        typeText: async () => undefined,
+        pasteText: async () => undefined,
+        press: async () => undefined,
+        close: async () => {
+            log.push(`close:${name}`);
+        },
+    });
+    const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
+
+    it('the user terminal and the tmux terminal share one lock', async () => {
+        const log: string[] = [];
+        const open = serializeTerminalOpens(
+            async () => {
+                log.push('open:tmux');
+                return terminal(log, 'tmux');
+            },
+            async () => {
+                log.push('open:user');
+                return terminal(log, 'user');
+            },
+        );
+
+        const user = await open.user();
+        const tmux = open().then((opened) => {
+            log.push('tmux-resolved');
+            return opened;
+        });
+        await tick();
+        expect(log).toEqual(['open:user']);
+
+        await user?.close();
+        await (await tmux).close();
+        expect(log).toEqual(['open:user', 'close:user', 'open:tmux', 'tmux-resolved', 'close:tmux']);
+    });
+
+    it('releases the lock at once when there is no user terminal, and when looking for one fails', async () => {
+        let looks = 0;
+        const open = serializeTerminalOpens(
+            async () => terminal([], 'tmux'),
+            async () => {
+                looks += 1;
+                if (looks === 2) {
+                    throw new Error('cmux broke');
+                }
+                return null;
+            },
+        );
+
+        expect(await open.user()).toBeNull();
+        await expect(open.user()).rejects.toThrow('cmux broke');
+        await (await open()).close();
+        expect(looks).toBe(2);
+    });
+
+    it('user() is null without a user opener and never takes the lock', async () => {
+        const open = serializeTerminalOpens(async () => terminal([], 'tmux'));
+        const held = await open();
+        expect(await open.user()).toBeNull();
+        await held.close();
+    });
+
+    it('drain also waits for a user terminal', async () => {
+        const open = serializeTerminalOpens(async () => terminal([], 'tmux'), async () => terminal([], 'user'));
+        const held = await open.user();
+        expect(await open.drain(20)).toBe(false);
+        await held?.close();
+        expect(await open.drain(1000)).toBe(true);
+    });
+});
+
 describe('serializeTerminalOpens drain', () => {
     const terminal = (): AttachTerminal => ({
         screen: async () => '',

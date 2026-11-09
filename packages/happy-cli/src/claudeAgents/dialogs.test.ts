@@ -622,10 +622,44 @@ describe('dialogFingerprint', () => {
         expect(dialogFingerprint(withColours(screen('plan')))).toBe(plan);
     });
 
+    it('fingerprint ignores terminal width', () => {
+        for (const name of ['write-perm', 'question-long']) {
+            const wide = dialogFingerprint(screen(`${name}-120`));
+            const narrow = dialogFingerprint(screen(`${name}-99`));
+            expect(wide).not.toBeNull();
+            expect(narrow).not.toBeNull();
+            expect(narrow).toBe(wide);
+        }
+        expect(dialogFingerprint(screen('write-perm-120'))).not.toBe(dialogFingerprint(screen('question-long-120')));
+    });
+
+    it('fingerprint ignores where a long question line wraps', () => {
+        // Hand-derived: the captured question re-wrapped one word earlier, as a narrower terminal would.
+        const wide = screen('question-long-120');
+        const rewrapped = wide.replace('weekly report to the\n│ whole team?', 'weekly report to\n│ the whole team?');
+        expect(rewrapped).not.toBe(wide);
+        expect(dialogFingerprint(rewrapped)).toBe(dialogFingerprint(wide));
+        expect(dialogFingerprint(wide.replaceAll('whole team?', 'whole company?'))).not.toBe(dialogFingerprint(wide));
+    });
+
     it('is null without a dialog', () => {
         expect(dialogFingerprint(screen('input-empty'))).toBeNull();
         expect(dialogFingerprint(screen('input-suggestion-ansi'))).toBeNull();
         expect(dialogFingerprint('')).toBeNull();
+    });
+});
+
+describe('terminal width', () => {
+    it('width does not change what is read', () => {
+        for (const name of ['write-perm', 'question-long']) {
+            const wide = screen(`${name}-120`);
+            const narrow = screen(`${name}-99`);
+            expect(classifyScreen(narrow)).toBe(classifyScreen(wide));
+            expect(classifyScreen(wide)).not.toBe('none');
+            expect(readDialogFromScreen(narrow)).toEqual(readDialogFromScreen(wide));
+            expect(readDialogProgress(narrow)).toEqual(readDialogProgress(wide));
+        }
+        expect(readDialogFromScreen(screen('write-perm-99'))).toEqual({ tool: 'Write', input: { file_path: '~/project/f.txt' } });
     });
 });
 

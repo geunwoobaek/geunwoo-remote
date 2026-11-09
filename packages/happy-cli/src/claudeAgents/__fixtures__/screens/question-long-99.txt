@@ -1,0 +1,35 @@
+
+
+✻ Cooked for 11s · done 오후 11:08
+
+※ recap: We're running AskUserQuestion prompts: fruits came back as Apple, and the shape question 
+  came back as Square. Nothing is pending, so tell me what you'd like next.
+
+❯ Write the word hi to /Users/tester/project/f.txt                  
+
+⏺ Write(~/project/f.txt)
+  ⎿  User rejected write to ~/project/f.txt
+      1 hi
+
+✻ Sautéed for 7s · done 오후 11:23
+
+❯ Use AskUserQuestion once: question 'Which of these long descriptive delivery options should the  
+  demo use for the weekly report to the whole team?' options Email, Chat, Wiki page.               
+───────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Delivery 
+
+│ Which of these long descriptive delivery options should the demo use for the weekly report to the
+│ whole team?
+
+❯ 1. Email
+     Send the weekly report to the whole team by email
+  2. Chat
+     Post the weekly report to the team chat channel
+  3. Wiki page
+     Publish the weekly report as a wiki page for the team
+  4. Type something.
+───────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel
+────────────────────────────────────────────────────────────────────────────────────── demo-agent ─

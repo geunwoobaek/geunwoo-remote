@@ -28,6 +28,13 @@
  * reason). Otherwise no further key is pressed and the request is completed as `canceled` with
  * `reason: 'typing-failed'`.
  *
+ * When the Mac user has the session open in their own cmux pane (`openUserTerminal`), `tick` reads
+ * that pane's screen (the hidden terminal when it cannot be read) and `answer` runs the same checks
+ * and keys there first. If the pane fails the checks, cannot type a step, or fails before the first
+ * key, the hidden terminal repeats the checks from scratch; a failure after a key was pressed is
+ * final (`typing-failed`), never retried elsewhere. The pane and the hidden terminal may be
+ * different widths, which is why the fingerprint ignores line breaks.
+ *
  * `tick` and `answer` run one at a time. Each opens its own terminal and closes it in `finally`
  * (close errors swallowed), so a caller may serialise terminal use around them.
  */
@@ -36,6 +43,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { AgentState } from '@/api/types';
 import type { PermissionResponse } from '@/claude/utils/permissionHandler';
 import type { AttachKey, AttachTerminal } from './attachTerminal';
+import { cmuxTypable } from './cmuxTerminal';
 import {
     classifyScreen,
     DIALOG_KEY_GAP_MS,
@@ -57,6 +65,14 @@ export type PermissionBridgeDeps = {
     readStatus(): ClaudeAgentStatus | null;
     readEntries(): unknown[];
     openTerminal(): Promise<AttachTerminal>;
+    /**
+     * Opens the Mac user's own pane running `claude attach` (cmux), or resolves null when there is
+     * none. Read by `tick` and tried first by `answer`; it must be closed before `openTerminal`
+     * is called (they may share one lock). Without it everything goes through `openTerminal`.
+     */
+    openUserTerminal?(): Promise<AttachTerminal | null>;
+    /** Told which terminal an answer was typed on, for the debug log. */
+    onRoute?(use: 'answer', route: 'cmux' | 'tmux'): void;
     updateAgentState(update: (s: AgentState) => AgentState): void;
     notifyPermission(tool: string): void;
     now(): number;
@@ -358,17 +374,37 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
         return key;
     }
 
-    async function readScreen(): Promise<string | null> {
-        let terminal: AttachTerminal | null = null;
+    /** The user's pane, or null when there is none or it cannot be opened. */
+    async function openUser(): Promise<AttachTerminal | null> {
         try {
-            terminal = await deps.openTerminal();
+            return (await deps.openUserTerminal?.()) ?? null;
+        } catch {
+            return null;
+        }
+    }
+
+    /** Reads `terminal`'s screen and closes it; null when it cannot be read. */
+    async function readScreenOn(terminal: AttachTerminal): Promise<string | null> {
+        try {
             return await terminal.screen();
         } catch {
             return null;
         } finally {
-            if (terminal !== null) {
-                await closeQuietly(terminal);
-            }
+            await closeQuietly(terminal);
+        }
+    }
+
+    /** The screen of the user's pane, else of a hidden terminal; null when neither can be read. */
+    async function readScreen(): Promise<string | null> {
+        const user = await openUser();
+        const fromUser = user === null ? null : await readScreenOn(user);
+        if (fromUser !== null) {
+            return fromUser;
+        }
+        try {
+            return await readScreenOn(await deps.openTerminal());
+        } catch {
+            return null;
         }
     }
 
@@ -463,21 +499,26 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
         }
     }
 
-    async function answer(response: PermissionResponse): Promise<'typed' | 'refused'> {
-        const request = open.get(response.id);
-        if (request === undefined || request.refused) {
-            return 'refused';
-        }
-        let terminal: AttachTerminal | null = null;
+    /**
+     * Types the answer on `terminal` and closes it. `'fallback'` (only when `fallbackAllowed`, i.e.
+     * on the user's pane) means nothing was pressed and the hidden terminal should be tried: the
+     * screen did not pass the checks, a step cannot be typed through cmux, or cmux failed before
+     * the first key. Once a key was pressed the result is final: `'typed'`, with the request
+     * canceled if it broke. On the hidden terminal a failure before the first key refuses.
+     */
+    async function answerOn(terminal: AttachTerminal, request: OpenRequest, response: PermissionResponse, fallbackAllowed: boolean): Promise<'typed' | 'refused' | 'fallback'> {
         let entries: unknown[] = [];
         let pressed = false;
+        const notTyped = (): 'refused' | 'fallback' => (fallbackAllowed ? 'fallback' : refuse(request));
         try {
-            terminal = await deps.openTerminal();
             const screen = await terminal.screen();
             entries = deps.readEntries();
             const steps = stepsFor(request, response, screen, entries);
             if (steps === null || steps.length === 0) {
-                return refuse(request);
+                return notTyped();
+            }
+            if (fallbackAllowed && steps.some((step) => 'text' in step && !cmuxTypable(step.text))) {
+                return 'fallback';
             }
             const initial = readDialogProgress(screen);
             for (const step of steps) {
@@ -509,15 +550,38 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
             return 'typed';
         } catch {
             if (!pressed) {
-                return refuse(request);
+                return notTyped();
             }
             complete(request, { status: 'canceled', reason: TYPING_FAILED }, entries.length);
             return 'typed';
         } finally {
-            if (terminal !== null) {
-                await closeQuietly(terminal);
+            await closeQuietly(terminal);
+        }
+    }
+
+    async function answer(response: PermissionResponse): Promise<'typed' | 'refused'> {
+        const request = open.get(response.id);
+        if (request === undefined || request.refused) {
+            return 'refused';
+        }
+        const user = await openUser();
+        if (user !== null) {
+            const result = await answerOn(user, request, response, true);
+            if (result !== 'fallback') {
+                deps.onRoute?.('answer', 'cmux');
+                return result;
             }
         }
+        deps.onRoute?.('answer', 'tmux');
+        let terminal: AttachTerminal;
+        try {
+            terminal = await deps.openTerminal();
+        } catch {
+            return refuse(request);
+        }
+        // The hidden terminal never falls back, so the result is `typed` or `refused`.
+        const result = await answerOn(terminal, request, response, false);
+        return result === 'typed' ? 'typed' : 'refused';
     }
 
     return {

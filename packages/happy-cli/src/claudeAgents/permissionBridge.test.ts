@@ -76,13 +76,21 @@ type Harness = {
     failClose?: boolean;
     /** What happens on the Mac after the Nth key press or typed text (1-based), e.g. a redraw. */
     after?: Record<number, () => void>;
+    /** The Mac user's own pane. `null`: there is none. What it saw and did goes to `userLog`. */
+    userScreen: string | null;
+    userLog: string[];
+    userOpened: number;
+    /** Make the user pane's `screen` throw. */
+    failUserScreen?: boolean;
+    /** Make the user pane's `press` throw on this call number (1-based). */
+    failUserPressAt?: number;
 };
 
 function keyName(key: AttachKey): string {
     return typeof key === 'string' ? key : String(key.digit);
 }
 
-function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]; screen: string; cwd?: string }) {
+function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]; screen: string; cwd?: string; userScreen?: string }) {
     const h: Harness = {
         status: initial.status === undefined ? 'waiting' : initial.status,
         entries: initial.entries ?? [userText('start')],
@@ -91,6 +99,34 @@ function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]
         notified: [],
         log: [],
         opened: 0,
+        userScreen: initial.userScreen ?? null,
+        userLog: [],
+        userOpened: 0,
+    };
+    let userPresses = 0;
+    const userTerminal: AttachTerminal = {
+        async screen() {
+            if (h.failUserScreen || h.userScreen === null) {
+                throw new Error('cmux went away');
+            }
+            return h.userScreen;
+        },
+        async typeText(text) {
+            h.userLog.push(`type:${text}`);
+        },
+        async pasteText() {
+            throw new Error('cmux cannot paste');
+        },
+        async press(keys) {
+            userPresses += 1;
+            if (h.failUserPressAt === userPresses) {
+                throw new Error('cmux went away');
+            }
+            h.userLog.push(`press:${keys.map(keyName).join(',')}`);
+        },
+        async close() {
+            h.userLog.push('close');
+        },
     };
     let presses = 0;
     let actions = 0;
@@ -135,6 +171,18 @@ function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]
             h.log.push('open');
             return terminal;
         },
+        ...(initial.userScreen === undefined
+            ? {}
+            : {
+                  openUserTerminal: async (): Promise<AttachTerminal | null> => {
+                      if (h.userScreen === null) {
+                          return null;
+                      }
+                      h.userOpened += 1;
+                      h.userLog.push('open');
+                      return userTerminal;
+                  },
+              }),
         updateAgentState: (update) => {
             h.state = update(h.state);
         },
@@ -790,5 +838,125 @@ describe('createPermissionBridge answer', () => {
 
         expect(h.state.completedRequests?.toolu_write).toMatchObject({ status: 'denied', decision: 'denied' });
         expect(h.state.completedRequests?.toolu_write).not.toHaveProperty('reason');
+    });
+});
+
+describe('createPermissionBridge with a user terminal', () => {
+    const writeEntries = [userText('write it'), toolUse('toolu_write', 'Write', writeInput)];
+    const pizzaEntries = [userText('ask me'), toolUse('toolu_pizza', 'AskUserQuestion', pizzaQuestions)];
+    const pizzaAnswers = { 'Which toppings should the demo pizza have?': 'Cheese, Basil', 'Which size should the demo pizza be?': 'Medium' };
+
+    it('answers on the user terminal when the four checks pass', async () => {
+        const { h, bridge } = setup({ screen: screen('permission-write'), userScreen: screen('permission-write'), entries: writeEntries });
+        await bridge.tick();
+        expect(h.opened).toBe(0);
+
+        expect(await bridge.answer(response('toolu_write', true))).toBe('typed');
+
+        expect(h.userLog.slice(-3)).toEqual(['open', 'press:1', 'close']);
+        expect(h.opened).toBe(0);
+        expect(h.state.completedRequests?.toolu_write).toMatchObject({ status: 'approved', decision: 'approved' });
+    });
+
+    it('answers through tmux when the user terminal shows another screen', async () => {
+        const { h, bridge } = setup({ screen: screen('permission-write'), userScreen: screen('permission-write'), entries: writeEntries });
+        await bridge.tick();
+        h.userLog = [];
+        h.userScreen = screen('permission-bash-short');
+
+        expect(await bridge.answer(response('toolu_write', true))).toBe('typed');
+
+        expect(h.userLog).toEqual(['open', 'close']);
+        expect(h.log).toEqual(['open', 'press:1', 'close']);
+        expect(h.state.completedRequests?.toolu_write).toMatchObject({ status: 'approved' });
+    });
+
+    it('answers through tmux when the user terminal cannot be read or is gone', async () => {
+        const { h, bridge } = setup({ screen: screen('permission-write'), userScreen: screen('permission-write'), entries: writeEntries });
+        await bridge.tick();
+        h.log = [];
+        h.userLog = [];
+        h.failUserScreen = true;
+
+        expect(await bridge.answer(response('toolu_write', true))).toBe('typed');
+
+        expect(h.userLog).toEqual(['open', 'close']);
+        expect(h.log).toEqual(['open', 'press:1', 'close']);
+    });
+
+    it('goes to tmux when the answer needs text the user terminal cannot type', async () => {
+        // Hand-derived: the captured plan dialog with option 3 focused; a rejection with a reason types a reason that contains a backslash.
+        const focused = planFocusedOnFeedback();
+        const { h, bridge } = setup({ screen: screen('plan'), userScreen: screen('plan'), entries: [userText('plan it'), toolUse('toolu_plan', 'ExitPlanMode', { plan: '# Plan' })] });
+        await bridge.tick();
+        h.log = [];
+        h.userLog = [];
+        h.after = { 1: () => { h.screen = focused; } };
+
+        await bridge.answer(response('toolu_plan', false, { reason: 'use C:\\temp instead' }));
+
+        expect(h.userLog.filter((line) => line.startsWith('press') || line.startsWith('type'))).toEqual([]);
+        expect(h.opened).toBeGreaterThan(0);
+    });
+
+    it('does not retry on tmux after a key was pressed on the user terminal', async () => {
+        const { h, bridge } = setup({ screen: screen('question-multi'), userScreen: screen('question-multi'), entries: pizzaEntries });
+        await bridge.tick();
+        h.failUserPressAt = 2;
+
+        expect(await bridge.answer(response('toolu_pizza', true, { updatedInput: { answers: pizzaAnswers } }))).toBe('typed');
+
+        expect(h.userLog.filter((line) => line.startsWith('press'))).toEqual(['press:1']);
+        expect(h.opened).toBe(0);
+        expect(h.state.completedRequests?.toolu_pizza).toMatchObject({ status: 'canceled', reason: 'typing-failed' });
+    });
+
+    it('goes to tmux when the first key fails on the user terminal', async () => {
+        const { h, bridge } = setup({ screen: screen('permission-write'), userScreen: screen('permission-write'), entries: writeEntries });
+        await bridge.tick();
+        h.failUserPressAt = 1;
+
+        expect(await bridge.answer(response('toolu_write', true))).toBe('typed');
+
+        expect(h.log).toEqual(['open', 'press:1', 'close']);
+        expect(h.state.completedRequests?.toolu_write).toMatchObject({ status: 'approved' });
+    });
+
+    it('refuses when neither terminal shows the dialog', async () => {
+        const { h, bridge } = setup({ screen: screen('permission-write'), userScreen: screen('permission-write'), entries: writeEntries });
+        await bridge.tick();
+        h.userScreen = screen('input-empty');
+        h.screen = screen('input-empty');
+
+        expect(await bridge.answer(response('toolu_write', true))).toBe('refused');
+
+        expect(h.userLog.filter((line) => line.startsWith('press'))).toEqual([]);
+        expect(typing(h.log)).toEqual([]);
+    });
+
+    it('tick publishes from the user terminal screen', async () => {
+        const { h, bridge } = setup({ screen: screen('write-perm-120'), userScreen: screen('write-perm-99') });
+
+        await bridge.tick();
+
+        const key = onlyRequestKey(h.state);
+        expect(key).toMatch(new RegExp(`^screen:${dialogFingerprint(screen('write-perm-99'))}:.+`));
+        expect(h.opened).toBe(0);
+        // The same dialog on the 120-column tmux terminal answers it: the fingerprint ignores the width.
+        h.userScreen = null;
+
+        expect(await bridge.answer(response(key, true))).toBe('typed');
+
+        expect(h.log).toEqual(['open', 'press:1', 'close']);
+    });
+
+    it('tick falls back to the tmux screen when the user terminal cannot be read', async () => {
+        const { h, bridge } = setup({ screen: screen('permission-write'), userScreen: screen('permission-write'), entries: writeEntries });
+        h.failUserScreen = true;
+
+        await bridge.tick();
+
+        expect(onlyRequestKey(h.state)).toBe('toolu_write');
+        expect(h.opened).toBe(1);
     });
 });

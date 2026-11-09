@@ -344,3 +344,184 @@ describe('createInputDelivery', () => {
         await expect(delivery.interrupt()).resolves.toBeUndefined();
     });
 });
+
+type UserFailures = { screen?: boolean; type?: boolean; enter?: boolean; escape?: boolean };
+
+/** The Mac user's own pane: reads the given screen, logs what is typed, can fail at each step. */
+function createUserPane(screenText: string, failures: UserFailures = {}) {
+    const log: Call[] = [];
+    const openUserTerminal = async (): Promise<AttachTerminal> => {
+        log.push('open');
+        return {
+            screen: async () => {
+                if (failures.screen) {
+                    throw new Error('cmux went away');
+                }
+                return screenText;
+            },
+            typeText: async (text) => {
+                if (failures.type) {
+                    throw new Error('cmux went away');
+                }
+                log.push(`type:${text}`);
+            },
+            pasteText: async () => {
+                throw new Error('cmux cannot paste');
+            },
+            press: async (keys) => {
+                const names = keys.map((key) => (typeof key === 'string' ? key : `digit${key.digit}`));
+                if ((failures.enter && names.includes('enter')) || (failures.escape && names.includes('escape'))) {
+                    throw new Error('cmux went away');
+                }
+                log.push(`press:${names.join(',')}`);
+            },
+            close: async () => {
+                log.push('close');
+            },
+        };
+    };
+    return { log, openUserTerminal };
+}
+
+const typedOrPressed = (log: Call[]): Call[] => log.filter((line) => line.startsWith('type') || line.startsWith('press'));
+
+describe('createInputDelivery with a user terminal', () => {
+    it('sends through the user terminal when its box is empty', async () => {
+        const pane = createUserPane(EMPTY);
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, openUserTerminal: pane.openUserTerminal, echo, ...fast });
+
+        expect(await delivery.send('hello there')).toBe('sent');
+
+        expect(pane.log).toEqual(['open', 'type:hello there', 'press:enter', 'close']);
+        expect(log).toEqual([]);
+        expect(echo.shouldSkip('hello there')).toBe(true);
+    });
+
+    it('falls back to tmux when the user is typing', async () => {
+        const pane = createUserPane(TYPED);
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const delivery = createInputDelivery({ openTerminal, openUserTerminal: pane.openUserTerminal, echo: createEchoFilter(), ...fast });
+
+        expect(await delivery.send('hello there')).toBe('sent');
+
+        expect(pane.log).toEqual(['open', 'close']);
+        expect(log).toEqual(['open#1', 'type#1:hello there', 'press#1:enter', 'close#1']);
+    });
+
+    it('falls back to tmux when the user pane shows the session survey', async () => {
+        const pane = createUserPane(SURVEY_PLAIN);
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const delivery = createInputDelivery({ openTerminal, openUserTerminal: pane.openUserTerminal, echo: createEchoFilter(), ...fast });
+
+        expect(await delivery.send('hi')).toBe('sent');
+
+        expect(typedOrPressed(pane.log)).toEqual([]);
+        expect(log).toContain('type#1:hi');
+    });
+
+    it('falls back to tmux for multi-line or backslash text', async () => {
+        for (const text of ['one\ntwo', 'C:\\temp\\x']) {
+            const pane = createUserPane(EMPTY);
+            const { log, openTerminal } = createHarness([EMPTY]);
+            const delivery = createInputDelivery({ openTerminal, openUserTerminal: pane.openUserTerminal, echo: createEchoFilter(), ...fast });
+
+            expect(await delivery.send(text)).toBe('sent');
+
+            expect(typedOrPressed(pane.log)).toEqual([]);
+            expect(log).toHaveLength(4);
+        }
+    });
+
+    it('falls back to tmux when the user terminal fails before typing', async () => {
+        const pane = createUserPane(EMPTY, { screen: true });
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, openUserTerminal: pane.openUserTerminal, echo, ...fast });
+
+        expect(await delivery.send('hello')).toBe('sent');
+
+        expect(pane.log).toEqual(['open', 'close']);
+        expect(log).toEqual(['open#1', 'type#1:hello', 'press#1:enter', 'close#1']);
+        expect(echo.shouldSkip('hello')).toBe(true);
+    });
+
+    it('falls back to tmux when there is no user terminal or opening it fails', async () => {
+        const openers: Array<() => Promise<AttachTerminal | null>> = [
+            async () => null,
+            async () => {
+                throw new Error('no cmux');
+            },
+        ];
+        for (const openUserTerminal of openers) {
+            const { log, openTerminal } = createHarness([EMPTY]);
+            const delivery = createInputDelivery({ openTerminal, openUserTerminal, echo: createEchoFilter(), ...fast });
+            expect(await delivery.send('hello')).toBe('sent');
+            expect(log).toEqual(['open#1', 'type#1:hello', 'press#1:enter', 'close#1']);
+        }
+    });
+
+    it('does not resend through tmux after typing started', async () => {
+        const pane = createUserPane(EMPTY, { enter: true });
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, openUserTerminal: pane.openUserTerminal, echo, ...fast });
+
+        expect(await delivery.send('once only')).toBe('failed');
+
+        expect(pane.log).toEqual(['open', 'type:once only', 'close']);
+        expect(log).toEqual([]);
+        expect(echo.shouldSkip('once only')).toBe(false);
+    });
+
+    it('does not resend through tmux when typeText itself fails', async () => {
+        const pane = createUserPane(EMPTY, { type: true });
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, openUserTerminal: pane.openUserTerminal, echo, ...fast });
+
+        expect(await delivery.send('once only')).toBe('failed');
+
+        expect(log).toEqual([]);
+        expect(echo.shouldSkip('once only')).toBe(false);
+    });
+
+    it('interrupt presses escape on the user terminal and falls back to tmux when that fails', async () => {
+        const pane = createUserPane(EMPTY);
+        const first = createHarness([EMPTY]);
+        await createInputDelivery({ openTerminal: first.openTerminal, openUserTerminal: pane.openUserTerminal, echo: createEchoFilter(), ...fast }).interrupt();
+        expect(pane.log).toEqual(['open', 'press:escape', 'close']);
+        expect(first.log).toEqual([]);
+
+        const broken = createUserPane(EMPTY, { escape: true });
+        const second = createHarness([EMPTY]);
+        await createInputDelivery({ openTerminal: second.openTerminal, openUserTerminal: broken.openUserTerminal, echo: createEchoFilter(), ...fast }).interrupt();
+        expect(broken.log).toEqual(['open', 'close']);
+        expect(second.log).toEqual(['open#1', 'press#1:escape', 'close#1']);
+    });
+
+    it('opens tmux only after the user terminal was released', async () => {
+        const events: string[] = [];
+        const open = async (name: string): Promise<AttachTerminal> => {
+            events.push(`open:${name}`);
+            return {
+                screen: async () => (name === 'user' ? TYPED : EMPTY),
+                typeText: async () => undefined,
+                pasteText: async () => undefined,
+                press: async () => undefined,
+                close: async () => {
+                    events.push(`close:${name}`);
+                },
+            };
+        };
+        const delivery = createInputDelivery({
+            openTerminal: () => open('tmux'),
+            openUserTerminal: () => open('user'),
+            echo: createEchoFilter(),
+            ...fast,
+        });
+        await delivery.send('hi');
+        expect(events).toEqual(['open:user', 'close:user', 'open:tmux', 'close:tmux']);
+    });
+});

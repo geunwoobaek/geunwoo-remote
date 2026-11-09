@@ -6,6 +6,13 @@
  * queues input typed while the agent is working, so readiness is the input box, not the agent
  * status. Sends and interrupts share one queue so they never interleave on a terminal.
  *
+ * When the Mac user has the session open in their own cmux pane (`openUserTerminal`), a plain
+ * one-line text goes into that pane instead, provided its input box is empty right now; it is
+ * typed and sent without waiting. A multi-line or backslash text, a busy input box, or a cmux
+ * failure before anything was typed falls back to the hidden terminal. A failure after typing
+ * started is final: retrying through tmux could type the text twice. Interrupts press Escape in
+ * the user's pane first.
+ *
  * Rules the delivery keeps:
  * - Text is typed only into an empty input box. A dim suggestion counts as empty (the screen is
  *   a `capture-pane -e` capture); a dialog or typed text means "not yet".
@@ -18,6 +25,7 @@
  */
 
 import { sanitizeTypedText, type AttachTerminal } from './attachTerminal';
+import { cmuxTypable } from './cmuxTerminal';
 import { isInputBoxEmpty } from './dialogs';
 
 export type DeliveryResult = 'sent' | 'busy-input' | 'failed';
@@ -38,6 +46,14 @@ export type InputDelivery = {
 
 export type InputDeliveryDeps = {
     openTerminal: () => Promise<AttachTerminal>;
+    /**
+     * Opens the Mac user's own pane running `claude attach` (cmux), or resolves null when there is
+     * none. Tried first for sends and interrupts; the terminal must be closed before `openTerminal`
+     * is called (they may share one lock). Without it everything goes through `openTerminal`.
+     */
+    openUserTerminal?: () => Promise<AttachTerminal | null>;
+    /** Told which way a send, interrupt took, for the debug log. */
+    onRoute?: (use: 'input' | 'interrupt', route: 'cmux' | 'tmux') => void;
     echo: EchoFilter;
     /** How long to wait for a usable input box before giving up with `busy-input`. Default 10000. */
     waitInputMs?: number;
@@ -147,7 +163,59 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
         }
     }
 
+    /** The user's pane, or null when there is none or it cannot be opened. */
+    async function openUser(): Promise<AttachTerminal | null> {
+        try {
+            return (await deps.openUserTerminal?.()) ?? null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Types `text` into the user's own pane when it is a plain line and the pane's input box is
+     * empty. Null means "not sent, use tmux": nothing was typed. Once typing started the result is
+     * final (a failure is `'failed'`), because tmux would type the same text a second time.
+     */
+    async function deliverToUser(text: string): Promise<DeliveryResult | null> {
+        if (!cmuxTypable(text)) {
+            return null;
+        }
+        const terminal = await openUser();
+        if (terminal === null) {
+            return null;
+        }
+        try {
+            let screen: string;
+            try {
+                screen = await terminal.screen();
+            } catch {
+                return null;
+            }
+            if (!isInputBoxEmpty(screen) || hasSessionSurvey(screen)) {
+                return null;
+            }
+            deps.echo.remember(text);
+            try {
+                await terminal.typeText(text);
+                await terminal.press(['enter']);
+            } catch {
+                deps.echo.forget(text);
+                return 'failed';
+            }
+            return 'sent';
+        } finally {
+            await closeQuietly(terminal);
+        }
+    }
+
     async function deliver(text: string): Promise<DeliveryResult> {
+        const viaUser = await deliverToUser(text);
+        if (viaUser !== null) {
+            deps.onRoute?.('input', 'cmux');
+            return viaUser;
+        }
+        deps.onRoute?.('input', 'tmux');
         const terminal = await deps.openTerminal();
         try {
             if (!(await waitForEmptyInput(terminal))) {
@@ -184,6 +252,19 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
         },
         interrupt() {
             return enqueue(async () => {
+                const user = await openUser();
+                if (user !== null) {
+                    try {
+                        await user.press(['escape']);
+                        deps.onRoute?.('interrupt', 'cmux');
+                        return;
+                    } catch {
+                        // The user's pane failed: stop through the private terminal instead.
+                    } finally {
+                        await closeQuietly(user);
+                    }
+                }
+                deps.onRoute?.('interrupt', 'tmux');
                 const terminal = await deps.openTerminal();
                 try {
                     await terminal.press(['escape']);

@@ -5,7 +5,8 @@
  * - The transcript is uploaded to the Happy session (`sessionScanner` + the same upload function the
  *   local mode uses). Lines the phone itself typed are skipped (echo filter), and after a restart
  *   only what comes after the last uploaded uuid goes up (`<happyHomeDir>/claude-agent-mirrors/<id>.json`).
- * - Phone messages are typed into the session through a hidden `claude attach` terminal
+ * - Phone messages are typed into the session through the Mac user's own cmux pane running
+ *   `claude attach <id>` when there is one, else through a hidden `claude attach` terminal
  *   (`inputDelivery`); the phone's stop button presses Esc there; dialogs (permission, question,
  *   plan) are bridged both ways by `permissionBridge`.
  * - `claude agents --json` is polled to follow `/clear` (same agent id, new sessionId) and to end
@@ -40,6 +41,7 @@ import { projectPath } from '../projectPath';
 import packageJson from '../../package.json';
 import { fetchClaudeAgents, resolveClaudeBinary } from './agentsList';
 import { isTmuxInstalled, openAttachTerminal, type AttachTerminal } from './attachTerminal';
+import { findAgentSurface, openCmuxTerminal } from './cmuxTerminal';
 import { createEchoFilter, createInputDelivery, type DeliveryResult } from './inputDelivery';
 import { createPermissionBridge } from './permissionBridge';
 import { findToolUseOutcome, readSessionStatus, readTranscriptEntries } from './transcript';
@@ -128,35 +130,45 @@ export function decideAgentChange(
 /**
  * Wraps `open` so only one terminal exists at a time: a call waits until the terminal handed out
  * before it was closed. The lock is released exactly once per terminal, also when the underlying
- * `close` throws, and when opening fails.
+ * `close` throws, and when opening fails. `openUser` (the Mac user's own cmux pane, or null when
+ * there is none) takes the same lock through `.user()`, so a pane and a tmux terminal are never
+ * open together; with no pane found the lock is released at once.
  */
 export type SerializedOpen = (() => Promise<AttachTerminal>) & {
+    /** The user's pane under the same lock; null (lock released) when there is none or no `openUser` was given. */
+    user(): Promise<AttachTerminal | null>;
     /** True once every terminal opened or queued so far is closed; false if that takes longer than `timeoutMs`. */
     drain(timeoutMs: number): Promise<boolean>;
 };
 
-export function serializeTerminalOpens(open: () => Promise<AttachTerminal>): SerializedOpen {
+export function serializeTerminalOpens(open: () => Promise<AttachTerminal>, openUser?: () => Promise<AttachTerminal | null>): SerializedOpen {
     let tail: Promise<void> = Promise.resolve();
-    const serialized = async (): Promise<AttachTerminal> => {
+    /** Waits for the lock, runs `opener`, and hands out its terminal with a `close` that releases the lock. */
+    async function locked<T extends AttachTerminal | null>(opener: () => Promise<T>): Promise<T> {
         const previous = tail;
         let release: () => void = () => undefined;
         tail = new Promise<void>((resolveTail) => {
             release = resolveTail;
         });
         await previous;
-        let terminal: AttachTerminal;
+        let terminal: T;
         try {
-            terminal = await open();
+            terminal = await opener();
         } catch (error) {
             release();
             throw error;
         }
+        if (terminal === null) {
+            release();
+            return terminal;
+        }
+        const opened: AttachTerminal = terminal;
         let released = false;
         return {
-            ...terminal,
+            ...opened,
             close: async () => {
                 try {
-                    await terminal.close();
+                    await opened.close();
                 } finally {
                     if (!released) {
                         released = true;
@@ -164,8 +176,10 @@ export function serializeTerminalOpens(open: () => Promise<AttachTerminal>): Ser
                     }
                 }
             },
-        };
-    };
+        } as T;
+    }
+    const serialized = (): Promise<AttachTerminal> => locked(open);
+    const user = async (): Promise<AttachTerminal | null> => (openUser === undefined ? null : locked(openUser));
     const drain = async (timeoutMs: number): Promise<boolean> => {
         const deadline = Date.now() + timeoutMs;
         for (;;) {
@@ -187,7 +201,7 @@ export function serializeTerminalOpens(open: () => Promise<AttachTerminal>): Ser
             }
         }
     };
-    return Object.assign(serialized, { drain });
+    return Object.assign(serialized, { user, drain });
 }
 
 /** True when a reused session's metadata could not be decrypted: the key is not ours, so nothing may be written or reported. */
@@ -452,15 +466,28 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     let stopping = false;
     // One terminal at a time across delivery and bridge; once stopping, no new one is opened
     // (a queued send then fails and the phone is told).
-    const lockedOpen = serializeTerminalOpens(() => openAttachTerminal([claudePath, 'attach', agentId]));
+    // The user's own cmux pane running `claude attach <agentId>` shares that lock; it is looked up
+    // anew each time (panes come and go) and only ever read from and typed into, never closed.
+    let userSurface: string | null = null;
+    const lockedOpen = serializeTerminalOpens(
+        () => openAttachTerminal([claudePath, 'attach', agentId]),
+        async () => {
+            userSurface = await findAgentSurface(agentId);
+            return userSurface === null ? null : openCmuxTerminal(userSurface);
+        },
+    );
     const openTerminal = async (): Promise<AttachTerminal> => {
         if (stopping) {
             throw new Error('The mirror is stopping');
         }
         return lockedOpen();
     };
+    const openUserTerminal = async (): Promise<AttachTerminal | null> => (stopping ? null : lockedOpen.user());
+    const onRoute = (use: 'input' | 'interrupt' | 'answer', route: 'cmux' | 'tmux'): void => {
+        logger.debug(`[claude-agent] ${use} via ${route === 'cmux' ? `cmux ${userSurface ?? ''}`.trim() : 'tmux'}`);
+    };
     const echo = createEchoFilter();
-    const delivery = createInputDelivery({ openTerminal, echo });
+    const delivery = createInputDelivery({ openTerminal, openUserTerminal, onRoute, echo });
 
     const transcripts = createTranscriptReader(agent.cwd);
     let lastStatus: ClaudeAgentStatus | null = null;
@@ -468,6 +495,8 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         readStatus: () => readSessionStatus(agent.pid),
         readEntries: () => transcripts.read(currentSessionId),
         openTerminal,
+        openUserTerminal,
+        onRoute,
         updateAgentState: (update: (state: AgentState) => AgentState) => session.updateAgentState(update),
         notifyPermission: (tool) => {
             api.push().sendSessionNotification({
