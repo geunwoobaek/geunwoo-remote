@@ -108,6 +108,18 @@ function withWritePreview(lines: string[]): string {
     return replaced;
 }
 
+/**
+ * Hand-derived probe: plan mode draws `Planning: <path>` between two rules above the dialog's own
+ * top rule. Turns a captured screen into the plan-mode one by inserting that block right above the
+ * dialog's top rule (the first full-width rule at the line start that is followed by a header).
+ */
+function inPlanMode(text: string, topRuleAt: number): string {
+    const lines = text.split('\n');
+    const planning = ['Planning: /Users/tester/.claude/plans/demo-plan.md', FULL_RULE];
+    lines.splice(topRuleAt + 1, 0, ...planning);
+    return lines.join('\n');
+}
+
 const bashCommand = "printf 'jarvis capture check with some padding text to make it long\\n' > /Users/tester/project/bash-out.txt && ls -la /Users/tester/project";
 
 describe('classifyScreen', () => {
@@ -127,6 +139,7 @@ describe('classifyScreen', () => {
         ['question-other', 'question'],
         ['question-lone-multi', 'question'],
         ['question-lone-multi-after-tab', 'question'],
+        ['question-lone-multi-plan-mode', 'question'],
         ['question-last-multi', 'question'],
         ['question-last-multi-after-tab', 'question'],
         ['plan', 'plan'],
@@ -324,6 +337,21 @@ describe('screenMatchesPending', () => {
         expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', pizzaQuestions), CWD)).toBe(false);
     });
 
+    it('matches a question dialog drawn under the plan-mode Planning block', () => {
+        const fruitsQuestion = {
+            questions: [{
+                question: 'Which fruits?',
+                header: 'Fruits',
+                multiSelect: true,
+                options: [{ label: 'Apple', description: 'Apple' }, { label: 'Banana', description: 'Banana' }, { label: 'Cherry', description: 'Cherry' }],
+            }],
+        };
+        expect(screenMatchesPending(screen('question-lone-multi-plan-mode'), pending('AskUserQuestion', fruitsQuestion), CWD)).toBe(true);
+        expect(screenMatchesPending(screen('question-lone-multi-plan-mode'), pending('AskUserQuestion', daysQuestion), CWD)).toBe(false);
+        const bash = inPlanMode(screen('permission-bash-short'), 25);
+        expect(screenMatchesPending(bash, pending('Bash', { command: 'ls -la /Users/tester/project' }), CWD)).toBe(true);
+    });
+
     it('matches the whole first question, not a prefix of it', () => {
         const longer = { questions: [{ ...colorQuestion.questions[0], question: 'Which color should the demo button use? Pick wisely' }] };
         expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', longer), CWD)).toBe(false);
@@ -403,6 +431,11 @@ describe('keysForQuestion', () => {
     it('submits a lone multi-select question through the review screen (measured: 1, 3, Tab, 1)', () => {
         expect(keysForQuestion(daysQuestion, { 'Which days should the demo meeting use?': 'Monday, Friday' })).toEqual([{ digit: 1 }, { digit: 3 }, 'tab', { digit: 1 }]);
         expect(keysForQuestion(extrasQuestion, { 'Which extras should the demo logo get?': 'Outline' })).toEqual([{ digit: 2 }, 'tab', { digit: 1 }]);
+    });
+
+    it('answers the plan-mode lone multi-select question (Which fruits?) through the review screen', () => {
+        const input = { questions: [{ question: 'Which fruits?', multiSelect: true, options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }] }] };
+        expect(keysForQuestion(input, { 'Which fruits?': 'Apple, Cherry' })).toEqual([{ digit: 1 }, { digit: 3 }, 'tab', { digit: 1 }]);
     });
 
     it('ends on a multi-select question last of several with toggles, Tab, 1 (measured: 3, 1, 2, Tab, 1)', () => {
@@ -560,6 +593,15 @@ describe('dialogFingerprint', () => {
         expect(dialogFingerprint(screen('permission-write').replaceAll('report-draft.md', 'report-final.md'))).not.toBe(write);
     });
 
+    it('does not depend on the plan-mode Planning block', () => {
+        const plain = screen('permission-bash-short');
+        expect(dialogFingerprint(inPlanMode(plain, 25))).toBe(dialogFingerprint(plain));
+        expect(dialogFingerprint(screen('question-lone-multi-plan-mode'))).toMatch(/^[0-9a-f]{40}$/);
+        const unplanned = screen('question-lone-multi-plan-mode').replace(/\n─+\nPlanning: [^\n]*\n(─+\n)/, '\n$1');
+        expect(unplanned).not.toBe(screen('question-lone-multi-plan-mode'));
+        expect(dialogFingerprint(screen('question-lone-multi-plan-mode'))).toBe(dialogFingerprint(unplanned));
+    });
+
     it('does not change when the focus moves inside the same dialog', () => {
         // Hand-derived: the Mac user moved the cursor from option 1 to another option.
         const write = screen('permission-write');
@@ -606,6 +648,10 @@ describe('readDialogFromScreen', () => {
             tool: 'AskUserQuestion',
             input: { questions: [{ question: 'Which days should the demo meeting use?', options: [{ label: 'Monday' }, { label: 'Wednesday' }, { label: 'Friday' }], multiSelect: true }] },
         }],
+        ['question-lone-multi-plan-mode', {
+            tool: 'AskUserQuestion',
+            input: { questions: [{ question: 'Which fruits?', options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }], multiSelect: true }] },
+        }],
         ['plan', { tool: 'ExitPlanMode', input: { plan: '' } }],
     ])('reads %s', (name, expected) => {
         expect(readDialogFromScreen(screen(name))).toEqual(expected);
@@ -626,6 +672,15 @@ describe('readDialogFromScreen', () => {
         'input-typed',
     ])('cannot read %s', (name) => {
         expect(readDialogFromScreen(screen(name))).toBeNull();
+    });
+
+    it('reads a permission dialog under the plan-mode Planning block like the plain one', () => {
+        const plain = screen('permission-bash-short');
+        const planMode = inPlanMode(plain, 25);
+        expect(planMode).not.toBe(plain);
+        expect(classifyScreen(planMode)).toBe('permission');
+        expect(readDialogFromScreen(planMode)).toEqual(readDialogFromScreen(plain));
+        expect(readDialogFromScreen(planMode)).toEqual({ tool: 'Bash', input: { command: 'ls -la /Users/tester/project' } });
     });
 
     it('cannot read a truncated command, an unknown header or unknown wording', () => {

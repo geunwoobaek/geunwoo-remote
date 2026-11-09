@@ -5,9 +5,10 @@
  *
  * `tick` watches the session: while it is `waiting` it reads the attach screen and publishes the
  * dialog as `agentState.requests[key]`. The key is the transcript `tool_use` id when the
- * transcript holds an unanswered call that matches the screen, else `screen:<dialogFingerprint>`
- * (Claude Code 2.1.319 often writes AskUserQuestion and some Write/Edit calls only after they are
- * answered). When the dialog goes away, the request is completed from the transcript's
+ * transcript holds an unanswered call that matches the screen, else
+ * `screen:<dialogFingerprint>:<unique>`, where the suffix is new for every occurrence so that an
+ * identical dialog asked again is a new card (Claude Code 2.1.319 often writes AskUserQuestion
+ * and some Write/Edit calls only after they are answered). When the dialog goes away, the request is completed from the transcript's
  * `tool_result`, so an answer given on the Mac shows on the phone as approved or denied.
  *
  * `answer` types the phone's answer only when it is provably the same dialog:
@@ -187,8 +188,12 @@ async function closeQuietly(terminal: AttachTerminal): Promise<void> {
 export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBridge {
     const sleep = deps.sleep ?? defaultSleep;
     const open = new Map<string, OpenRequest>();
-    /** Transcript length when each key was completed: a `screen:` key is published again only after it grew. */
+    /** Transcript length when each transcript key was completed: it is published again only after the call is gone from the pending list. */
     const completedAt = new Map<string, number>();
+    /** The last completed `screen:` request per dialog fingerprint: that dialog is published again only after the transcript grew. */
+    const completedScreens = new Map<string, { key: string; transcriptLength: number }>();
+    /** Distinguishes two `screen:` requests made in the same millisecond. */
+    let screenRequests = 0;
     /** The last screen read while waiting: skipped while the same request is open and the transcript is unchanged. */
     let lastSeen: { key: string; transcriptLength: number } | null = null;
     let queue: Promise<unknown> = Promise.resolve();
@@ -199,10 +204,17 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
         return run;
     }
 
+    function markCompleted(request: OpenRequest, transcriptLength: number): void {
+        completedAt.set(request.key, transcriptLength);
+        if (request.toolUseId === null) {
+            completedScreens.set(request.fingerprint, { key: request.key, transcriptLength });
+        }
+    }
+
     /** Moves `request` from `requests` to `completedRequests` with `completion`. */
     function complete(request: OpenRequest, completion: Completion, transcriptLength: number): void {
         open.delete(request.key);
-        completedAt.set(request.key, transcriptLength);
+        markCompleted(request, transcriptLength);
         deps.updateAgentState((state) => {
             const requests = { ...state.requests };
             delete requests[request.key];
@@ -281,7 +293,7 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
         if (request.refused) {
             // Already shown as "answer on the Mac"; keep that.
             open.delete(request.key);
-            completedAt.set(request.key, entries.length);
+            markCompleted(request, entries.length);
             return;
         }
         complete(request, { status: 'canceled' }, entries.length);
@@ -304,13 +316,16 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
             existing.misses = 0;
             return existing.key;
         }
-        const key = matched ? pending.id : `screen:${fingerprint}`;
-        const completedLength = completedAt.get(key);
-        if (completedLength !== undefined && (matched || entries.length <= completedLength)) {
+        const completedScreen = matched ? undefined : completedScreens.get(fingerprint);
+        if (completedScreen !== undefined && entries.length <= completedScreen.transcriptLength) {
             // Answered already and Claude Code has not moved on: the same dialog is still drawn.
+            return completedScreen.key;
+        }
+        const key = matched ? pending.id : `screen:${fingerprint}:${deps.now()}-${screenRequests++}`;
+        if (matched && completedAt.has(key)) {
+            // Answered already and the call is still pending: the same dialog is still drawn.
             return key;
         }
-        completedAt.delete(key);
         const read = matched ? null : readDialogFromScreen(screen);
         const request: OpenRequest = {
             key,

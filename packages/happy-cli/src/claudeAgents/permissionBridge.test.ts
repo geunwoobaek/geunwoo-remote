@@ -203,7 +203,8 @@ describe('createPermissionBridge tick', () => {
 
         await bridge.tick();
 
-        const key = `screen:${dialogFingerprint(screen('question-single'))}`;
+        const key = onlyRequestKey(h.state);
+        expect(key).toMatch(new RegExp(`^screen:${dialogFingerprint(screen('question-single'))}:.+`));
         expect(h.state.requests).toEqual({
             [key]: {
                 tool: 'AskUserQuestion',
@@ -367,9 +368,32 @@ describe('createPermissionBridge tick', () => {
         // The answer reached the transcript and Claude asks the very same question again.
         h.entries = [...h.entries, toolUse('toolu_q', 'AskUserQuestion', colorQuestion), toolResult('toolu_q', 'User has answered your questions')];
         await bridge.tick();
-        expect(Object.keys(h.state.requests ?? {})).toEqual([key]);
-        expect(h.state.completedRequests?.[key]).toBeUndefined();
+        const second = onlyRequestKey(h.state);
+        expect(second).not.toBe(key);
+        expect(h.state.completedRequests?.[key]).toMatchObject({ tool: 'AskUserQuestion' });
         expect(h.notified).toEqual(['AskUserQuestion', 'AskUserQuestion']);
+    });
+
+    it('a second identical dialog after the first completed publishes a new screen: key', async () => {
+        const { h, bridge } = setup({ screen: screen('question-single'), entries: [userText('ask me')] });
+        await bridge.tick();
+        const first = onlyRequestKey(h.state);
+        expect(await bridge.answer(response(first, true, { updatedInput: { answers: { 'Which color should the demo button use?': 'Green' } } }))).toBe('typed');
+        expect(h.state.completedRequests?.[first]).toBeDefined();
+
+        h.entries = [...h.entries, userText('go on')];
+        await bridge.tick();
+
+        const second = onlyRequestKey(h.state);
+        expect(second).toMatch(/^screen:/);
+        expect(second).not.toBe(first);
+        // The first card stays completed under its own key; the new one is open, not completed.
+        expect(Object.keys(h.state.completedRequests ?? {})).toEqual([first]);
+        expect(h.state.completedRequests?.[second]).toBeUndefined();
+
+        // The same dialog still drawn on later ticks does not open a third one.
+        await bridge.tick();
+        expect(Object.keys(h.state.requests ?? {})).toEqual([second]);
     });
 
     it('does not publish a second card when the Mac user moves the focus in a screen: dialog', async () => {

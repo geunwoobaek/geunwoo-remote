@@ -132,19 +132,39 @@ function findInputBox(lines: string[]): { first: number; last: number } | null {
     return null;
 }
 
+/** Plan mode's `Planning: <plan file>` line, drawn between two full-width rules above a dialog. */
+const PLANNING = /^Planning: \S/;
+
 function parseScreen(screen: string): ParsedScreen {
-    const lines = stripAnsi(screen).split('\n').map((line) => line.trimEnd());
-    while (lines.length > 0 && lines[lines.length - 1] === '') {
-        lines.pop();
+    const drawn = stripAnsi(screen).split('\n').map((line) => line.trimEnd());
+    while (drawn.length > 0 && drawn[drawn.length - 1] === '') {
+        drawn.pop();
     }
-    const input = findInputBox(lines);
-    const endsWithRule = lines.length > 0 && isRule(lines[lines.length - 1]);
+    const input = findInputBox(drawn);
+    const endsWithRule = drawn.length > 0 && isRule(drawn[drawn.length - 1]);
+    const lines = input === null && endsWithRule ? withoutPlanningBlock(drawn) : drawn;
     const top = input === null && endsWithRule ? dialogTop(lines) : -1;
     const region = top >= 0 ? lines.slice(top + 1, -1).map((line) => line.trim()) : [];
     while (region.length > 0 && region[region.length - 1] === '') {
         region.pop();
     }
     return { lines, input, region, top };
+}
+
+/**
+ * In plan mode Claude Code draws `rule / Planning: <path> / rule` between the conversation and the
+ * dialog's header. That block is not part of the dialog: it is dropped together with the lower of
+ * its two rules, which leaves the single top rule a dialog has otherwise. Only a block sitting
+ * right on the dialog's own top rule (both rules at column 0) is dropped; a look-alike higher up
+ * stays conversation.
+ */
+function withoutPlanningBlock(lines: string[]): string[] {
+    const top = dialogTop(lines);
+    const planning = top - 1;
+    if (top < 2 || !RULE.test(lines[top]) || !PLANNING.test(lines[planning]) || !RULE.test(lines[planning - 1])) {
+        return lines;
+    }
+    return [...lines.slice(0, planning), ...lines.slice(top + 1)];
 }
 
 /**

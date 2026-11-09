@@ -40,12 +40,15 @@ rows).
 | `question-lone-multi-after-tab` | the review screen after toggling 1 and 3 and pressing Tab |
 | `question-last-multi` | second of two questions (multi-select) after answering the first (single-select) with 3 |
 | `question-last-multi-after-tab` | the review screen after toggling 1 and 2 and pressing Tab |
+| `question-lone-multi-plan-mode` | lone multi-select question in a plan-mode session: a `Planning: <plan file>` line between two rules sits above the tab bar |
 | `permission-read` | Read permission (`Read file`, block `Read(<path>)`, `Do you want to proceed?`) |
 | `permission-edit` | Edit permission (`Edit file`, diff preview, `Do you want to make this edit to …?`) |
 | `plan` | ExitPlanMode approval dialog |
 | `plan-feedback-typed` | the same with rejection feedback typed into option 3 |
 | `after-plan-approve`, `plan-after-empty-reject` | what follows a plan approval / an empty rejection |
 | `outcomes.json` | keys pressed in each scenario and the `tool_result` that came back (scrubbed) |
+
+`question-lone-multi-plan-mode` was captured by hand from a plan-mode session (the plan path, the user name and the session name are scrubbed), not by the capture script.
 
 The capture session ran with `--safe-mode --permission-mode default --settings
 '{"permissions":{"ask":["Bash","Write","Edit"]}}'` (the later run also asked for Reads inside the
