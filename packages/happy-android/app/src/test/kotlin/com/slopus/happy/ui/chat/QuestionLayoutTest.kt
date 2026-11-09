@@ -42,6 +42,7 @@ import com.slopus.happy.ui.node
 import com.slopus.happy.ui.setHappyContent
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -102,6 +103,44 @@ class QuestionLayoutTest {
         assertEquals(PermissionDecision.Approved, answer.decision)
         assertEquals(Json.parseToJsonElement("""{"answers":{"Which colour?":"Red"}}"""), answer.updatedInput)
         rule.onNodeWithText("Colour:").assertExists()
+    }
+
+    private val fruitsInput = """{"questions":[{"question":"Which fruits?","header":"Fruits","options":[{"label":"Apple"},{"label":"Banana"},{"label":"Cherry"}],"multiSelect":true}]}"""
+
+    @Test
+    fun aQuestionWithoutAPermissionCannotBeAnswered() {
+        val answers = mutableListOf<PermissionAnswer>()
+        val tool = ToolCall(name = "AskUserQuestion", state = ToolState.Running, input = Json.parseToJsonElement(fruitsInput), createdAt = 0)
+        show(ChatMessage.ToolCallMessage("t", 0, tool), MessageCallbacks(onPermission = { a, _ -> answers += a }))
+        rule.onAllNodesWithTag(QuestionTags.OPTION, useUnmergedTree = true).assertCountEquals(3)
+        rule.onNodeWithText("Banana").performClick()
+        rule.waitForIdle()
+        // Nothing to send the answer through: no submit button, and nothing shown as sent.
+        rule.onAllNodesWithTag(QuestionTags.SUBMIT).assertCountEquals(0)
+        rule.onAllNodesWithTag(QuestionTags.SUBMITTED).assertCountEquals(0)
+        rule.onNode(hasText("Banana") and hasRole(Role.Checkbox)).assertIsNotSelected()
+        assertTrue(answers.isEmpty())
+    }
+
+    @Test
+    fun aCompletedQuestionShowsTheAnswersFromItsResult() {
+        val result = JsonPrimitive("""Your questions have been answered: "Which fruits?"="Apple". You can now continue with these answers in mind.""")
+        val tool = ToolCall(
+            name = "AskUserQuestion", state = ToolState.Completed, input = Json.parseToJsonElement(fruitsInput), createdAt = 0, result = result,
+            permission = ToolPermission("r1", PermissionStatus.Approved),
+        )
+        show(ChatMessage.ToolCallMessage("t", 0, tool), MessageCallbacks())
+        rule.onNodeWithText("Fruits:").assertExists()
+        rule.onNodeWithText("Apple").assertExists()
+        rule.onNodeWithText("—").assertDoesNotExist()
+    }
+
+    @Test
+    fun aCompletedQuestionWithoutAResultKeepsTheDash() {
+        val tool = ToolCall(name = "AskUserQuestion", state = ToolState.Completed, input = Json.parseToJsonElement(fruitsInput), createdAt = 0)
+        show(ChatMessage.ToolCallMessage("t", 0, tool), MessageCallbacks())
+        rule.onNodeWithText("Fruits:").assertExists()
+        rule.onNodeWithText("—").assertExists()
     }
 
     @Test

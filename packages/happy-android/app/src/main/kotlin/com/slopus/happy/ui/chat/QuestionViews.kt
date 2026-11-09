@@ -17,8 +17,12 @@ import com.slopus.happy.chat.ToolState
 import com.slopus.happy.chat.arr
 import com.slopus.happy.chat.obj
 import com.slopus.happy.chat.selectAgentFormCommunication
+import com.slopus.happy.chat.strings
 import com.slopus.happy.chat.str
 import com.slopus.happy.ui.theme.happyTextStyle
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
@@ -125,7 +129,8 @@ object QuestionSpec {
  * AskUserQuestionView.tsx: Claude's questions as the inline form, open
  * while the call runs; the answers go back through the permission as
  * `updatedInput.answers` (question → "a, b"), approved. A completed call
- * shows each header with "—".
+ * shows each header with the answers its result reports, or "—" when it
+ * reports none (denied, cancelled, or a result that names no answer).
  */
 @Composable
 fun AskUserQuestionView(message: ChatMessage.ToolCallMessage, callbacks: MessageCallbacks) {
@@ -145,10 +150,14 @@ fun AskUserQuestionView(message: ChatMessage.ToolCallMessage, callbacks: Message
     }
     if (questions.isEmpty()) return
     val permissionId = tool.permission?.id
+    val completedAnswers = remember(tool.state, tool.result, questions) {
+        if (tool.state == ToolState.Completed) questionAnswersFromResult(tool.result, questions) else null
+    }
     InlineQuestionForm(
         questions = questions,
-        canInteract = tool.state == ToolState.Running,
-        submittedAnswers = if (tool.state == ToolState.Completed) emptyMap() else null,
+        // Without a permission there is nothing to send the answers through: the form stays read-only.
+        canInteract = tool.state == ToolState.Running && permissionId != null,
+        submittedAnswers = completedAnswers,
         onSubmit = { answers ->
             if (permissionId == null) return@InlineQuestionForm
             val provider = buildJsonObject {
@@ -164,6 +173,48 @@ fun AskUserQuestionView(message: ChatMessage.ToolCallMessage, callbacks: Message
             )
         },
     )
+}
+
+/** One `"question"="answer"` pair of the result text; neither side holds a quote. */
+private val ANSWER_PAIR = Regex("\"([^\"]*)\"=\"([^\"]*)\"")
+
+/**
+ * The answers an AskUserQuestion result reports, by question id. Claude's
+ * result text reads `Your questions have been answered: "Which fruits?"="Apple".
+ * You can now continue ...` (pairs joined with `, `, a multi-select value
+ * `"a, b"`); a structured `answers` object (question to value), when the
+ * result carries one, is preferred. Each answer is matched to its question by
+ * the question text; a multi-select value splits on `, ` into the chosen
+ * labels, any other stays whole. A question the result does not mention is
+ * left out.
+ */
+internal fun questionAnswersFromResult(result: JsonElement?, questions: List<InlineQuestion>): InlineQuestionAnswers {
+    val reported = structuredAnswers(result) ?: textAnswers(result)
+    return buildMap {
+        for (q in questions) {
+            val value = reported[q.question]?.takeIf { it.isNotEmpty() } ?: continue
+            put(q.id, if (q.multiSelect) value.split(", ").map { it.trim() }.filter { it.isNotEmpty() } else listOf(value))
+        }
+    }
+}
+
+private fun structuredAnswers(result: JsonElement?): Map<String, String>? {
+    val root = result.obj ?: return null
+    val answers = (root["answers"] ?: root["toolUseResult"].obj?.get("answers")).obj ?: return null
+    return answers.mapNotNull { (question, value) ->
+        val text = value.str ?: value.strings?.joinToString(", ")
+        if (text == null) null else question to text
+    }.toMap().takeIf { it.isNotEmpty() }
+}
+
+private fun textAnswers(result: JsonElement?): Map<String, String> =
+    ANSWER_PAIR.findAll(resultText(result)).associate { it.groupValues[1] to it.groupValues[2] }
+
+private fun resultText(result: JsonElement?): String = when (result) {
+    is JsonPrimitive -> result.str.orEmpty()
+    is JsonObject -> (result["text"] ?: result["content"]).let(::resultText)
+    is JsonArray -> result.joinToString("\n", transform = ::resultText)
+    else -> ""
 }
 
 /**
