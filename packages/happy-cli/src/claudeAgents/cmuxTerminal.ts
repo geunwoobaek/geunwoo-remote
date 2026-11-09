@@ -4,7 +4,9 @@
  * When the user already runs `claude attach <agentId>` in a cmux pane, phone input and answers can
  * go straight into that pane instead of a private tmux. `findAgentSurface` finds the pane (the
  * newest `claude ... attach <agentId>` process whose parents lead to a `surface:N` in `cmux top`),
- * and `openCmuxTerminal` drives it through the `cmux` CLI. The pane belongs to the user, so
+ * and `openCmuxTerminal` drives it through the `cmux` CLI. cmux files every process started from a
+ * pane under that pane even after it detaches (the daemon's private tmux attaches included), so a
+ * pane only counts when the attach's real parents (`ps`) lead to the cmux app itself. The pane belongs to the user, so
  * `close()` never touches it, and everything that cannot be done safely through `cmux send`
  * (pasting, newlines, tabs, backslashes) is refused so the caller can use the tmux terminal.
  * Nothing here is cached: panes come and go, so every lookup asks `ps` and `cmux` again.
@@ -54,14 +56,14 @@ function elapsedSeconds(etime: string): number | null {
 }
 
 /**
- * Pids of the `claude ... attach <agentId>` processes in `ps -axo pid=,etime=,args=` output,
+ * Pids of the `claude ... attach <agentId>` processes in `ps -axo pid=,ppid=,etime=,args=` output,
  * youngest first. Only lines whose last two arguments are exactly `attach` and the id count: the
  * `--settings` JSON in between contains spaces, so no positional field can be trusted.
  */
 export function attachPidsNewestFirst(psOutput: string, agentId: string): number[] {
     const found: Array<{ pid: number; age: number }> = [];
     for (const line of psOutput.split('\n')) {
-        const match = /^\s*(\d+)\s+(\S+)\s+(.*)$/.exec(line);
+        const match = /^\s*(\d+)\s+\d+\s+(\S+)\s+(.*)$/.exec(line);
         if (match === null) {
             continue;
         }
@@ -104,19 +106,50 @@ export function surfaceForPid(topTsv: string, pid: number): string | null {
 }
 
 /**
+ * The surface of `pid` from `surfaceForPid`, but only when its real parents in `ps -axo
+ * pid=,ppid=,...` output reach a cmux app process (a `process` row whose parent is a `window:N`)
+ * within 64 steps. A daemonized process (a tmux server, the Happy daemon) breaks that chain at pid 1,
+ * so a private tmux attach is never taken for the user's pane. Null otherwise.
+ */
+export function userPaneSurface(psOutput: string, topTsv: string, pid: number): string | null {
+    const appPids = new Set<number>();
+    for (const line of topTsv.split('\n')) {
+        const columns = line.split('\t');
+        if (columns.length >= 6 && columns[3] === 'process' && columns[5].startsWith('window:')) {
+            appPids.add(Number(columns[4]));
+        }
+    }
+    const parentOf = new Map<number, number>();
+    for (const line of psOutput.split('\n')) {
+        const match = /^\s*(\d+)\s+(\d+)\s/.exec(line);
+        if (match !== null) {
+            parentOf.set(Number(match[1]), Number(match[2]));
+        }
+    }
+    let current = parentOf.get(pid);
+    for (let depth = 0; depth < MAX_PARENT_DEPTH && current !== undefined && current > 1; depth += 1) {
+        if (appPids.has(current)) {
+            return surfaceForPid(topTsv, pid);
+        }
+        current = parentOf.get(current);
+    }
+    return null;
+}
+
+/**
  * The cmux surface running `claude attach <agentId>`, newest process first, or null when there is
  * none or anything goes wrong (no cmux, no permission, odd output): the caller then uses tmux.
  */
 export async function findAgentSurface(agentId: string): Promise<string | null> {
     try {
-        const { stdout: ps } = await execFileAsync('ps', ['-axo', 'pid=,etime=,args='], { timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_BUFFER });
+        const { stdout: ps } = await execFileAsync('ps', ['-axo', 'pid=,ppid=,etime=,args='], { timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_BUFFER });
         const pids = attachPidsNewestFirst(ps, agentId);
         if (pids.length === 0) {
             return null;
         }
         const top = await runCmuxCommand(['top', '--all', '--processes', '--format', 'tsv']);
         for (const pid of pids) {
-            const surface = surfaceForPid(top, pid);
+            const surface = userPaneSurface(ps, top, pid);
             if (surface !== null) {
                 return surface;
             }
