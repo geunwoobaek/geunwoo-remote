@@ -203,6 +203,14 @@ describe.skipIf(!hasTmux)('attachTerminal (tmux)', () => {
         await waitFor(async () => (await terminal.screen()).includes('got:[]'));
     });
 
+    it('screen() keeps colour escapes', async () => {
+        const terminal = await open(
+            ['sh', '-c', "printf '\\033[2mdim\\033[0m plain'; sleep 5"],
+            { isReady: (screen) => screen.includes('plain') },
+        );
+        expect(await terminal.screen()).toContain('\x1b[2mdim');
+    });
+
     it('passes a command argument ending in a semicolon through unchanged', async () => {
         const terminal = await open(
             ['sh', '-c', 'echo "[$1]"; sleep 5', 'sh', 'x;'],

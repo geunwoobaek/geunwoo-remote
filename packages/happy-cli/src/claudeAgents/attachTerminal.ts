@@ -32,7 +32,7 @@ export type AttachKey =
     | { digit: number };
 
 export type AttachTerminal = {
-    /** Current visible screen (`capture-pane -p`). */
+    /** Current visible screen with colour escapes kept (`capture-pane -p -e`); strip them before reading text. */
     screen(): Promise<string>;
     /**
      * Types text key by key (`send-keys -l`). Sends exactly what it is given, so callers
@@ -150,7 +150,7 @@ export async function openAttachTerminal(command: string[], opts: OpenAttachTerm
     await tmux(socket, ['new-session', '-d', '-s', session, '-x', String(cols), '-y', String(rows), '--', ...command.map(escapeTrailingSemicolon)]);
 
     const terminal: AttachTerminal = {
-        screen: () => tmux(socket, ['capture-pane', '-p', '-t', session]),
+        screen: () => tmux(socket, ['capture-pane', '-p', '-e', '-t', session]),
         typeText: async (text) => {
             if (text.length > 0) {
                 await tmux(socket, ['send-keys', '-l', '-t', session, '--', escapeTrailingSemicolon(text)]);
