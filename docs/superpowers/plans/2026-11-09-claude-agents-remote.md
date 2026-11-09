@@ -128,7 +128,7 @@
 - Produces:
   - `type DialogKind = 'none' | 'permission' | 'question' | 'plan' | 'unknown'`
   - `classifyScreen(screen: string): DialogKind`
-  - `screenMatchesPending(screen: string, pending: PendingToolUse): boolean` — 조건 ④. 도구별로 화면에 있어야 할 글자: Write·Edit·Read는 `file_path`의 파일 이름, Bash는 `command` 앞 40자, AskUserQuestion은 첫 질문의 `question` 앞 40자, ExitPlanMode는 계획 창 제목. 나머지 도구는 도구 이름. 마지막 `tool_use`가 `Task`/`Agent`이면 항상 false.
+  - `screenMatchesPending(screen: string, pending: PendingToolUse, cwd: string): boolean` — 조건 ④. 창 자체의 줄(창 맨 위 가로줄부터 맨 아래 줄까지)만 본다. Write·Edit·Read는 창 제목·묻는 문구가 도구와 맞고 `file_path === resolve(cwd, 화면의 경로)`(cwd가 비면 false). Bash는 제목 `Bash command`이고 명령 칸 전체가 `command`와 같다(공백 무시, 잘려 보이면 false). AskUserQuestion은 탭 줄 바로 아래 질문 문장 전체가 첫 질문과 같고 손대지 않은 상태. ExitPlanMode는 손대지 않은 계획 창. 나머지 도구는 이름이 비지 않고 창 제목의 한 단어로 들어 있을 때. 마지막 `tool_use`가 `Task`/`Agent`이면 항상 false.
   - `keysForPermission(approved: boolean, screen: string): AttachKey[] | null` — 화면에서 `Yes`/`No` 선택지 번호를 읽는다(창마다 `No`가 2 또는 3). 못 읽으면 null.
   - `keysForQuestion(input: Record<string, unknown>, answers: Record<string, string>): AttachKey[] | null` — `answers`는 앱이 보내는 `updatedInput.answers`(질문 문장 → `"a, b"`). 매핑할 수 없으면 null.
   - `keysForPlan(approved: boolean, mode: string | undefined, reason: string | undefined): { keys: AttachKey[]; thenType?: string; thenPress?: AttachKey[] }` — 승인은 항상 수동 승인(2번).
