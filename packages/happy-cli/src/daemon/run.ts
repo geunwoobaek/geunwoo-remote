@@ -774,14 +774,20 @@ export async function startDaemon(): Promise<void> {
 
     const resumeSessionAttempt = async (happySessionId: string, options?: ResumeSessionOptions): Promise<SpawnSessionResult> => {
       try {
+        // A mirror of a Mac background session has no Claude conversation of its own to resume.
+        // It is reopened through `open-claude-agent`, which also keeps it to one process per agent.
+        // Asked before the conflict check, so a running mirror gets this answer, not "success"/"busy".
+        const knownMetadata = [
+          findTrackedSessionById(happySessionId)?.happySessionMetadataFromLocalWebhook,
+          readPersistedSessions()[happySessionId]?.metadata,
+          options?.fallback?.metadata as Metadata | undefined,
+        ];
+        if (knownMetadata.some(isClaudeAgentMirror)) {
+          return { type: 'error', errorMessage: MIRROR_RESUME_REFUSAL };
+        }
         const conflict = resumeConflict(happySessionId);
         if (conflict) return conflict;
         const tracked = findTrackedSessionById(happySessionId);
-        // A mirror of a Mac background session has no Claude conversation of its own to resume.
-        // It is reopened through `open-claude-agent`, which also keeps it to one process per agent.
-        if (isClaudeAgentMirror(tracked?.happySessionMetadataFromLocalWebhook ?? options?.fallback?.metadata as Metadata | undefined)) {
-          return { type: 'error', errorMessage: MIRROR_RESUME_REFUSAL };
-        }
         // The daemon only remembers sessions it saw during this lifetime, so a
         // session started before it (or before its last restart) is unknown
         // here. That is not a reason to refuse: the client can supply the
@@ -894,7 +900,9 @@ export async function startDaemon(): Promise<void> {
     // agentId -> Happy session id of the mirror processes running now.
     const liveMirrors = (): Map<string, string> => {
       const live = new Map<string, string>();
+      const trackedSessionIds = new Set<string>();
       for (const [pid, session] of pidToTrackedSession) {
+        if (session.happySessionId) trackedSessionIds.add(session.happySessionId);
         const agentId = session.happySessionMetadataFromLocalWebhook?.claudeAgentId;
         if (!agentId || !session.happySessionId) continue;
         if (!isPidAlive(pid)) {
@@ -903,6 +911,21 @@ export async function startDaemon(): Promise<void> {
         }
         if (stoppingPids.has(pid)) continue;
         live.set(agentId, session.happySessionId);
+      }
+
+      // Mirrors report to the daemon once, at start. After a daemon restart (every CLI version
+      // change) a mirror that is still running is known only from its persisted record. That
+      // record names a live process, so the session is open and connected: report it, but track
+      // nothing and spawn nothing, which cannot create a second mirror.
+      const newestPersisted = new Map<string, number>();
+      for (const [happySessionId, record] of Object.entries(readPersistedSessions())) {
+        const agentId = record.metadata?.claudeAgentId;
+        if (!agentId || (live.has(agentId) && !newestPersisted.has(agentId))) continue;
+        if (trackedSessionIds.has(happySessionId) || !hasPersistedProcessConflict(record, bootTimeMs)) continue;
+        const at = record.lastAliveAt ?? record.savedAt;
+        if ((newestPersisted.get(agentId) ?? -1) >= at) continue;
+        newestPersisted.set(agentId, at);
+        live.set(agentId, happySessionId);
       }
       return live;
     };

@@ -139,6 +139,51 @@ describe('daemon Claude background agents', () => {
     expect(mocks.spawn).toHaveBeenCalledTimes(1);
   });
 
+  const REFUSAL = 'This session mirrors a Mac background session. Open it from the background session list.';
+  // A mirror process of an earlier daemon that is still running (pid 888 answers kill(0)).
+  const runningStoredMirror = { ...storedMirror, metadata: { ...mirrorMetadata, hostPid: 888 }, savedAt: Date.now() - 1000, lastAliveAt: Date.now() - 1000 };
+
+  it('refuses to resume a live tracked mirror with the mirror refusal, not success', async () => {
+    await boot();
+    mocks.spawn.mockImplementation(() => {
+      queueMicrotask(() => mocks.webhook('happy-new', { ...mirrorMetadata, hostPid: 12345 }, {
+        encryptionKey: new Uint8Array(32), encryptionVariant: 'dataKey', seq: 0, metadataVersion: 0, agentStateVersion: 0,
+      }));
+      return { pid: 12345, on: vi.fn() };
+    });
+    await mocks.handlers.claudeAgents.open('abc12345');
+    expect(await mocks.handlers.resumeSession('happy-new')).toEqual({ type: 'error', errorMessage: REFUSAL });
+  });
+
+  it('refuses to resume a mirror whose persisted process from a previous daemon is alive', async () => {
+    mocks.persisted = { 'happy-old': runningStoredMirror };
+    await boot();
+    expect(await mocks.handlers.resumeSession('happy-old')).toEqual({ type: 'error', errorMessage: REFUSAL });
+    expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+
+  it('after a daemon restart lists and opens a still-running mirror without spawning', async () => {
+    mocks.persisted = { 'happy-old': runningStoredMirror };
+    await boot();
+    const listing = await mocks.handlers.claudeAgents.list();
+    expect(listing.agents[0]).toMatchObject({ id: 'abc12345', mirrorSessionId: 'happy-old' });
+    expect(await mocks.handlers.claudeAgents.open('abc12345')).toEqual({ type: 'success', sessionId: 'happy-old' });
+    expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+
+  it('after a daemon restart with a dead mirror process shows no mirror and reconnects normally', async () => {
+    mocks.persisted = { 'happy-old': storedMirror };
+    await boot();
+    const listing = await mocks.handlers.claudeAgents.list();
+    expect('mirrorSessionId' in listing.agents[0]).toBe(false);
+    mocks.spawn.mockImplementation(() => {
+      queueMicrotask(() => mocks.webhook('happy-old', { ...mirrorMetadata, hostPid: 12345 }));
+      return { pid: 12345, on: vi.fn() };
+    });
+    expect(await mocks.handlers.claudeAgents.open('abc12345')).toEqual({ type: 'success', sessionId: 'happy-old' });
+    expect(mocks.spawn).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses to resume a mirror session', async () => {
     mocks.persisted = { 'happy-old': storedMirror };
     await boot();
