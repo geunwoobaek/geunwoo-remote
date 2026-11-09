@@ -1,0 +1,40 @@
+
+❯ Reply with just the word READY and nothing else. Do not use any tools.
+
+⏺ READY
+
+✻ Cogitated for 2s · done 오전 11:49
+
+❯ Use the AskUserQuestion tool once with exactly one question: 'Which days should the demo meeting use?' header 'Days',
+  multiSelect true, options Monday, Wednesday, Friday, each with a short description. After I answer, repeat my answer
+  in one line and use no other tools.
+
+⏺ User answered Claude's questions:
+  ⎿  · Which days should the demo meeting use? → Monday, Friday
+
+⏺ Your answer: Monday and Friday.
+
+✻ Cogitated for 3s · done 오전 11:49
+
+❯ Use the AskUserQuestion tool once with exactly two questions. Question 1: 'Which shape should the demo badge be?'
+  header 'Shape', multiSelect false, options Circle, Square, Star. Question 2: 'Which effects should the demo badge
+  get?' header 'Effects', multiSelect true, options Shadow, Outline, Glow. Give each option a short description. After
+  I answer, repeat my answers in one line and use no other tools.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☒ Shape  ☒ Effects  ✔ Submit  →
+
+Review your answers
+
+ ● Which shape should the demo badge be?
+   → Star
+ ● Which effects should the demo badge get?
+   → Shadow, Outline
+
+Ready to submit your answers?
+
+❯ 1. Submit answers
+  2. Cancel
+
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────── demo-agent ─

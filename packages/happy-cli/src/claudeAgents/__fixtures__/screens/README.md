@@ -5,7 +5,9 @@ used by `dialogs.test.ts`. Nothing here is hand-written: every file is a capture
 user name and the session name replaced by fake values (`/Users/tester/project`, `~/project`,
 `demo-agent`). Replacing paths shortens some lines, so wrapping may look uneven.
 
-Produced by `scripts/capture-claude-dialogs.mjs --run`, except the two `input-suggestion-*` files,
+Produced by `scripts/capture-claude-dialogs.mjs --run` (the `question-lone-multi*`,
+`question-last-multi*`, `permission-read` and `permission-edit` files by a later
+`--run --only multi-select,edit-read`), except the two `input-suggestion-*` files,
 which come from the manual exploration run that preceded the script (same Claude Code version and
 setup, scrubbed the same way). That run is where a session survey and a dim prompt suggestion
 showed up on their own; the script cannot provoke them.
@@ -34,13 +36,20 @@ rows).
 | `question-multi-second` | second question (single-select) after Tab |
 | `question-review` | the review screen (`Ready to submit your answers?`) |
 | `question-other` | multi-select with free text typed into `Type something` |
+| `question-lone-multi` | lone multi-select question, untouched |
+| `question-lone-multi-after-tab` | the review screen after toggling 1 and 3 and pressing Tab |
+| `question-last-multi` | second of two questions (multi-select) after answering the first (single-select) with 3 |
+| `question-last-multi-after-tab` | the review screen after toggling 1 and 2 and pressing Tab |
+| `permission-read` | Read permission (`Read file`, block `Read(<path>)`, `Do you want to proceed?`) |
+| `permission-edit` | Edit permission (`Edit file`, diff preview, `Do you want to make this edit to …?`) |
 | `plan` | ExitPlanMode approval dialog |
 | `plan-feedback-typed` | the same with rejection feedback typed into option 3 |
 | `after-plan-approve`, `plan-after-empty-reject` | what follows a plan approval / an empty rejection |
 | `outcomes.json` | keys pressed in each scenario and the `tool_result` that came back (scrubbed) |
 
 The capture session ran with `--safe-mode --permission-mode default --settings
-'{"permissions":{"ask":["Bash","Write","Edit"]}}'` so that prompts appear even though the user's
+'{"permissions":{"ask":["Bash","Write","Edit"]}}'` (the later run also asked for Reads inside the
+scratch folder only, `Read(//<scratch>/**)`) so that prompts appear even though the user's
 settings pre-allow Bash. That ask rule is why the Bash screens say `Permission rule Bash requires
 confirmation for this command.` and offer only `1. Yes / 2. No`; a Bash prompt without such a rule
 normally has a third option. The classifier does not depend on that line, and the deny key is read

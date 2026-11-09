@@ -54,6 +54,51 @@ const extrasQuestion = {
     ],
 };
 
+const daysQuestion = {
+    questions: [
+        {
+            question: 'Which days should the demo meeting use?',
+            header: 'Days',
+            multiSelect: true,
+            options: [{ label: 'Monday' }, { label: 'Wednesday' }, { label: 'Friday' }],
+        },
+    ],
+};
+
+const badgeQuestions = {
+    questions: [
+        {
+            question: 'Which shape should the demo badge be?',
+            header: 'Shape',
+            multiSelect: false,
+            options: [{ label: 'Circle' }, { label: 'Square' }, { label: 'Star' }],
+        },
+        {
+            question: 'Which effects should the demo badge get?',
+            header: 'Effects',
+            multiSelect: true,
+            options: [{ label: 'Shadow' }, { label: 'Outline' }, { label: 'Glow' }],
+        },
+    ],
+};
+
+const SEPARATOR = '╌'.repeat(120);
+const FULL_RULE = '─'.repeat(120);
+
+/** Hand-derived probe: a captured Bash dialog with its command block replaced by `lines`. */
+function withCommandBlock(text: string, lines: string[]): string {
+    const replaced = text.replace(/(\n Bash command\n.*\n╌+\n)[\s\S]*?(\n╌+\n)/, `$1${lines.join('\n')}$2`);
+    expect(replaced).not.toBe(text);
+    return replaced;
+}
+
+/** Hand-derived probe: the captured Write dialog with its file preview replaced by `lines`. */
+function withWritePreview(lines: string[]): string {
+    const replaced = screen('permission-write').replace('\n  1 draft\n', `\n${lines.join('\n')}\n`);
+    expect(replaced).not.toBe(screen('permission-write'));
+    return replaced;
+}
+
 const bashCommand = "printf 'jarvis capture check with some padding text to make it long\\n' > /Users/tester/project/bash-out.txt && ls -la /Users/tester/project";
 
 describe('classifyScreen', () => {
@@ -63,12 +108,18 @@ describe('classifyScreen', () => {
         ['permission-bash-short', 'permission'],
         ['permission-subagent', 'permission'],
         ['permission-bash-live', 'permission'],
+        ['permission-read', 'permission'],
+        ['permission-edit', 'permission'],
         ['question-single', 'question'],
         ['question-multi', 'question'],
         ['question-multi-toggled', 'question'],
         ['question-multi-second', 'question'],
         ['question-review', 'question'],
         ['question-other', 'question'],
+        ['question-lone-multi', 'question'],
+        ['question-lone-multi-after-tab', 'question'],
+        ['question-last-multi', 'question'],
+        ['question-last-multi-after-tab', 'question'],
         ['plan', 'plan'],
         ['plan-feedback-typed', 'plan'],
         ['after-plan-approve', 'permission'],
@@ -111,10 +162,64 @@ describe('screenMatchesPending', () => {
         expect(screenMatchesPending(mentioned, pending('Write', { file_path: '/Users/tester/project/greeting.txt' }))).toBe(false);
     });
 
-    it('matches a wrapped Bash command by its first 40 characters', () => {
+    it('requires the Write dialog wording and the shown relative path to end the file path', () => {
+        expect(screenMatchesPending(screen('permission-write'), pending('Write', { file_path: '/Users/tester/other/report-draft.md' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Write', { file_path: 'report-draft.md' }))).toBe(false);
+        // Hand-derived from the captured create dialog with the overwrite wording seen while exploring.
+        const overwrite = screen('permission-write').replace(' Create file', ' Overwrite file').replace('Do you want to create', 'Do you want to overwrite');
+        expect(screenMatchesPending(overwrite, pending('Write', { file_path: '/Users/tester/project/report-draft.md' }))).toBe(true);
+        const mixed = screen('permission-write').replace('Do you want to create', 'Do you want to overwrite');
+        expect(screenMatchesPending(mixed, pending('Write', { file_path: '/Users/tester/project/report-draft.md' }))).toBe(false);
+    });
+
+    it('matches Edit only on the captured Edit dialog and Read only on the captured Read dialog', () => {
+        const file = '/Users/tester/project/edit-me.txt';
+        expect(screenMatchesPending(screen('permission-edit'), pending('Edit', { file_path: file, old_string: 'alpha', new_string: 'beta' }))).toBe(true);
+        expect(screenMatchesPending(screen('permission-edit'), pending('Edit', { file_path: '/Users/tester/elsewhere/edit-me.txt' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-edit'), pending('Write', { file_path: file }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Edit', { file_path: '/Users/tester/project/report-draft.md' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-read'), pending('Read', { file_path: file }))).toBe(true);
+        expect(screenMatchesPending(screen('permission-read'), pending('Read', { file_path: '/Users/tester/project/edit-me.txt.bak' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-read'), pending('Edit', { file_path: file }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Read', { file_path: '/Users/tester/project/report-draft.md' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-edit'), pending('Read', { file_path: file }))).toBe(false);
+    });
+
+    it('matches a Bash call only when the command block shows the whole command', () => {
         expect(screenMatchesPending(screen('permission-bash'), pending('Bash', { command: bashCommand }))).toBe(true);
         expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(true);
         expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'rm -rf /Users/tester/project' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la /Users/tester/project && rm -rf /' }))).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la' }))).toBe(false);
+    });
+
+    it('refuses a Bash dialog showing another command with the same long prefix (probe a)', () => {
+        const status = withCommandBlock(screen('permission-bash-short'), [' cd /Users/tester/project/packages/happy-cli && git status']);
+        expect(screenMatchesPending(status, pending('Bash', { command: 'cd /Users/tester/project/packages/happy-cli && git push --force origin main' }))).toBe(false);
+        expect(screenMatchesPending(status, pending('Bash', { command: 'cd /Users/tester/project/packages/happy-cli && git status' }))).toBe(true);
+    });
+
+    it('refuses a Bash dialog whose command block looks truncated', () => {
+        const cut = withCommandBlock(screen('permission-bash-short'), [' ls -la /Users/tester/proj…']);
+        expect(screenMatchesPending(cut, pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(false);
+        expect(screenMatchesPending(cut, pending('Bash', { command: 'ls -la /Users/tester/proj' }))).toBe(false);
+    });
+
+    it('refuses a Bash call against a Write dialog whose preview holds the command (probe b)', () => {
+        const preview = withWritePreview([' ls -la /Users/tester/project']);
+        expect(screenMatchesPending(preview, pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(false);
+    });
+
+    it('ignores the command in the description line and in the conversation above the dialog (probes c, d)', () => {
+        const described = withCommandBlock(screen('permission-bash-short'), [' echo hi'])
+            .replace('List the temp directory contents', 'rm -rf /Users/tester/project');
+        expect(screenMatchesPending(described, pending('Bash', { command: 'rm -rf /Users/tester/project' }))).toBe(false);
+        // The conversation above already shows `$ ls -la /Users/tester/project`; add a whole fake dialog there too.
+        const above = withCommandBlock(screen('permission-bash-short'), [' echo hi'])
+            .replace('✻ Baked for 1s', `${FULL_RULE}\n Bash command\n List\n${SEPARATOR}\n ls -la /Users/tester/project\n${SEPARATOR}\n✻ Baked for 1s`);
+        expect(classifyScreen(above)).toBe('permission');
+        expect(screenMatchesPending(above, pending('Bash', { command: 'ls -la /Users/tester/project' }))).toBe(false);
+        expect(screenMatchesPending(above, pending('Bash', { command: 'echo hi' }))).toBe(true);
     });
 
     it('works on a session with the user\'s hooks and two-line status line (no --safe-mode)', () => {
@@ -126,6 +231,14 @@ describe('screenMatchesPending', () => {
     it('matches other tools by the dialog header only, not by text in the preview', () => {
         expect(screenMatchesPending(screen('permission-bash'), pending('printf', {}))).toBe(false);
         expect(screenMatchesPending(screen('permission-bash'), pending('Bash command', {}))).toBe(true);
+    });
+
+    it('needs a non-empty tool name that is a whole word of the header', () => {
+        expect(screenMatchesPending(screen('permission-write'), pending('', {}))).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('C', {}))).toBe(false);
+        expect(screenMatchesPending(screen('permission-write'), pending('Creat', {}))).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash'), pending('Bash comm', {}))).toBe(false);
+        expect(screenMatchesPending(screen('permission-bash'), pending('.*', {}))).toBe(false);
     });
 
     it('never matches a subagent dialog', () => {
@@ -145,7 +258,28 @@ describe('screenMatchesPending', () => {
         expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', pizzaQuestions))).toBe(false);
     });
 
+    it('matches the whole first question, not a prefix of it', () => {
+        const longer = { questions: [{ ...colorQuestion.questions[0], question: 'Which color should the demo button use? Pick wisely' }] };
+        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', longer))).toBe(false);
+        const shorter = { questions: [{ ...colorQuestion.questions[0], question: 'Which color should the demo' }] };
+        expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', shorter))).toBe(false);
+        expect(screenMatchesPending(screen('question-lone-multi'), pending('AskUserQuestion', daysQuestion))).toBe(true);
+    });
+
+    it('does not take a Write preview with question text and a question footer for a question', () => {
+        const fake = withWritePreview([
+            '←  ☐ Color  ✔ Submit  →',
+            'Which color should the demo button use?',
+            '❯ 1. Red',
+            'Enter to select · ↑/↓ to navigate · Esc to cancel',
+        ]);
+        expect(classifyScreen(fake)).toBe('permission');
+        expect(screenMatchesPending(fake, pending('AskUserQuestion', colorQuestion))).toBe(false);
+    });
+
     it('refuses a question that was partly answered on the Mac', () => {
+        expect(screenMatchesPending(screen('question-last-multi'), pending('AskUserQuestion', badgeQuestions))).toBe(false);
+        expect(screenMatchesPending(screen('question-lone-multi-after-tab'), pending('AskUserQuestion', daysQuestion))).toBe(false);
         expect(screenMatchesPending(screen('question-multi-toggled'), pending('AskUserQuestion', pizzaQuestions))).toBe(false);
         expect(screenMatchesPending(screen('question-multi-second'), pending('AskUserQuestion', pizzaQuestions))).toBe(false);
         expect(screenMatchesPending(screen('question-review'), pending('AskUserQuestion', pizzaQuestions))).toBe(false);
@@ -167,6 +301,12 @@ describe('keysForPermission', () => {
     it('presses the digit of the Yes / No option shown (3 = No on a file write)', () => {
         expect(keysForPermission(true, screen('permission-write'))).toEqual([{ digit: 1 }]);
         expect(keysForPermission(false, screen('permission-write'))).toEqual([{ digit: 3 }]);
+    });
+
+    it('presses 3 for No on the Read and Edit dialogs', () => {
+        expect(keysForPermission(true, screen('permission-read'))).toEqual([{ digit: 1 }]);
+        expect(keysForPermission(false, screen('permission-read'))).toEqual([{ digit: 3 }]);
+        expect(keysForPermission(false, screen('permission-edit'))).toEqual([{ digit: 3 }]);
     });
 
     it('presses 2 for No when the Bash dialog only offers Yes / No', () => {
@@ -194,8 +334,14 @@ describe('keysForQuestion', () => {
         expect(keysForQuestion(pizzaQuestions, answers)).toEqual([{ digit: 1 }, { digit: 3 }, 'tab', { digit: 2 }, { digit: 1 }]);
     });
 
-    it('submits a lone multi-select question through the review screen', () => {
+    it('submits a lone multi-select question through the review screen (measured: 1, 3, Tab, 1)', () => {
+        expect(keysForQuestion(daysQuestion, { 'Which days should the demo meeting use?': 'Monday, Friday' })).toEqual([{ digit: 1 }, { digit: 3 }, 'tab', { digit: 1 }]);
         expect(keysForQuestion(extrasQuestion, { 'Which extras should the demo logo get?': 'Outline' })).toEqual([{ digit: 2 }, 'tab', { digit: 1 }]);
+    });
+
+    it('ends on a multi-select question last of several with toggles, Tab, 1 (measured: 3, 1, 2, Tab, 1)', () => {
+        const answers = { 'Which shape should the demo badge be?': 'Star', 'Which effects should the demo badge get?': 'Shadow, Outline' };
+        expect(keysForQuestion(badgeQuestions, answers)).toEqual([{ digit: 3 }, { digit: 1 }, { digit: 2 }, 'tab', { digit: 1 }]);
     });
 
     it('returns null for free text ("Type something") and for answers that are not options', () => {

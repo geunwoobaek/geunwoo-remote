@@ -15,17 +15,20 @@
  *     plus an `ask` rule for Bash/Write/Edit makes permission prompts appear even though the
  *     user's settings pre-allow Bash.
  *   - Everything the session writes goes into `~/workspace/.jarvis-dialog-capture-tmp/`, which is
- *     deleted at the end together with any plan file the plan-mode scenario created.
+ *     deleted at the end together with the plan files the plan-mode scenario created (only files
+ *     that were not in `~/.claude/plans` before the run are deleted).
  *
  * Output: scrubbed screens in `src/claudeAgents/__fixtures__/screens/*.txt` and a scrubbed
  * `outcomes.json` (keys pressed + tool_result per scenario). Paths, user name and session name are
  * replaced with fake values (`/Users/tester/project`, `demo-agent`).
  *
- * Usage: node scripts/capture-claude-dialogs.mjs --run
+ * Usage: node scripts/capture-claude-dialogs.mjs --run [--only basics,multi-select,edit-read]
+ *   `--only` runs just the named scenario groups and merges their outcomes into the existing
+ *   `outcomes.json` (entries of the same scenario name are replaced).
  */
 
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +43,9 @@ const HOME = homedir();
 const WORKSPACE = join(HOME, 'workspace');
 const SCRATCH = join(WORKSPACE, '.jarvis-dialog-capture-tmp');
 const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../src/claudeAgents/__fixtures__/screens');
-const SETTINGS = JSON.stringify({ permissions: { ask: ['Bash', 'Write', 'Edit'] } });
+const PLANS_DIR = join(HOME, '.claude', 'plans');
+/** Reads ask only inside the scratch folder (`//` marks an absolute path in a permission rule). */
+const SETTINGS = JSON.stringify({ permissions: { ask: ['Bash', 'Write', 'Edit', `Read(/${SCRATCH}/**)`] } });
 /** Pause between consecutive key presses; two digits sent in one burst are read as one number. */
 const KEY_GAP_MS = 600;
 
@@ -217,10 +222,9 @@ async function record(scenario, keys, previousCount) {
 const has = (...needles) => (text) => needles.every((n) => text.includes(n));
 const idleInput = (text) => /\n❯\s*\n\s*─{20,}/.test(text) && !text.includes('esc to interrupt');
 
-async function scenarios() {
-    const p = (file) => join(SCRATCH, file);
+const p = (file) => join(SCRATCH, file);
 
-    await waitForStatus('idle');
+async function basics() {
     save('input-empty', await waitForScreen(idleInput, 'idle input'));
 
     // Typed but not sent; then the Write permission for a new file, approved with 1.
@@ -356,6 +360,72 @@ async function scenarios() {
     }
 }
 
+/**
+ * Runs one dialog scenario that may not be provoked (the model does not always do what it is told).
+ * A failure is recorded and the dialog, if any, is cancelled so that the next scenario can run.
+ */
+async function attempt(scenario, body) {
+    try {
+        await body();
+    } catch (error) {
+        save(`${scenario}-failed`, await screen());
+        state.outcomes.push({ scenario, result: `not provoked: ${error.message}` });
+        if ((await myAgent())?.status === 'waiting') await press('Escape');
+    }
+    await waitForStatus('idle', 180_000);
+}
+
+/** Multi-select shapes keysForQuestion maps: a lone multi-select question and a multi-select question last of several. */
+async function multiSelect() {
+    await attempt('question-lone-multi', async () => {
+        const count = toolBlocks().length;
+        await prompt("Use the AskUserQuestion tool once with exactly one question: 'Which days should the demo meeting use?' header 'Days', multiSelect true, options Monday, Wednesday, Friday, each with a short description. After I answer, repeat my answer in one line and use no other tools.");
+        save('question-lone-multi', await waitForScreen(has('Which days should the demo meeting use?', 'Enter to select'), 'lone multi question'));
+        await press('1', '3', 'Tab');
+        save('question-lone-multi-after-tab', await waitForScreen(has('Ready to submit your answers?'), 'lone multi review', 20_000));
+        await press('1');
+        await record('question-lone-multi', ['1', '3', 'Tab', '1'], count);
+    });
+    await attempt('question-last-multi', async () => {
+        const count = toolBlocks().length;
+        await prompt("Use the AskUserQuestion tool once with exactly two questions. Question 1: 'Which shape should the demo badge be?' header 'Shape', multiSelect false, options Circle, Square, Star. Question 2: 'Which effects should the demo badge get?' header 'Effects', multiSelect true, options Shadow, Outline, Glow. Give each option a short description. After I answer, repeat my answers in one line and use no other tools.");
+        await waitForScreen(has('Which shape should the demo badge be?', 'Enter to select'), 'last multi first question');
+        await press('3');
+        save('question-last-multi', await waitForScreen(has('Which effects should the demo badge get?'), 'last multi second question', 20_000));
+        await press('1', '2', 'Tab');
+        save('question-last-multi-after-tab', await waitForScreen(has('Ready to submit your answers?'), 'last multi review', 20_000));
+        await press('1');
+        await record('question-last-multi', ['3', '1', '2', 'Tab', '1'], count);
+    });
+}
+
+/** Read and Edit permission dialogs on a scratch file: Read approved with 1, Edit denied with its `No` option. */
+async function editRead() {
+    writeFileSync(p('edit-me.txt'), 'alpha\n');
+    await attempt('permission-read-edit', async () => {
+        let count = toolBlocks().length;
+        await prompt(`Use the Read tool to read ${p('edit-me.txt')}, then use the Edit tool to replace alpha with beta in it. Do nothing else.`);
+        const editAsk = 'Do you want to make this edit to edit-me.txt?';
+        const first = await waitForScreen((s) => s.includes(editAsk) || (s.includes('Do you want to') && s.includes('edit-me.txt')), 'read permission');
+        if (first.includes(editAsk)) {
+            state.outcomes.push({ scenario: 'permission-read approve', result: 'not provoked: the Read ran without a prompt' });
+        } else {
+            save('permission-read', first);
+            await press('1');
+            await record('permission-read approve', ['1'], count);
+            count = toolBlocks().length;
+        }
+        const edit = await waitForScreen((s) => s.includes('Do you want to make this edit to edit-me.txt?'), 'edit permission');
+        save('permission-edit', edit);
+        const no = edit.split('\n').map((line) => /^\s*(?:❯\s*)?(\d)\.\s+No$/.exec(line)?.[1]).find(Boolean);
+        if (!no) throw new Error('no "No" option on the edit dialog');
+        await press(no);
+        await record('permission-edit deny', [no], count);
+    });
+}
+
+const GROUPS = { basics, 'multi-select': multiSelect, 'edit-read': editRead };
+
 /** The blanket Write/Edit ask rule also asks before Claude writes its plan file; allow those. */
 async function answerPlanFilePrompts() {
     for (let i = 0; i < 4; i++) {
@@ -379,7 +449,11 @@ async function main() {
         console.log('Usage: node scripts/capture-claude-dialogs.mjs --run   (starts a disposable Claude session in ~/workspace)');
         return;
     }
+    const onlyAt = process.argv.indexOf('--only');
+    const groups = onlyAt >= 0 ? (process.argv[onlyAt + 1] ?? '').split(',').filter(Boolean) : Object.keys(GROUPS);
+    if (groups.length === 0 || groups.some((g) => !(g in GROUPS))) throw new Error(`--only takes a comma list of ${Object.keys(GROUPS).join(', ')}`);
     if (!existsSync(WORKSPACE)) throw new Error(`${WORKSPACE} does not exist`);
+    const plansBefore = new Set(existsSync(PLANS_DIR) ? readdirSync(PLANS_DIR) : []);
     if ((await listAgents()).some((a) => a.name?.startsWith(NAME))) throw new Error(`a ${NAME} session already exists; remove it first`);
     const before = (await listAgents()).filter((a) => a.kind === 'background').map((a) => a.id);
     mkdirSync(SCRATCH, { recursive: true });
@@ -395,7 +469,8 @@ async function main() {
         state.sessionId = agent.sessionId;
         console.log(`started ${NAME} ${id}`);
         await attach();
-        await scenarios();
+        await waitForStatus('idle');
+        for (const group of groups) await GROUPS[group]();
     } finally {
         if (state.attached) await tmux('kill-session', '-t', TMUX_SESSION).catch(() => undefined);
         if (state.id) {
@@ -403,8 +478,13 @@ async function main() {
             await run('claude', ['rm', state.id]).catch((e) => console.error('rm failed', e.message));
         }
         rmSync(SCRATCH, { recursive: true, force: true });
-        for (const plan of state.planFiles) rmSync(join(HOME, '.claude', 'plans', `${plan}.md`), { force: true });
-        writeFileSync(join(OUT_DIR, 'outcomes.json'), `${JSON.stringify(state.outcomes, null, 2)}\n`);
+        for (const plan of state.planFiles) {
+            if (!plansBefore.has(`${plan}.md`)) rmSync(join(PLANS_DIR, `${plan}.md`), { force: true });
+        }
+        const outcomesPath = join(OUT_DIR, 'outcomes.json');
+        const fresh = new Set(state.outcomes.map((o) => o.scenario));
+        const kept = onlyAt >= 0 && existsSync(outcomesPath) ? JSON.parse(readFileSync(outcomesPath, 'utf8')).filter((o) => !fresh.has(o.scenario)) : [];
+        writeFileSync(outcomesPath, `${JSON.stringify([...kept, ...state.outcomes], null, 2)}\n`);
         const after = await listAgents();
         const leftovers = after.filter((a) => a.name?.startsWith(NAME));
         const missing = before.filter((id) => !after.some((a) => a.id === id));

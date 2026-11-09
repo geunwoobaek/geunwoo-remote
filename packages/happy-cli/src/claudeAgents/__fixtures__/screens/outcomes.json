@@ -248,5 +248,126 @@
     "isError": true,
     "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
     "toolUseResult": "User rejected tool use"
+  },
+  {
+    "scenario": "question-lone-multi",
+    "keys": [
+      "1",
+      "3",
+      "Tab",
+      "1"
+    ],
+    "tool": "AskUserQuestion",
+    "input": {
+      "questions": [
+        {
+          "question": "Which days should the demo meeting use?",
+          "header": "Days",
+          "multiSelect": true,
+          "options": [
+            {
+              "label": "Monday",
+              "description": "Start-of-week demo slot"
+            },
+            {
+              "label": "Wednesday",
+              "description": "Midweek demo slot"
+            },
+            {
+              "label": "Friday",
+              "description": "End-of-week demo slot"
+            }
+          ]
+        }
+      ]
+    },
+    "isError": false,
+    "result": "Your questions have been answered: \"Which days should the demo meeting use?\"=\"Monday, Friday\". You can now continue with these answers in mind.",
+    "toolUseResult": "{\"questions\":[{\"question\":\"Which days should the demo meeting use?\",\"header\":\"Days\",\"options\":[{\"label\":\"Monday\",\"description\":\"Start-of-week demo slot\"},{\"label\":\"Wednesday\",\"description\":\"Midweek demo slot\"},{\"label\":\"Friday\",\"description\":\"End-of-week demo slot\"}],\"multiSelect\":true}],\"answers\":{\"Which days should the demo meeting use?\":\"Monday, Friday\"},\"annotations\":{}}"
+  },
+  {
+    "scenario": "question-last-multi",
+    "keys": [
+      "3",
+      "1",
+      "2",
+      "Tab",
+      "1"
+    ],
+    "tool": "AskUserQuestion",
+    "input": {
+      "questions": [
+        {
+          "question": "Which shape should the demo badge be?",
+          "header": "Shape",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "Circle",
+              "description": "Round, friendly badge shape"
+            },
+            {
+              "label": "Square",
+              "description": "Clean, boxy badge shape"
+            },
+            {
+              "label": "Star",
+              "description": "Eye-catching, decorative badge shape"
+            }
+          ]
+        },
+        {
+          "question": "Which effects should the demo badge get?",
+          "header": "Effects",
+          "multiSelect": true,
+          "options": [
+            {
+              "label": "Shadow",
+              "description": "Drop shadow for depth"
+            },
+            {
+              "label": "Outline",
+              "description": "Solid border around the badge"
+            },
+            {
+              "label": "Glow",
+              "description": "Soft glow around the edges"
+            }
+          ]
+        }
+      ]
+    },
+    "isError": false,
+    "result": "Your questions have been answered: \"Which shape should the demo badge be?\"=\"Star\", \"Which effects should the demo badge get?\"=\"Shadow, Outline\". You can now continue with these answers in mind.",
+    "toolUseResult": "{\"questions\":[{\"question\":\"Which shape should the demo badge be?\",\"header\":\"Shape\",\"options\":[{\"label\":\"Circle\",\"description\":\"Round, friendly badge shape\"},{\"label\":\"Square\",\"description\":\"Clean, boxy badge shape\"},{\"label\":\"Star\",\"description\":\"Eye-catching, decorative badge shape\"}],\"multiSelect\":false},{\"question\":\"Which effects should the demo badge get?\",\"header\":\"Effects\",\"options\":[{\"label"
+  },
+  {
+    "scenario": "permission-read approve",
+    "keys": [
+      "1"
+    ],
+    "tool": "Read",
+    "input": {
+      "file_path": "/Users/tester/project/edit-me.txt"
+    },
+    "isError": false,
+    "result": "1\talpha\n2\t",
+    "toolUseResult": "{\"type\":\"text\",\"file\":{\"filePath\":\"/Users/tester/project/edit-me.txt\",\"content\":\"alpha\\n\",\"numLines\":2,\"startLine\":1,\"totalLines\":2}}"
+  },
+  {
+    "scenario": "permission-edit deny",
+    "keys": [
+      "3"
+    ],
+    "tool": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "/Users/tester/project/edit-me.txt",
+      "old_string": "alpha",
+      "new_string": "beta"
+    },
+    "isError": true,
+    "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+    "toolUseResult": "User rejected tool use"
   }
 ]

@@ -13,8 +13,9 @@
  *   2. No` for an ask-rule Bash prompt, `1. Yes / 2. Yes, and … / 3. No` for a file write), so
  *   the digit is looked up on the screen by its label.
  * - Question: in a single-select question a digit picks and moves on; in a multi-select question
- *   digits toggle and Tab moves on. A lone single-select question submits on its digit; any other
- *   form ends on a review screen where `1` submits. Free text needs the cursor moved and typing
+ *   digits toggle and Tab moves on. A lone single-select question submits on its digit; every
+ *   other measured form (lone multi-select, multi then single, single then multi) ends on a review
+ *   screen where `1` submits. Free text needs the cursor moved and typing
  *   mid-sequence, so it is not mapped.
  * - Plan: `1. Yes, and use auto mode / 2. Yes, manually approve edits / 3. Tell Claude what to
  *   change`. `3` focuses a feedback field; typed text and Enter reject with that feedback.
@@ -44,12 +45,24 @@ const OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g;
 const RULE = /^─{20,}$/;
 const NAMED_RULE = /^─{3,} .+ ─$/;
 const OPTION = /^(❯\s*)?(\d)\.\s+(.*)$/;
+/** The dashed line above and below a dialog's preview or command block. */
+const SEPARATOR = /^╌{10,}$/;
+/** The question dialog's tab bar: `☐ Color`, `←  ☐ Toppings  ☐ Size  ✔ Submit  →`. */
+const TAB_BAR = /^(?:←\s+)?[☐☒] \S/;
+const ASK = /^Do you want to .+\?$/;
+/** Measured file dialogs: header, the ask verb, and whether the path line sits under the header. */
+const FILE_DIALOGS: Record<string, { header: string; ask: RegExp }[]> = {
+    Write: [
+        { header: 'Create file', ask: /^Do you want to create (.+)\?$/ },
+        { header: 'Overwrite file', ask: /^Do you want to overwrite (.+)\?$/ },
+    ],
+    Edit: [{ header: 'Edit file', ask: /^Do you want to make this edit to (.+)\?$/ }],
+};
 const CHECKBOX = /^\[[ ✔]\]\s*/;
 const SUBAGENT_HEADER = /· from the .+ agent/;
 const PLAN_PROMPT = 'Claude has written up a plan and is ready to execute. Would you like to proceed?';
 const PLAN_APPROVE_MANUAL = 'Yes, manually approve edits';
 const PLAN_FEEDBACK = 'Tell Claude what to change';
-const MATCH_PREFIX_LENGTH = 40;
 
 type Option = { digit: number; label: string; focused: boolean };
 
@@ -64,7 +77,10 @@ type ParsedScreen = {
     lines: string[];
     /** Index range of the input box text lines, or null when no input box is drawn at the bottom. */
     input: { first: number; last: number } | null;
-    /** Trimmed lines of the dialog area (from the first full-width rule down), [] without a dialog. */
+    /**
+     * Trimmed lines of the dialog, from below its own top rule to above the closing named rule,
+     * with trailing blank lines dropped. [] without a dialog.
+     */
     region: string[];
 };
 
@@ -109,11 +125,26 @@ function parseScreen(screen: string): ParsedScreen {
     }
     const input = findInputBox(lines);
     const endsWithRule = lines.length > 0 && isRule(lines[lines.length - 1]);
-    const top = lines.findIndex((line) => RULE.test(line.trim()));
-    const region = input === null && endsWithRule && top >= 0 && top < lines.length - 1
-        ? lines.slice(top + 1, -1).map((line) => line.trim())
-        : [];
+    const top = input === null && endsWithRule ? dialogTop(lines) : -1;
+    const region = top >= 0 ? lines.slice(top + 1, -1).map((line) => line.trim()) : [];
+    while (region.length > 0 && region[region.length - 1] === '') {
+        region.pop();
+    }
     return { lines, input, region };
+}
+
+/**
+ * The dialog's own top rule: the lowest full-width rule above the closing rule that is not the
+ * question dialog's inner rule (the one right above `N. Chat about this`). Rules higher up belong
+ * to the conversation and are never part of the dialog.
+ */
+function dialogTop(lines: string[]): number {
+    for (let index = lines.length - 2; index >= 0; index--) {
+        if (RULE.test(lines[index].trim()) && !OPTION.test((lines[index + 1] ?? '').trim())) {
+            return index;
+        }
+    }
+    return -1;
 }
 
 function parseOptions(region: string[]): Option[] {
@@ -143,13 +174,14 @@ function analyse(parsed: ParsedScreen): Dialog {
         const planShaped = option(1)?.label.startsWith('Yes, and ') === true && option(2)?.label === PLAN_APPROVE_MANUAL && option(3) !== undefined;
         return planShaped ? { kind: 'plan', options, ask: PLAN_PROMPT } : unknown;
     }
-    const footer = region.find((line) => line.includes('Esc to cancel')) ?? '';
+    const footer = region[region.length - 1];
     const questionOptions = parseOptions(region);
-    if ((footer.startsWith('Enter to select') && questionOptions.length > 0) || region.includes('Ready to submit your answers?')) {
+    const questionFooter = footer.startsWith('Enter to select') && footer.endsWith('Esc to cancel');
+    if (TAB_BAR.test(region[0]) && ((questionFooter && questionOptions.length > 0) || region.includes('Ready to submit your answers?'))) {
         return { kind: 'question', options: questionOptions, ask: null };
     }
-    const askAt = region.map((line) => /^Do you want to .+\?$/.test(line)).lastIndexOf(true);
-    if (askAt < 0 || !footer.startsWith('Esc to cancel')) {
+    const askAt = region.map((line) => ASK.test(line)).lastIndexOf(true);
+    if (askAt < 0 || askAt < region.map((line) => SEPARATOR.test(line)).lastIndexOf(true) || !footer.startsWith('Esc to cancel')) {
         return unknown;
     }
     const options = parseOptions(region.slice(askAt + 1));
@@ -167,25 +199,41 @@ function withoutWhitespace(text: string): string {
     return text.replace(/\s+/g, '');
 }
 
-/** Region text with box borders removed and all whitespace dropped, so wrapped lines compare equal. */
-function compactRegion(region: string[]): string {
-    return withoutWhitespace(region.map((line) => line.replace(/^│\s?/, '')).join(''));
-}
-
-function prefixShown(region: string[], value: unknown): boolean {
-    if (typeof value !== 'string') {
-        return false;
-    }
-    const needle = withoutWhitespace(value.slice(0, MATCH_PREFIX_LENGTH));
-    return needle.length > 0 && compactRegion(region).includes(needle);
-}
-
-function basename(value: unknown): string | null {
-    if (typeof value !== 'string') {
+/**
+ * The lines between the first two separators, with the `│` border of a wrapped block removed.
+ * Null unless the block sits right under the header and the optional description line.
+ */
+function previewBlock(region: string[]): string[] | null {
+    const separators = region.flatMap((line, index) => (SEPARATOR.test(line) ? [index] : []));
+    if (separators.length < 2 || separators[0] < 1 || separators[0] > 2 || separators[1] === separators[0] + 1) {
         return null;
     }
-    const name = value.split('/').filter((part) => part.length > 0).at(-1);
-    return name ?? null;
+    return region.slice(separators[0] + 1, separators[1]).map((line) => line.replace(/^│\s?/, ''));
+}
+
+/** Both strings non-empty and equal once all whitespace is dropped (wrapped lines compare equal). */
+function sameText(shown: string, expected: unknown): boolean {
+    return typeof expected === 'string' && withoutWhitespace(expected).length > 0 && withoutWhitespace(shown) === withoutWhitespace(expected);
+}
+
+/**
+ * Write/Edit: the measured header, a one-line relative path under it that the pending file path
+ * ends with, the preview right below, and the ask line naming the same file.
+ */
+function fileDialogMatches(region: string[], ask: string | null, name: string, filePath: unknown): boolean {
+    const path = region[1];
+    if (typeof filePath !== 'string' || ask === null || path === undefined || path.length === 0 || !SEPARATOR.test(region[2] ?? '')) {
+        return false;
+    }
+    const pathMatches = filePath === path || filePath.endsWith(`/${path}`);
+    return pathMatches && (FILE_DIALOGS[name] ?? []).some((dialog) => region[0] === dialog.header && dialog.ask.exec(ask)?.[1] === path.split('/').at(-1));
+}
+
+/** The question text: the lines after the tab bar up to the first blank line below it. */
+function questionText(region: string[]): string {
+    const start = region.findIndex((line, index) => index > 0 && line !== '');
+    const end = region.indexOf('', start);
+    return start < 0 ? '' : region.slice(start, end < 0 ? undefined : end).join(' ');
 }
 
 function firstQuestion(input: Record<string, unknown>): unknown {
@@ -193,14 +241,24 @@ function firstQuestion(input: Record<string, unknown>): unknown {
     return Array.isArray(questions) && isRecord(questions[0]) ? questions[0].question : undefined;
 }
 
+function escapeRegExp(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
- * Gate ④: whether the open dialog is about `pending`. Subagent dialogs and a pending `Task`/`Agent`
- * call never match, because the tool being asked about is not the one in the main transcript.
- * Questions and plans must be untouched (nothing answered on the Mac yet).
+ * Gate ④: whether the open dialog is about `pending`, read only from the dialog's own lines
+ * (never the conversation above it, a description line or a file preview):
+ * - Bash: header `Bash command` and the command block equal to the whole command.
+ * - Write/Edit: the measured header and ask wording, and the relative path under the header
+ *   ending the pending file path. Read: header `Read file` and the block `Read(<file_path>)`.
+ * - Questions: the question text right under the tab bar equal to the first question, untouched.
+ * - Plans: untouched (option 1 focused). Other tools: the name as a whole word of the header.
+ * Subagent dialogs and a pending `Task`/`Agent` call never match, because the tool being asked
+ * about is not the one in the main transcript.
  */
 export function screenMatchesPending(screen: string, pending: PendingToolUse): boolean {
     const parsed = parseScreen(screen);
@@ -212,17 +270,22 @@ export function screenMatchesPending(screen: string, pending: PendingToolUse): b
     switch (pending.name) {
         case 'Write':
         case 'Edit':
+            return kind === 'permission' && fileDialogMatches(region, ask, pending.name, pending.input.file_path);
         case 'Read': {
-            const name = basename(pending.input.file_path);
-            return kind === 'permission' && name !== null && ask !== null && ask.endsWith(` ${name}?`);
+            const block = previewBlock(region);
+            const filePath = pending.input.file_path;
+            return kind === 'permission' && region[0] === 'Read file' && block !== null && block.length === 1
+                && typeof filePath === 'string' && filePath.length > 0 && block[0] === `Read(${filePath})`;
         }
-        case 'Bash':
-            return kind === 'permission' && prefixShown(region, pending.input.command);
+        case 'Bash': {
+            const block = previewBlock(region);
+            return kind === 'permission' && region[0] === 'Bash command' && block !== null && sameText(block.join(''), pending.input.command);
+        }
         case 'AskUserQuestion': {
             const pristine = !region.some((line) => line.includes('☒') || line.includes('[✔]'))
                 && !region.includes('Ready to submit your answers?')
                 && options.find((o) => o.focused)?.digit === 1;
-            return kind === 'question' && pristine && prefixShown(region, firstQuestion(pending.input));
+            return kind === 'question' && pristine && sameText(questionText(region), firstQuestion(pending.input));
         }
         case 'ExitPlanMode':
             return kind === 'plan'
@@ -231,7 +294,8 @@ export function screenMatchesPending(screen: string, pending: PendingToolUse): b
         default:
             // Only the header right under the top rule (`Bash command`, `Create file`, …); the lines
             // below it are model-written descriptions and previews.
-            return kind === 'permission' && region[0] !== undefined && region[0].includes(pending.name);
+            return kind === 'permission' && pending.name.trim().length > 0
+                && new RegExp(`(^|\\s)${escapeRegExp(pending.name)}(\\s|$)`).test(region[0]);
     }
 }
 
