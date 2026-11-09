@@ -278,37 +278,52 @@ function isKnownHeader(line: string): boolean {
 }
 
 /**
+ * Whether `line` (ANSI stripped, not trimmed) counts as a dialog's own rule when looking above a
+ * dialog. Permission dialogs draw their rules at column 0 while commands, previews, tool output and
+ * conversation lines are indented or glyph-led, so only an unindented rule counts. Question text is
+ * model-written and drawn at column 0, and the plan box is indented, so for those any full-width
+ * rule counts.
+ */
+function isStructuralRule(line: string, kind: DialogKind): boolean {
+    return kind === 'permission' ? RULE.test(line) : RULE.test(line.trim());
+}
+
+/**
  * Whether a permission or question dialog may be drawn inside another one. `dialogTop` takes the
  * lowest full-width rule, so a command or preview that prints such a rule and a fake header would
  * otherwise become "the dialog" and its fake block would be checked instead of the real one.
- * Measured permission and question screens have no full-width rule above their top rule and no
+ * Measured permission and question screens have no structural rule above their top rule and no
  * second dialog header before their ask line, so either one means the screen cannot be trusted.
+ * An indented rule in tool output above a permission dialog is not structural and is ignored.
  */
-function looksStacked(parsed: ParsedScreen, ask: string | null): boolean {
+function looksStacked(parsed: ParsedScreen, kind: DialogKind, ask: string | null): boolean {
     const end = ask === null ? parsed.region.length : parsed.region.lastIndexOf(ask);
-    return parsed.lines.slice(0, parsed.top).some((line) => RULE.test(line.trim()))
+    return parsed.lines.slice(0, parsed.top).some((line) => isStructuralRule(line, kind))
         || parsed.region.slice(1, end).some(isKnownHeader);
 }
 
 /**
- * The identity of the open dialog: the sha1 of its lines from the topmost full-width rule down to
- * (not including) the closing named rule, with escapes stripped, whitespace collapsed, blank lines
- * and the key-hint footer dropped. The conversation above, the session name in the closing rule
- * and the footer are left out so a redraw of the same dialog gives the same value. Starting at
- * the topmost rule keeps a plan's body (inside the "Ready to code?" box, above the inner rule)
- * and anything a rule inside a command could hide; when a long plan has pushed its box top off
- * the screen, the whole screen above is used. Null when no dialog is open.
+ * The identity of the open dialog: the sha1 of its lines from the topmost structural rule
+ * (`isStructuralRule`) down to (not including) the closing named rule, with escapes stripped,
+ * whitespace collapsed, the `❯` focus marker, blank lines and the key-hint footer dropped. The
+ * conversation above, the session name in the closing rule, the footer and the focus are left out
+ * so a redraw of the same dialog, or the Mac user moving the cursor in it, gives the same value
+ * (answers press absolute digits, and the question and plan gates check focus themselves).
+ * Starting at the topmost rule keeps a plan's body (inside the "Ready to code?" box, above the
+ * inner rule) and anything a rule inside a command could hide; when a long plan has pushed its box
+ * top off the screen, the whole screen above is used. Null when no dialog is open.
  */
 export function dialogFingerprint(screen: string): string | null {
     const parsed = parseScreen(screen);
     if (parsed.top < 0 || parsed.region.length === 0) {
         return null;
     }
-    const firstRule = parsed.lines.findIndex((line) => RULE.test(line.trim()));
-    const start = analyse(parsed).kind === 'plan' && firstRule === parsed.top ? 0 : firstRule + 1;
+    const kind = analyse(parsed).kind;
+    const firstRule = parsed.lines.findIndex((line) => isStructuralRule(line, kind));
+    const start = kind === 'plan' && firstRule === parsed.top ? 0 : firstRule + 1;
     const body = parsed.lines
         .slice(start, -1)
-        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .map((line) => line.replace(/\s+/g, ' ').trim().replace(/^❯ ?/, ''))
         .filter((line) => line.length > 0);
     if (body.length > 0 && FOOTER.test(body[body.length - 1])) {
         body.pop();
@@ -391,9 +406,9 @@ export function readDialogFromScreen(screen: string): ScreenDialog | null {
     }
     switch (kind) {
         case 'permission':
-            return looksStacked(parsed, ask) ? null : readPermission(region, ask);
+            return looksStacked(parsed, kind, ask) ? null : readPermission(region, ask);
         case 'question':
-            return looksStacked(parsed, null) ? null : readQuestion(region, options);
+            return looksStacked(parsed, kind, null) ? null : readQuestion(region, options);
         case 'plan':
             return options.find((o) => o.focused)?.digit === 1 && options.find((o) => o.digit === 3)?.label === PLAN_FEEDBACK
                 ? { tool: 'ExitPlanMode', input: { plan: '' } }
@@ -401,6 +416,46 @@ export function readDialogFromScreen(screen: string): ScreenDialog | null {
         default:
             return null;
     }
+}
+
+/**
+ * What a multi-key answer checks between keys:
+ * - `tabs`: a question dialog's tab bar with the ☐/☒ marks dropped. The measured screens of one
+ *   question set keep the same tab names from the first question through the review screen, so a
+ *   change means another question set (or none) is open.
+ * - `review`: the measured review screen (`Ready to submit your answers?`, `1. Submit answers`).
+ * - `planFeedback`: the text of a focused plan option 3 up to the measured `shift+tab to approve
+ *   with this feedback` hint under it (the typed feedback, as in `plan-feedback-typed`), wrapped
+ *   lines joined with a space. Null when option 3 is not focused or the hint is missing.
+ */
+export type DialogProgress = { kind: DialogKind; tabs: string | null; review: boolean; planFeedback: string | null };
+
+const PLAN_FEEDBACK_HINT = 'shift+tab to approve with this feedback';
+
+export function readDialogProgress(screen: string): DialogProgress {
+    const parsed = parseScreen(screen);
+    const { kind, options } = analyse(parsed);
+    const { region } = parsed;
+    const first = options[0];
+    const review = kind === 'question'
+        && region.includes('Ready to submit your answers?')
+        && first?.digit === 1 && first.label === 'Submit answers';
+    let planFeedback: string | null = null;
+    if (kind === 'plan' && options.find((o) => o.focused)?.digit === 3) {
+        // Below the plan prompt only: the plan body above it is model-written.
+        const prompt = region.lastIndexOf(PLAN_PROMPT);
+        const at = region.findIndex((line, index) => index > prompt && /^❯\s*3\.\s/.test(line));
+        const hint = region.indexOf(PLAN_FEEDBACK_HINT, at);
+        planFeedback = at < 0 || hint < 0
+            ? null
+            : [OPTION.exec(region[at])?.[3] ?? '', ...region.slice(at + 1, hint)].join(' ').replace(/\s+/g, ' ').trim();
+    }
+    return {
+        kind,
+        tabs: kind === 'question' ? region[0].replace(/[☐☒]/g, '').replace(/\s+/g, ' ').trim() : null,
+        review,
+        planFeedback,
+    };
 }
 
 /**
@@ -423,7 +478,7 @@ export function screenMatchesPending(screen: string, pending: PendingToolUse, cw
     if (pending.name === 'Task' || pending.name === 'Agent' || region.some((line) => SUBAGENT_HEADER.test(line))) {
         return false;
     }
-    if ((kind === 'permission' || kind === 'question') && looksStacked(parsed, ask)) {
+    if ((kind === 'permission' || kind === 'question') && looksStacked(parsed, kind, ask)) {
         return false;
     }
     switch (pending.name) {

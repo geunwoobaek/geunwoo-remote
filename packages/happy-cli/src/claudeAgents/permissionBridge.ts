@@ -18,8 +18,13 @@
  *   ④ the dialog is about that call: `screenMatchesPending` for a transcript-keyed request, or the
  *      dialog read off the screen again equal to the card the phone was shown for `screen:` keys.
  * Then each key is pressed on its own, `DIALOG_KEY_GAP_MS` apart. If any check fails or the
- * answer has no key mapping (free text, unknown dialog), nothing is pressed and the request is
- * completed as `canceled` with `reason: 'answer-on-mac'`.
+ * answer has no key mapping (free text, unknown dialog, a plan rejection without a reason), nothing
+ * is pressed and the request is completed as `canceled` with `reason: 'answer-on-mac'`.
+ * Before every key after the first the screen is read again: the session must still be waiting
+ * on a dialog of the same kind (for questions, the same tab names), and the committing key must
+ * see its measured screen (the review screen before a question's final `1`, the typed feedback in
+ * plan option 3 before Enter). Otherwise no further key is pressed and the request is completed as
+ * `canceled` with `reason: 'typing-failed'`.
  *
  * `tick` and `answer` run one at a time. Each opens its own terminal and closes it in `finally`
  * (close errors swallowed), so a caller may serialise terminal use around them.
@@ -37,8 +42,10 @@ import {
     keysForPlan,
     keysForQuestion,
     readDialogFromScreen,
+    readDialogProgress,
     screenMatchesPending,
     type DialogKind,
+    type DialogProgress,
 } from './dialogs';
 import { findPendingToolUse, findToolUseOutcome, type PendingToolUse, type ToolUseOutcome } from './transcript';
 import type { ClaudeAgentStatus } from './types';
@@ -95,7 +102,11 @@ type OpenRequest = {
     refused: boolean;
 };
 
-type Step = { key: AttachKey } | { text: string };
+/**
+ * One key or one typed text. Every step after the first runs only when the screen re-read just
+ * before it still shows the same dialog (see `answer`) and, when set, passes `expect`.
+ */
+type Step = ({ key: AttachKey } | { text: string }) & { expect?: (progress: DialogProgress) => boolean };
 
 /** Ticks without an outcome before a request whose dialog is gone is canceled. */
 const MAX_MISSES = 5;
@@ -392,14 +403,33 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
                     return keys(['escape']);
                 }
                 const answers = answersOf(response);
-                return answers === null ? null : keys(keysForQuestion(request.input, answers));
+                const list = answers === null ? null : keysForQuestion(request.input, answers);
+                // Several keys always end with `1` on the review screen, which submits every answer.
+                return list === null
+                    ? null
+                    : list.map((key, index) => (index > 0 && index === list.length - 1 ? { key, expect: (p: DialogProgress) => p.review } : { key }));
             }
             case 'plan': {
                 const plan = keysForPlan(response.approved, response.mode, response.reason);
+                if (response.approved) {
+                    return keys(plan.keys);
+                }
+                // A rejection without a reason is 3 then Enter, and the screen between them was
+                // never captured, so Enter could not be checked: the Mac answers it instead.
+                const feedback = plan.thenType;
+                if (feedback === undefined) {
+                    return null;
+                }
+                // Text goes in only once option 3 is focused with its feedback hint (typed digits
+                // on any other screen could pick an option), and Enter only once option 3 shows
+                // exactly the typed feedback (measured: `plan-feedback-typed`).
                 return [
                     ...plan.keys.map((key) => ({ key })),
-                    ...(plan.thenType === undefined ? [] : [{ text: plan.thenType }]),
-                    ...(plan.thenPress ?? []).map((key) => ({ key })),
+                    { text: feedback, expect: (p: DialogProgress) => p.planFeedback !== null },
+                    ...(plan.thenPress ?? []).map((key) => ({
+                        key,
+                        expect: (p: DialogProgress) => p.planFeedback !== null && p.planFeedback.replace(/\s+/g, '') === feedback.replace(/\s+/g, ''),
+                    })),
                 ];
             }
             default:
@@ -423,9 +453,18 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
             if (steps === null || steps.length === 0) {
                 return refuse(request);
             }
+            const initial = readDialogProgress(screen);
             for (const step of steps) {
                 if (pressed) {
                     await sleep(DIALOG_KEY_GAP_MS);
+                    // Re-read before every later key: still waiting, the same kind of dialog (the
+                    // same question set), and the screen this key is meant for.
+                    const now = readDialogProgress(await terminal.screen());
+                    const same = deps.readStatus() === 'waiting' && now.kind === initial.kind && now.tabs === initial.tabs;
+                    if (!same || (step.expect !== undefined && !step.expect(now))) {
+                        complete(request, { status: 'canceled', reason: TYPING_FAILED }, entries.length);
+                        return 'typed';
+                    }
                 }
                 if ('key' in step) {
                     await terminal.press([step.key]);

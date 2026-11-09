@@ -74,6 +74,8 @@ type Harness = {
     failPressAt?: number;
     failOpen?: boolean;
     failClose?: boolean;
+    /** What happens on the Mac after the Nth key press or typed text (1-based), e.g. a redraw. */
+    after?: Record<number, () => void>;
 };
 
 function keyName(key: AttachKey): string {
@@ -91,12 +93,18 @@ function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]
         opened: 0,
     };
     let presses = 0;
+    let actions = 0;
+    const acted = (): void => {
+        actions += 1;
+        h.after?.[actions]?.();
+    };
     const terminal: AttachTerminal = {
         async screen() {
             return h.screen;
         },
         async typeText(text) {
             h.log.push(`type:${text}`);
+            acted();
         },
         async pasteText(text) {
             h.log.push(`paste:${text}`);
@@ -107,6 +115,7 @@ function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]
                 throw new Error('tmux went away');
             }
             h.log.push(`press:${keys.map(keyName).join(',')}`);
+            acted();
         },
         async close() {
             h.log.push('close');
@@ -137,6 +146,15 @@ function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]
         },
     });
     return { h, bridge };
+}
+
+/** Hand-derived: the captured plan dialog with the focus moved to option 3 and nothing typed (not captured). */
+function planFocusedOnFeedback(): string {
+    const moved = screen('plan')
+        .replace('   ❯ 1. Yes, and use auto mode', '     1. Yes, and use auto mode')
+        .replace('     3. Tell Claude what to change', '   ❯ 3. Tell Claude what to change');
+    expect(moved).not.toBe(screen('plan'));
+    return moved;
 }
 
 const typing = (log: string[]): string[] => log.filter((line) => /^(press|type|paste|sleep):/.test(line));
@@ -335,6 +353,21 @@ describe('createPermissionBridge tick', () => {
         expect(h.state.completedRequests?.[key]).toBeUndefined();
         expect(h.notified).toEqual(['AskUserQuestion', 'AskUserQuestion']);
     });
+
+    it('does not publish a second card when the Mac user moves the focus in a screen: dialog', async () => {
+        const { h, bridge } = setup({ screen: screen('question-single'), entries: [userText('ask me')] });
+        await bridge.tick();
+        const key = onlyRequestKey(h.state);
+
+        // Hand-derived: the cursor moved from Red to Green; the transcript grew, so tick reads the screen again.
+        h.screen = screen('question-single').replace('❯ 1. Red', '  1. Red').replace('  2. Green', '❯ 2. Green');
+        h.entries = [...h.entries, userText('unrelated line')];
+        await bridge.tick();
+
+        expect(Object.keys(h.state.requests ?? {})).toEqual([key]);
+        expect(h.state.completedRequests).toBeUndefined();
+        expect(h.notified).toEqual(['AskUserQuestion']);
+    });
 });
 
 describe('createPermissionBridge answer', () => {
@@ -361,6 +394,16 @@ describe('createPermissionBridge answer', () => {
             decision: 'approved',
             toolUseId: 'toolu_write',
         });
+    });
+
+    it('answer presses the absolute digit after the Mac user moved the focus', async () => {
+        const { h, bridge } = await publishedWrite();
+        h.screen = screen('permission-write').replace(' ❯ 1. Yes', '   1. Yes').replace('   3. No', ' ❯ 3. No');
+
+        expect(await bridge.answer(response('toolu_write', true))).toBe('typed');
+
+        expect(typing(h.log)).toEqual(['press:1']);
+        expect(h.state.completedRequests?.toolu_write).toMatchObject({ status: 'approved' });
     });
 
     it('answer types the deny digit read from the screen', async () => {
@@ -476,12 +519,86 @@ describe('createPermissionBridge answer', () => {
         const { h, bridge } = setup({ screen: screen('question-multi'), entries: [userText('ask me'), toolUse('toolu_pizza', 'AskUserQuestion', pizzaQuestions)] });
         await bridge.tick();
         expect(onlyRequestKey(h.state)).toBe('toolu_pizza');
+        // The measured screens of this scenario (outcomes.json "question-multi": 1, 3, Tab, 2, 1).
+        h.after = {
+            2: () => { h.screen = screen('question-multi-toggled'); },
+            3: () => { h.screen = screen('question-multi-second'); },
+            4: () => { h.screen = screen('question-review'); },
+        };
 
         const answers = { 'Which toppings should the demo pizza have?': 'Cheese, Basil', 'Which size should the demo pizza be?': 'Medium' };
         expect(await bridge.answer(response('toolu_pizza', true, { updatedInput: { answers } }))).toBe('typed');
 
         const gap = `sleep:${DIALOG_KEY_GAP_MS}`;
         expect(typing(h.log)).toEqual(['press:1', gap, 'press:3', gap, 'press:tab', gap, 'press:2', gap, 'press:1']);
+        expect(h.state.completedRequests?.toolu_pizza).toMatchObject({ status: 'approved' });
+    });
+
+    it('answer submits a lone multi-select question through the measured review screen', async () => {
+        const { h, bridge } = setup({ screen: screen('question-lone-multi'), entries: [userText('ask me')] });
+        await bridge.tick();
+        const key = onlyRequestKey(h.state);
+        // outcomes.json "question-lone-multi": 1, 3, Tab, 1.
+        h.after = { 3: () => { h.screen = screen('question-lone-multi-after-tab'); } };
+
+        const answers = { 'Which days should the demo meeting use?': 'Monday, Friday' };
+        expect(await bridge.answer(response(key, true, { updatedInput: { answers } }))).toBe('typed');
+
+        const gap = `sleep:${DIALOG_KEY_GAP_MS}`;
+        expect(typing(h.log)).toEqual(['press:1', gap, 'press:3', gap, 'press:tab', gap, 'press:1']);
+        expect(h.state.completedRequests?.[key]).toMatchObject({ status: 'approved' });
+    });
+
+    it('answer does not press the final 1 when a permission dialog appears before it', async () => {
+        const { h, bridge } = setup({ screen: screen('question-multi'), entries: [userText('ask me'), toolUse('toolu_pizza', 'AskUserQuestion', pizzaQuestions)] });
+        await bridge.tick();
+        h.after = {
+            2: () => { h.screen = screen('question-multi-toggled'); },
+            3: () => { h.screen = screen('question-multi-second'); },
+            4: () => { h.screen = screen('permission-write'); },
+        };
+
+        const answers = { 'Which toppings should the demo pizza have?': 'Cheese, Basil', 'Which size should the demo pizza be?': 'Medium' };
+        expect(await bridge.answer(response('toolu_pizza', true, { updatedInput: { answers } }))).toBe('typed');
+
+        const gap = `sleep:${DIALOG_KEY_GAP_MS}`;
+        expect(typing(h.log)).toEqual(['press:1', gap, 'press:3', gap, 'press:tab', gap, 'press:2', gap]);
+        expect(h.log.at(-1)).toBe('close');
+        expect(h.state.completedRequests?.toolu_pizza).toMatchObject({ status: 'canceled', reason: 'typing-failed' });
+    });
+
+    it('answer does not press the final 1 when the review screen does not show', async () => {
+        const { h, bridge } = setup({ screen: screen('question-multi'), entries: [userText('ask me'), toolUse('toolu_pizza', 'AskUserQuestion', pizzaQuestions)] });
+        await bridge.tick();
+        // The size question is still on screen after 2 (the key was lost), so 1 would pick Small.
+        h.after = { 3: () => { h.screen = screen('question-multi-second'); } };
+
+        const answers = { 'Which toppings should the demo pizza have?': 'Cheese, Basil', 'Which size should the demo pizza be?': 'Medium' };
+        expect(await bridge.answer(response('toolu_pizza', true, { updatedInput: { answers } }))).toBe('typed');
+
+        const gap = `sleep:${DIALOG_KEY_GAP_MS}`;
+        expect(typing(h.log)).toEqual(['press:1', gap, 'press:3', gap, 'press:tab', gap, 'press:2', gap]);
+        expect(h.state.completedRequests?.toolu_pizza).toMatchObject({ status: 'canceled', reason: 'typing-failed' });
+    });
+
+    it('answer stops between keys when another question, another kind or a busy session shows', async () => {
+        const answers = { 'Which toppings should the demo pizza have?': 'Cheese, Basil', 'Which size should the demo pizza be?': 'Medium' };
+        const gap = `sleep:${DIALOG_KEY_GAP_MS}`;
+        const changes: ((h: Harness) => void)[] = [
+            (h) => { h.screen = screen('question-single'); },
+            (h) => { h.screen = screen('input-empty'); },
+            (h) => { h.status = 'busy'; },
+        ];
+        for (const change of changes) {
+            const { h, bridge } = setup({ screen: screen('question-multi'), entries: [userText('ask me'), toolUse('toolu_pizza', 'AskUserQuestion', pizzaQuestions)] });
+            await bridge.tick();
+            h.after = { 1: () => change(h) };
+
+            expect(await bridge.answer(response('toolu_pizza', true, { updatedInput: { answers } }))).toBe('typed');
+
+            expect(typing(h.log)).toEqual(['press:1', gap]);
+            expect(h.state.completedRequests?.toolu_pizza).toMatchObject({ status: 'canceled', reason: 'typing-failed' });
+        }
     });
 
     it('answer types plan approval keys for mode acceptEdits', async () => {
@@ -495,15 +612,60 @@ describe('createPermissionBridge answer', () => {
         expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'approved', mode: 'acceptEdits' });
     });
 
-    it('answer rejects a plan with option 3, the sanitized reason and Enter', async () => {
-        const { h, bridge } = setup({ screen: screen('plan'), entries: [userText('plan it'), toolUse('toolu_plan', 'ExitPlanMode', { plan: '# Plan' })] });
-        await bridge.tick();
+    async function publishedPlan() {
+        const ctx = setup({ screen: screen('plan'), entries: [userText('plan it'), toolUse('toolu_plan', 'ExitPlanMode', { plan: '# Plan' })] });
+        await ctx.bridge.tick();
+        expect(onlyRequestKey(ctx.h.state)).toBe('toolu_plan');
+        return ctx;
+    }
 
-        expect(await bridge.answer(response('toolu_plan', false, { reason: 'Name it\nhello.txt\x1b[31m' }))).toBe('typed');
+    const PLAN_REASON = 'Please name the file\nhello.txt instead\x1b[31m';
+    const PLAN_FEEDBACK_TYPED = 'type:Please name the file hello.txt instead';
+
+    it('answer rejects a plan with option 3, the sanitized reason and Enter once the reason shows', async () => {
+        const { h, bridge } = await publishedPlan();
+        h.after = {
+            1: () => { h.screen = planFocusedOnFeedback(); },
+            2: () => { h.screen = screen('plan-feedback-typed'); },
+        };
+
+        expect(await bridge.answer(response('toolu_plan', false, { reason: PLAN_REASON }))).toBe('typed');
 
         const gap = `sleep:${DIALOG_KEY_GAP_MS}`;
-        expect(typing(h.log)).toEqual(['press:3', gap, 'type:Name it hello.txt', gap, 'press:enter']);
+        expect(typing(h.log)).toEqual(['press:3', gap, PLAN_FEEDBACK_TYPED, gap, 'press:enter']);
         expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'denied', decision: 'denied' });
+    });
+
+    it('answer types no reason and no Enter when option 3 is not focused after 3', async () => {
+        const { h, bridge } = await publishedPlan();
+        // The screen after 3 is still the untouched plan dialog: typed text could pick an option.
+
+        expect(await bridge.answer(response('toolu_plan', false, { reason: PLAN_REASON }))).toBe('typed');
+
+        expect(typing(h.log)).toEqual(['press:3', `sleep:${DIALOG_KEY_GAP_MS}`]);
+        expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'canceled', reason: 'typing-failed' });
+    });
+
+    it('answer presses no Enter when the typed reason does not show in option 3', async () => {
+        const { h, bridge } = await publishedPlan();
+        h.after = { 1: () => { h.screen = planFocusedOnFeedback(); } };
+
+        expect(await bridge.answer(response('toolu_plan', false, { reason: PLAN_REASON }))).toBe('typed');
+
+        const gap = `sleep:${DIALOG_KEY_GAP_MS}`;
+        expect(typing(h.log)).toEqual(['press:3', gap, PLAN_FEEDBACK_TYPED, gap]);
+        expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'canceled', reason: 'typing-failed' });
+    });
+
+    it('answer refuses a plan rejection without a reason (its screen before Enter was never captured)', async () => {
+        for (const extra of [{}, { reason: ' \n ' }]) {
+            const { h, bridge } = await publishedPlan();
+
+            expect(await bridge.answer(response('toolu_plan', false, extra))).toBe('refused');
+
+            expect(typing(h.log)).toEqual([]);
+            expect(h.state.completedRequests?.toolu_plan).toMatchObject({ status: 'canceled', reason: 'answer-on-mac' });
+        }
     });
 
     it('answer refuses an unknown key without opening the terminal', async () => {

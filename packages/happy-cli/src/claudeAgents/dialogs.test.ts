@@ -10,6 +10,7 @@ import {
     keysForPlan,
     keysForQuestion,
     readDialogFromScreen,
+    readDialogProgress,
     screenMatchesPending,
 } from './dialogs';
 
@@ -278,9 +279,11 @@ describe('screenMatchesPending', () => {
             .replace('✻ Baked for 1s', `${FULL_RULE}\n Bash command\n List\n${SEPARATOR}\n ls -la /Users/tester/project\n${SEPARATOR}\n✻ Baked for 1s`);
         expect(classifyScreen(above)).toBe('permission');
         expect(screenMatchesPending(above, pending('Bash', { command: 'ls -la /Users/tester/project' }), CWD)).toBe(false);
-        // A whole fake dialog above the real one cannot be told from a command that draws a rule and
-        // a fake dialog inside the real dialog (the real header then sits above the lowest rule), so
-        // any full-width rule above a permission dialog refuses it, the real call included.
+        // The fake dialog's rule is drawn at column 0, like a real dialog's own rule. A whole fake
+        // dialog above the real one cannot be told from a command that draws a rule and a fake
+        // dialog inside the real dialog (the real header then sits above the lowest rule), so an
+        // unindented full-width rule above a permission dialog refuses it, the real call included.
+        // An indented rule (tool output, a command preview) does not; see the hardening tests.
         expect(screenMatchesPending(above, pending('Bash', { command: 'echo hi' }), CWD)).toBe(false);
         expect(screenMatchesPending(withCommandBlock(screen('permission-bash-short'), [' echo hi']), pending('Bash', { command: 'echo hi' }), CWD)).toBe(true);
     });
@@ -498,6 +501,37 @@ describe('dialog hardening against a dialog drawn inside a command', () => {
         expect(readDialogFromScreen(doubled)).toBeNull();
     });
 
+    it('ignores an indented full-width rule in tool output above a permission dialog', () => {
+        // Hand-derived: tool output above the dialog that prints 40 `─`, indented like all output.
+        const clean = screen('permission-bash-short');
+        const indented = clean.replace('✻ Baked for 1s', `  ${'─'.repeat(40)}\n✻ Baked for 1s`);
+        expect(indented).not.toBe(clean);
+        expect(classifyScreen(indented)).toBe('permission');
+        expect(screenMatchesPending(indented, pending('Bash', { command: 'ls -la /Users/tester/project' }), CWD)).toBe(true);
+        expect(readDialogFromScreen(indented)).toEqual({ tool: 'Bash', input: { command: 'ls -la /Users/tester/project' } });
+        expect(readDialogFromScreen(withColours(indented))).toEqual({ tool: 'Bash', input: { command: 'ls -la /Users/tester/project' } });
+        // The fingerprint starts at the dialog's own (column-0) rule, so the indented rule and the
+        // conversation between it and the dialog are not part of it.
+        expect(dialogFingerprint(indented)).toBe(dialogFingerprint(clean));
+    });
+
+    it('refuses a column-0 full-width rule and a fake Bash header above a permission dialog', () => {
+        // Hand-derived: an unindented rule and a fake header in the conversation above the real dialog.
+        const above = screen('permission-bash-short').replace('✻ Baked for 1s', `${FULL_RULE}\n Bash command\n✻ Baked for 1s`);
+        expect(classifyScreen(above)).toBe('permission');
+        expect(screenMatchesPending(above, pending('Bash', { command: 'ls -la /Users/tester/project' }), CWD)).toBe(false);
+        expect(readDialogFromScreen(above)).toBeNull();
+    });
+
+    it('refuses a question dialog with any full-width rule above it, indented or not', () => {
+        // Hand-derived: the captured question with an indented rule in the conversation above.
+        const indented = screen('question-single').replace('✻ Cooked for 8s', `  ${'─'.repeat(40)}\n✻ Cooked for 8s`);
+        expect(indented).not.toBe(screen('question-single'));
+        expect(classifyScreen(indented)).toBe('question');
+        expect(screenMatchesPending(indented, pending('AskUserQuestion', colorQuestion), CWD)).toBe(false);
+        expect(readDialogFromScreen(indented)).toBeNull();
+    });
+
     it('still matches the captured dialogs', () => {
         expect(screenMatchesPending(screen('permission-bash-short'), pending('Bash', { command: 'ls -la /Users/tester/project' }), CWD)).toBe(true);
         expect(screenMatchesPending(screen('question-single'), pending('AskUserQuestion', colorQuestion), CWD)).toBe(true);
@@ -524,6 +558,20 @@ describe('dialogFingerprint', () => {
         expect(fingerprints.every((value) => value !== null)).toBe(true);
         expect(new Set(fingerprints).size).toBe(fingerprints.length);
         expect(dialogFingerprint(screen('permission-write').replaceAll('report-draft.md', 'report-final.md'))).not.toBe(write);
+    });
+
+    it('does not change when the focus moves inside the same dialog', () => {
+        // Hand-derived: the Mac user moved the cursor from option 1 to another option.
+        const write = screen('permission-write');
+        const writeMoved = write.replace(' ❯ 1. Yes', '   1. Yes').replace('   3. No', ' ❯ 3. No');
+        expect(writeMoved).not.toBe(write);
+        expect(dialogFingerprint(writeMoved)).toBe(dialogFingerprint(write));
+        const question = screen('question-single');
+        const questionMoved = question.replace('❯ 1. Red', '  1. Red').replace('  2. Green', '❯ 2. Green');
+        expect(questionMoved).not.toBe(question);
+        expect(dialogFingerprint(questionMoved)).toBe(dialogFingerprint(question));
+        // Checkbox state is still part of it.
+        expect(dialogFingerprint(screen('question-multi-toggled'))).not.toBe(dialogFingerprint(screen('question-multi')));
     });
 
     it('covers the plan body, so two plans with the same options differ', () => {
@@ -585,5 +633,50 @@ describe('readDialogFromScreen', () => {
         expect(readDialogFromScreen(screen('permission-bash-short').replace('\n Bash command\n', '\n Fetch\n'))).toBeNull();
         expect(readDialogFromScreen(screen('permission-write').replace('Do you want to create report-draft.md?', 'Do you want to create other.md?'))).toBeNull();
         expect(readDialogFromScreen(screen('permission-bash-short').replace('Do you want to proceed?', 'Do you want to run this?'))).toBeNull();
+    });
+});
+
+/** Hand-derived: the captured plan dialog with the focus moved to option 3 and nothing typed (not captured). */
+function planFocusedOnFeedback(): string {
+    const moved = screen('plan')
+        .replace('   ❯ 1. Yes, and use auto mode', '     1. Yes, and use auto mode')
+        .replace('     3. Tell Claude what to change', '   ❯ 3. Tell Claude what to change');
+    expect(moved).not.toBe(screen('plan'));
+    return moved;
+}
+
+describe('readDialogProgress', () => {
+    it('keeps the question tab names across toggles, Tab and the review screen', () => {
+        const names = ['question-multi', 'question-multi-toggled', 'question-multi-second', 'question-review'];
+        const progress = names.map((name) => readDialogProgress(screen(name)));
+        expect(progress.map((p) => p.kind)).toEqual(['question', 'question', 'question', 'question']);
+        expect(new Set(progress.map((p) => p.tabs))).toEqual(new Set(['← Toppings Size ✔ Submit →']));
+        expect(progress.map((p) => p.review)).toEqual([false, false, false, true]);
+        expect(readDialogProgress(withColours(screen('question-review')))).toEqual(progress[3]);
+        expect(readDialogProgress(screen('question-single')).tabs).toBe('Color');
+    });
+
+    it('sees the measured review screens', () => {
+        for (const name of ['question-review', 'question-lone-multi-after-tab', 'question-last-multi-after-tab']) {
+            expect(readDialogProgress(screen(name)).review).toBe(true);
+        }
+        for (const name of ['question-lone-multi', 'question-last-multi', 'question-single', 'question-other']) {
+            expect(readDialogProgress(screen(name)).review).toBe(false);
+        }
+        expect(readDialogProgress(screen('question-lone-multi')).tabs).toBe(readDialogProgress(screen('question-lone-multi-after-tab')).tabs);
+    });
+
+    it('reads the plan feedback shown in a focused option 3 only', () => {
+        expect(readDialogProgress(screen('plan'))).toEqual({ kind: 'plan', tabs: null, review: false, planFeedback: null });
+        expect(readDialogProgress(screen('plan-feedback-typed')).planFeedback).toBe('Please name the file hello.txt instead');
+        expect(readDialogProgress(withColours(screen('plan-feedback-typed'))).planFeedback).toBe('Please name the file hello.txt instead');
+        expect(readDialogProgress(planFocusedOnFeedback()).planFeedback).toBe('Tell Claude what to change');
+        // Without the hint line under option 3 the feedback cannot be told apart from other text.
+        expect(readDialogProgress(screen('plan-feedback-typed').replace('shift+tab to approve with this feedback', '')).planFeedback).toBeNull();
+    });
+
+    it('has no tabs, review or feedback for other screens', () => {
+        expect(readDialogProgress(screen('permission-write'))).toEqual({ kind: 'permission', tabs: null, review: false, planFeedback: null });
+        expect(readDialogProgress(screen('input-empty'))).toEqual({ kind: 'none', tabs: null, review: false, planFeedback: null });
     });
 });
