@@ -22,6 +22,7 @@ describe('session protocol schemas', () => {
         args: { command: 'ls -la' },
       },
       { t: 'tool-call-end', call: 'call-1' },
+      { t: 'tool-call-end', call: 'call-2', result: 'User has answered your questions' },
       { t: 'file', ref: 'upload-1', name: 'report.txt', size: 1024, mimeType: 'text/plain' },
       {
         t: 'file',
@@ -40,6 +41,12 @@ describe('session protocol schemas', () => {
     for (const event of events) {
       expect(sessionEventSchema.safeParse(event).success).toBe(true);
     }
+  });
+
+  it('keeps the optional result of a tool-call-end and rejects a non-string one', () => {
+    const envelope = createEnvelope('agent', { t: 'tool-call-end', call: 'call-1', result: 'answered' }, { turn: 'turn-1' });
+    expect(envelope.ev).toEqual({ t: 'tool-call-end', call: 'call-1', result: 'answered' });
+    expect(sessionEventSchema.safeParse({ t: 'tool-call-end', call: 'call-1', result: 5 }).success).toBe(false);
   });
 
   it('rejects malformed events', () => {

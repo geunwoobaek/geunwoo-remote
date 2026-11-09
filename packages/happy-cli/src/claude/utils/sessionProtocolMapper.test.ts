@@ -174,6 +174,54 @@ describe('mapClaudeLogMessageToSessionEnvelopes', () => {
         );
     });
 
+    describe('tool results', () => {
+        const questionText = 'Your questions have been answered: "Which fruits?"="Apple". You can now continue with these answers in mind.';
+        const toolUse = (id: string, name: string, input: Record<string, unknown>) => ({
+            type: 'assistant',
+            uuid: `a-${id}`,
+            message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] },
+        } as any);
+        const toolResult = (id: string, content: unknown) => ({
+            type: 'user',
+            uuid: `u-${id}`,
+            message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] },
+        } as any);
+        const endOf = (envelopes: { ev: { t: string } }[]) => envelopes.find((e) => e.ev.t === 'tool-call-end')?.ev;
+
+        it('sends the text of an AskUserQuestion result on its tool-call-end', () => {
+            const state = { currentTurnId: null };
+            const started = mapClaudeLogMessageToSessionEnvelopes(toolUse('ask-1', 'AskUserQuestion', { questions: [] }), state);
+            const ended = mapClaudeLogMessageToSessionEnvelopes(toolResult('ask-1', questionText), state);
+            expect(endOf(ended.envelopes)).toEqual({ t: 'tool-call-end', call: 'ask-1', result: questionText });
+        });
+
+        it('joins the text blocks of an array result', () => {
+            const state = { currentTurnId: null };
+            const started = mapClaudeLogMessageToSessionEnvelopes(toolUse('ask-2', 'AskUserQuestion', { questions: [] }), state);
+            const ended = mapClaudeLogMessageToSessionEnvelopes(
+                toolResult('ask-2', [{ type: 'text', text: 'Your questions have been answered:' }, { type: 'text', text: '"Q?"="A".' }]),
+                state,
+            );
+            expect(endOf(ended.envelopes)).toEqual({ t: 'tool-call-end', call: 'ask-2', result: 'Your questions have been answered:\n"Q?"="A".' });
+        });
+
+        it('sends no result for any other tool', () => {
+            const state = { currentTurnId: null };
+            const started = mapClaudeLogMessageToSessionEnvelopes(toolUse('bash-1', 'Bash', { command: 'ls' }), state);
+            const ended = mapClaudeLogMessageToSessionEnvelopes(toolResult('bash-1', 'file-a\nfile-b'), state);
+            expect(endOf(ended.envelopes)).toEqual({ t: 'tool-call-end', call: 'bash-1' });
+        });
+
+        it('sends no result for an AskUserQuestion result without text or one whose call was not seen', () => {
+            const state = { currentTurnId: null };
+            const started = mapClaudeLogMessageToSessionEnvelopes(toolUse('ask-3', 'AskUserQuestion', { questions: [] }), state);
+            const empty = mapClaudeLogMessageToSessionEnvelopes(toolResult('ask-3', ''), state);
+            expect(endOf(empty.envelopes)).toEqual({ t: 'tool-call-end', call: 'ask-3' });
+            const unseen = mapClaudeLogMessageToSessionEnvelopes(toolResult('ask-9', questionText), { currentTurnId: null });
+            expect(endOf(unseen.envelopes)).toEqual({ t: 'tool-call-end', call: 'ask-9' });
+        });
+    });
+
     it('exposes the generated session subagent id on Agent tool calls', () => {
         const started = mapClaudeLogMessageToSessionEnvelopes({
             type: 'assistant',

@@ -16,6 +16,8 @@ export type ClaudeSessionProtocolState = {
     subagentTitles?: Map<string, string>;
     bufferedSubagentMessages?: Map<string, RawJSONLines[]>;
     hiddenParentToolCalls?: Set<string>;
+    /** Tool name of each call seen so far, to tell whose result a `tool_result` is. */
+    toolNames?: Map<string, string>;
     startedSubagents?: Set<string>;
     activeSubagents?: Set<string>;
 };
@@ -112,6 +114,29 @@ function getHiddenParentToolCalls(state: ClaudeSessionProtocolState): Set<string
         state.hiddenParentToolCalls = new Set<string>();
     }
     return state.hiddenParentToolCalls;
+}
+
+function getToolNames(state: ClaudeSessionProtocolState): Map<string, string> {
+    if (!state.toolNames) {
+        state.toolNames = new Map<string, string>();
+    }
+    return state.toolNames;
+}
+
+/** Tools whose result text is sent on `tool-call-end`: the app shows the chosen answers of a question from it. */
+const TOOLS_WITH_RESULT = ['AskUserQuestion'];
+
+/** The text of a `tool_result` block's content: a string, or the text blocks of an array joined with a newline. */
+function toolResultText(content: unknown): string {
+    if (typeof content === 'string') {
+        return content;
+    }
+    if (!Array.isArray(content)) {
+        return '';
+    }
+    return content
+        .flatMap((part) => (part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []))
+        .join('\n');
 }
 
 function bufferSubagentMessage(state: ClaudeSessionProtocolState, subagent: string, message: RawJSONLines): void {
@@ -565,6 +590,7 @@ function mapClaudeLogMessageToSessionEnvelopesInternal(
                 const name = typeof block.name === 'string' && block.name.length > 0 ? block.name : 'unknown';
                 const baseArgs = toToolArgs(block.input);
                 const title = toolTitle(name, block.input);
+                getToolNames(state).set(call, name);
                 const sessionSubagentForCall = ensureSessionSubagentIdForProviderSubagent(state, call);
                 if (isSubagentTool(name)) {
                     const prompt = pickTaskPrompt(block.input);
@@ -684,9 +710,13 @@ function mapClaudeLogMessageToSessionEnvelopesInternal(
                         maybeEmitSubagentStop(state, turnId, sessionSubagentForToolResult, envelopes);
                     }
                 }
+                const toolName = getToolNames(state).get(block.tool_use_id);
+                getToolNames(state).delete(block.tool_use_id);
+                const result = toolName !== undefined && TOOLS_WITH_RESULT.includes(toolName) ? toolResultText(block.content) : '';
                 envelopes.push(createEnvelope('agent', {
                     t: 'tool-call-end',
                     call: block.tool_use_id,
+                    ...(result.length > 0 ? { result } : {}),
                 }, { turn: turnId, subagent }));
                 continue;
             }
