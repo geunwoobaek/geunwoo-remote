@@ -33,6 +33,7 @@ import {
     forkCodexThread,
     listCodexRewindPoints,
 } from '@/codex/codexThreadFork';
+import type { ClaudeAgentHandlers } from '@/claudeAgents/daemonHandlers';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -125,6 +126,7 @@ type MachineRpcHandlers = {
     resumeSession?: (sessionId: string, options?: ResumeSessionOptions) => Promise<SpawnSessionResult>;
     stopSession: (sessionId: string) => boolean;
     requestShutdown: () => void;
+    claudeAgents?: ClaudeAgentHandlers;
 }
 
 function requireNonEmptyString(value: unknown, name: string): string {
@@ -177,9 +179,17 @@ export class ApiMachineClient {
         spawnSession,
         resumeSession,
         stopSession,
-        requestShutdown
+        requestShutdown,
+        claudeAgents
     }: MachineRpcHandlers) {
         this.resumeSessionHandler = resumeSession ?? null;
+
+        if (claudeAgents) {
+            // Both answer with their result object (errors included) so the app can show the message.
+            this.rpcHandlerManager.registerHandler('list-claude-agents', () => claudeAgents.list());
+            this.rpcHandlerManager.registerHandler('open-claude-agent', (params: any) =>
+                claudeAgents.open(requireNonEmptyString(params?.id, 'id')));
+        }
 
         // Register spawn session handler
         this.rpcHandlerManager.registerHandler('spawn-happy-session', async (params: any) => {

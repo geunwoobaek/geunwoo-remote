@@ -1,0 +1,151 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Boots the real daemon closure (like run.resume.test.ts) with every outside world faked:
+// no network, no real children, no tmux, no `claude`.
+const mocks = vi.hoisted(() => ({
+  handlers: null as any,
+  webhook: null as any,
+  persisted: {} as Record<string, any>,
+  spawn: vi.fn(),
+  persistSession: vi.fn(),
+  logger: { debug: vi.fn(), debugLargeJson: vi.fn(), warn: vi.fn() },
+}));
+
+vi.mock('axios', () => ({ default: { get: vi.fn() } }));
+vi.mock('os', async (importOriginal) => {
+  const original = await importOriginal<typeof import('os')>();
+  return { ...original, default: { ...original, homedir: () => process.env.HAPPY_HOME_DIR! } };
+});
+vi.mock('fs/promises', () => ({ default: { access: vi.fn(async () => undefined) } }));
+vi.mock('@/ui/logger', () => ({ logger: mocks.logger }));
+vi.mock('@/configuration', () => ({ configuration: { serverUrl: 'http://test.invalid', happyHomeDir: '/test-only' } }));
+vi.mock('@/ui/auth', () => ({ authAndSetupMachineIfNeeded: async () => ({ credentials: { token: 'test-token' }, machineId: 'machine-1' }) }));
+vi.mock('@/ui/doctor', () => ({ getEnvironmentInfo: () => ({}) }));
+vi.mock('@/utils/caffeinate', () => ({ startCaffeinate: () => false, stopCaffeinate: vi.fn() }));
+vi.mock('@/utils/detectCLI', () => ({ detectCLIAvailability: () => ({}) }));
+vi.mock('@/utils/spawnHappyCLI', () => ({ spawnHappyCLI: mocks.spawn }));
+vi.mock('@/utils/tmux', () => ({ isTmuxAvailable: async () => false }));
+vi.mock('@/resume/localHappyAgentAuth', () => ({ detectResumeSupport: () => ({}), hasLocalHappyAgentAuth: () => false }));
+vi.mock('@/claudeAgents/agentsList', () => ({
+  resolveClaudeBinary: async () => '/fake/claude',
+  fetchClaudeAgents: async () => [{
+    id: 'abc12345', sessionId: 'session-abc', name: 'demo-agent', cwd: '/Users/tester/project',
+    pid: 1, status: 'idle', state: null, startedAt: 1,
+  }],
+}));
+vi.mock('@/claudeAgents/attachTerminal', () => ({ isTmuxInstalled: async () => true }));
+vi.mock('./happyTerminalBoot', () => ({ startHappyTerminalDaemon: vi.fn() }));
+vi.mock('@/persistence', () => ({
+  readPersistedSessions: () => mocks.persisted,
+  persistSession: mocks.persistSession, markSessionStopped: vi.fn(), writeDaemonState: vi.fn(), readDaemonState: vi.fn(),
+  acquireDaemonLock: async () => ({}), releaseDaemonLock: vi.fn(),
+}));
+vi.mock('./controlClient', () => ({
+  isDaemonRunningCurrentlyInstalledHappyVersion: async () => false,
+  stopDaemon: vi.fn(), cleanupDaemonState: vi.fn(),
+}));
+vi.mock('./controlServer', () => ({ startDaemonControlServer: async (options: any) => {
+  mocks.webhook = options.onHappySessionWebhook;
+  return { port: 0, stop: vi.fn() };
+} }));
+vi.mock('@/api/api', () => ({ ApiClient: { create: async () => ({
+  getOrCreateMachine: async () => ({ id: 'machine-1' }),
+  machineSyncClient: () => ({
+    setRPCHandlers: (handlers: any) => { mocks.handlers = handlers; },
+    connect: () => { throw new Error('test boot complete'); },
+  }),
+}) } }));
+
+import { startDaemon } from './run';
+
+const dataKeyBase64 = Buffer.alloc(32, 1).toString('base64');
+const mirrorMetadata = { path: '/Users/tester/project', machineId: 'machine-1', flavor: 'claude', claudeAgentId: 'abc12345' };
+const storedMirror = {
+  encryptionKey: dataKeyBase64, encryptionVariant: 'dataKey', seq: 7, metadataVersion: 3, agentStateVersion: 4,
+  metadata: { ...mirrorMetadata, hostPid: 999 }, savedAt: Date.now() - 60_000, lastAliveAt: Date.now() - 60_000,
+};
+
+async function boot() {
+  await expect(startDaemon()).rejects.toThrow('test exit');
+}
+
+describe('daemon Claude background agents', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.persisted = {};
+    vi.spyOn(process, 'on').mockReturnValue(process);
+    vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('test exit'); });
+    // Only the pids this test spawns are alive; a stored pid from "a previous daemon" is gone.
+    vi.spyOn(process, 'kill').mockImplementation((pid) => {
+      if (pid === 999) throw Object.assign(new Error('gone'), { code: 'ESRCH' });
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('opens a fresh mirror in the agent directory and lists it afterwards', async () => {
+    await boot();
+    mocks.spawn.mockImplementation(() => {
+      queueMicrotask(() => mocks.webhook('happy-new', { ...mirrorMetadata, hostPid: 12345 }, {
+        encryptionKey: new Uint8Array(32), encryptionVariant: 'dataKey', seq: 0, metadataVersion: 0, agentStateVersion: 0,
+      }));
+      return { pid: 12345, on: vi.fn() };
+    });
+    expect(await mocks.handlers.claudeAgents.open('abc12345')).toEqual({ type: 'success', sessionId: 'happy-new' });
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      ['claude-agent-mirror', 'abc12345'],
+      expect.objectContaining({ cwd: '/Users/tester/project' }),
+    );
+    expect(mocks.spawn.mock.calls[0][1].env.HAPPY_RECONNECT_SESSION_ID).toBeUndefined();
+
+    const listing = await mocks.handlers.claudeAgents.list();
+    expect(listing.agents[0]).toMatchObject({ id: 'abc12345', mirrorSessionId: 'happy-new' });
+    // The mirror is running: opening again must not start a second one.
+    expect(await mocks.handlers.claudeAgents.open('abc12345')).toEqual({ type: 'success', sessionId: 'happy-new' });
+    expect(mocks.spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconnects a stopped mirror with its stored keys', async () => {
+    mocks.persisted = { 'happy-old': storedMirror };
+    await boot();
+    mocks.spawn.mockImplementation(() => {
+      queueMicrotask(() => mocks.webhook('happy-old', { ...mirrorMetadata, hostPid: 12345 }));
+      return { pid: 12345, on: vi.fn() };
+    });
+    expect(await mocks.handlers.claudeAgents.open('abc12345')).toEqual({ type: 'success', sessionId: 'happy-old' });
+    expect(mocks.spawn.mock.calls[0][0]).toEqual(['claude-agent-mirror', 'abc12345']);
+    expect(mocks.spawn.mock.calls[0][1].env).toMatchObject({
+      HAPPY_RECONNECT_SESSION_ID: 'happy-old',
+      HAPPY_RECONNECT_ENCRYPTION_KEY: dataKeyBase64,
+      HAPPY_RECONNECT_ENCRYPTION_VARIANT: 'dataKey',
+      HAPPY_RECONNECT_SEQ: '7',
+      HAPPY_RECONNECT_METADATA_VERSION: '3',
+      HAPPY_RECONNECT_AGENT_STATE_VERSION: '4',
+    });
+  });
+
+  it('does not start a second mirror while the first is still starting after a timeout', async () => {
+    vi.useFakeTimers();
+    await boot();
+    mocks.spawn.mockReturnValue({ pid: 12345, on: vi.fn() });
+    const first = mocks.handlers.claudeAgents.open('abc12345');
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(await first).toMatchObject({ type: 'error', errorMessage: expect.stringContaining('timeout') });
+    expect(await mocks.handlers.claudeAgents.open('abc12345')).toMatchObject({ type: 'error' });
+    expect(mocks.spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to resume a mirror session', async () => {
+    mocks.persisted = { 'happy-old': storedMirror };
+    await boot();
+    expect(await mocks.handlers.resumeSession('happy-old')).toEqual({
+      type: 'error',
+      errorMessage: 'This session mirrors a Mac background session. Open it from the background session list.',
+    });
+    expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+});

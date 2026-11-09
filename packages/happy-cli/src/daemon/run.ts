@@ -37,6 +37,14 @@ import {
 import { startHappyTerminalDaemon } from './happyTerminalBoot';
 import { appendDaemonSpawnModeArgs, shouldForwardDaemonPermissionMode } from './spawnModeArgs';
 import { hasPersistedProcessConflict, isPidAlive, machineBootTimeMs } from './sessionLiveness';
+import { fetchClaudeAgents, resolveClaudeBinary } from '@/claudeAgents/agentsList';
+import { isTmuxInstalled } from '@/claudeAgents/attachTerminal';
+import {
+  MIRROR_RESUME_REFUSAL,
+  createClaudeAgentHandlers,
+  isClaudeAgentMirror,
+  pickPersistedMirrors,
+} from '@/claudeAgents/daemonHandlers';
 
 /** Shell-escape a string for safe interpolation into tmux commands. */
 function shellescape(s: string): string {
@@ -605,6 +613,7 @@ export async function startDaemon(): Promise<void> {
       directoryCreated = false,
       message,
       reconnect,
+      onSpawned,
     }: {
       args: string[];
       cwd: string;
@@ -612,6 +621,8 @@ export async function startDaemon(): Promise<void> {
       directoryCreated?: boolean;
       message?: string;
       reconnect?: Pick<TrackedSession, 'happySessionId' | 'happySessionMetadataFromLocalWebhook' | 'encryption'>;
+      /** Called with the child's PID as soon as it has one. */
+      onSpawned?: (pid: number) => void;
     }): Promise<SpawnSessionResult> => {
       const happyProcess = spawnHappyCLI(args, {
         cwd,
@@ -635,6 +646,7 @@ export async function startDaemon(): Promise<void> {
       }
 
       logger.debug(`[DAEMON RUN] Spawned process with PID ${happyProcess.pid}`);
+      onSpawned?.(happyProcess.pid);
 
       const trackedSession: TrackedSession = {
         startedBy: 'daemon',
@@ -765,6 +777,11 @@ export async function startDaemon(): Promise<void> {
         const conflict = resumeConflict(happySessionId);
         if (conflict) return conflict;
         const tracked = findTrackedSessionById(happySessionId);
+        // A mirror of a Mac background session has no Claude conversation of its own to resume.
+        // It is reopened through `open-claude-agent`, which also keeps it to one process per agent.
+        if (isClaudeAgentMirror(tracked?.happySessionMetadataFromLocalWebhook ?? options?.fallback?.metadata as Metadata | undefined)) {
+          return { type: 'error', errorMessage: MIRROR_RESUME_REFUSAL };
+        }
         // The daemon only remembers sessions it saw during this lifetime, so a
         // session started before it (or before its last restart) is unknown
         // here. That is not a reason to refuse: the client can supply the
@@ -868,6 +885,93 @@ export async function startDaemon(): Promise<void> {
         };
       }
     };
+
+    // PID of the mirror process this daemon started for each Claude background agent. It outlives
+    // a failed or slow start, so a retry cannot put a second mirror (a second attach client typing
+    // every phone message into the Mac session) next to a first one that is still coming up.
+    const mirrorPids = new Map<string, number>();
+
+    // agentId -> Happy session id of the mirror processes running now.
+    const liveMirrors = (): Map<string, string> => {
+      const live = new Map<string, string>();
+      for (const [pid, session] of pidToTrackedSession) {
+        const agentId = session.happySessionMetadataFromLocalWebhook?.claudeAgentId;
+        if (!agentId || !session.happySessionId) continue;
+        if (!isPidAlive(pid)) {
+          onChildExited(pid);
+          continue;
+        }
+        if (stoppingPids.has(pid)) continue;
+        live.set(agentId, session.happySessionId);
+      }
+      return live;
+    };
+
+    const spawnMirror = async (
+      agentId: string,
+      reconnect: { happySessionId: string; env: Record<string, string> } | undefined,
+      cwd: string,
+    ): Promise<SpawnSessionResult> => {
+      const knownPid = mirrorPids.get(agentId);
+      if (knownPid !== undefined) {
+        if (isPidAlive(knownPid) && pidToTrackedSession.has(knownPid)) {
+          return { type: 'error', errorMessage: `The mirror of background agent ${agentId} is still starting. Try again in a moment.` };
+        }
+        mirrorPids.delete(agentId);
+      }
+
+      let tracking: Pick<TrackedSession, 'happySessionId' | 'happySessionMetadataFromLocalWebhook' | 'encryption'> | undefined;
+      if (reconnect) {
+        const conflict = resumeConflict(reconnect.happySessionId);
+        if (conflict) return conflict;
+        const stored = readPersistedSessions()[reconnect.happySessionId];
+        if (!stored) {
+          return { type: 'error', errorMessage: `Session ${reconnect.happySessionId} is no longer stored on this machine.` };
+        }
+        tracking = {
+          happySessionId: reconnect.happySessionId,
+          happySessionMetadataFromLocalWebhook: stored.metadata,
+          encryption: {
+            encryptionKey: decodeBase64(stored.encryptionKey),
+            encryptionVariant: stored.encryptionVariant,
+            seq: stored.seq,
+            metadataVersion: stored.metadataVersion,
+            agentStateVersion: stored.agentStateVersion,
+          },
+        };
+      } else {
+        // A fresh mirror shares the Happy session of every earlier mirror of this agent. An earlier
+        // one that may still be running (a daemon restart does not stop it) must go first.
+        for (const session of Object.values(readPersistedSessions())) {
+          if (session.metadata?.claudeAgentId === agentId && hasPersistedProcessConflict(session, bootTimeMs)) {
+            return { type: 'error', errorMessage: `The mirror of background agent ${agentId} may still be running from a previous daemon. Wait for it to exit before retrying.` };
+          }
+        }
+      }
+
+      return spawnTrackedHappyProcess({
+        args: ['claude-agent-mirror', agentId],
+        cwd,
+        env: buildSessionChildEnvironment(ambientEnvironment, reconnect?.env),
+        reconnect: tracking,
+        onSpawned: (pid) => mirrorPids.set(agentId, pid),
+      });
+    };
+
+    const claudeAgents = createClaudeAgentHandlers({
+      resolveClaude: resolveClaudeBinary,
+      tmuxInstalled: isTmuxInstalled,
+      fetchAgents: fetchClaudeAgents,
+      liveMirrors,
+      persistedMirrors: () => pickPersistedMirrors(readPersistedSessions()),
+      // The mirror never asks to create a directory (the agent's own cwd exists), but the shared result type allows it.
+      spawnMirror: async (agentId, reconnect, cwd) => {
+        const result = await spawnMirror(agentId, reconnect, cwd);
+        return result.type === 'requestToApproveDirectoryCreation'
+          ? { type: 'error', errorMessage: `Directory ${result.directory} does not exist.` }
+          : result;
+      },
+    });
 
     // Stop a session by sessionId or PID fallback
     const stopSession = (sessionId: string): boolean => {
@@ -1027,7 +1131,8 @@ export async function startDaemon(): Promise<void> {
       spawnSession,
       resumeSession,
       stopSession,
-      requestShutdown: () => requestShutdown('happy-app')
+      requestShutdown: () => requestShutdown('happy-app'),
+      claudeAgents,
     });
 
     // Connect to server
