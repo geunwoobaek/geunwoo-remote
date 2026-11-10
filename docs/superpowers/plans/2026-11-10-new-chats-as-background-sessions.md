@@ -27,7 +27,7 @@
   - untrusted body ``Claude on the Mac doesn't trust %1$s yet. Open a terminal there, run `claude` once and accept the prompt, then try again.``
   - untrusted alternate button `Open as regular session`
   - start-only hint under the mode pickers `Model, mode and effort apply when the chat starts.`
-- Public fork: fixtures use `/Users/tester/project`; no personal, company or simplefun data in code, tests or docs.
+- Public fork: fixtures use `/Users/tester/project`; no personal or company data in code, tests or docs.
 - Never run `connectedAndroidTest`. Android unit tests: `./gradlew :app:testDebugUnitTest` from `packages/happy-android`. CLI tests: `yarn vitest run <file>` from `packages/happy-cli`.
 
 ## Review Focus
