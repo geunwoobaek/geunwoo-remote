@@ -112,14 +112,15 @@ private val MIRROR_REFUSAL_REASONS = setOf("answer-on-mac", "typing-failed")
 /** The tool name the CLI gives a dialog it could not read off the Mac's screen; no answer to it is ever accepted. */
 private const val UNREADABLE_DIALOG_TOOL = "Unknown"
 
-/** True when a mirror's card says "Answer this on your Mac" in place of buttons. */
+/**
+ * True when a mirror's card says "Answer this on your Mac" in place of buttons. A dialog the
+ * phone could not read keeps that line after it closes too: the Mac answered it, and the CLI
+ * closes it as canceled with no reason, which would otherwise bring back Yes and No.
+ */
 fun answersOnMac(permission: ToolPermission, toolName: String, mirror: Boolean): Boolean {
     if (!mirror) return false
-    return when (permission.status) {
-        PermissionStatus.Pending -> toolName == UNREADABLE_DIALOG_TOOL
-        PermissionStatus.Canceled -> permission.reason in MIRROR_REFUSAL_REASONS
-        else -> false
-    }
+    if (toolName == UNREADABLE_DIALOG_TOOL) return true
+    return permission.status == PermissionStatus.Canceled && permission.reason in MIRROR_REFUSAL_REASONS
 }
 
 /** A permission card's body under the tool: its answer buttons, or the line that sends the user to their Mac. */

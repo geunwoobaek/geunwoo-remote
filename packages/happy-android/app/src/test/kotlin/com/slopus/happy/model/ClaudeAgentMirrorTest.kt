@@ -222,6 +222,17 @@ class ClaudeAgentMirrorTest {
         assertTrue(permissionCardBody(pending("screen:abc"), "Unknown", null, "claude", mirror = false) is PermissionCardBody.Buttons)
     }
 
+    @Test fun `an unreadable dialog answered on the Mac does not grow answer buttons`() {
+        // The Mac answered it, so the CLI closes the request as canceled with no reason.
+        for (status in listOf(PermissionStatus.Canceled, PermissionStatus.Denied, PermissionStatus.Approved)) {
+            assertEquals(
+                PermissionCardBody.AnswerOnMac,
+                permissionCardBody(ToolPermission("screen:abc", status), "Unknown", null, "claude", mirror = true),
+            )
+        }
+        assertTrue(permissionCardBody(canceled(null), "Unknown", null, "claude", mirror = false) is PermissionCardBody.Buttons)
+    }
+
     @Test fun `the reducer carries a refusal reason and an unreadable request to the card`() {
         val state = ReducerState(now = { 999_999 })
         val result = state.reduce(
