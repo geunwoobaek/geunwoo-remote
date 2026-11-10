@@ -866,6 +866,14 @@ ANDROID_SERIAL=<device> ./gradlew :benchmark:connectedBenchmarkBenchAndroidTest 
   (`keystore.properties.example` lists the keys). Without them `release`
   builds unsigned and `preview` debug-signed, so `assembleRelease` works
   anywhere, CI included.
+- Every `release` and `preview` build, signed or not, needs the voice agent:
+  `HAPPY_CALL_AGENT_V3_ID` (or `-Phappy.callAgentV3Id`, or `happy.callAgentV3Id`
+  in `local.properties`), an ElevenLabs `agent_…` ID. Without it the build
+  fails in `pre<Variant>Build` rather than ship a voice button that only says
+  voice isn't set up. v2's old `HAPPY_CALL_AGENT_ID` is ignored. A build that
+  ships nowhere (CI, a local `assembleRelease` to check R8) sets
+  `HAPPY_RELEASE_WITHOUT_CALL_AGENT=1` instead. Debug, bench and tests never
+  need it.
 - PostHog's public project key comes from `EXPO_PUBLIC_POSTHOG_API_KEY` or
   `-Phappy.postHogKey`, as happy-app's and Happy Desktop's do; nothing is
   checked in. A build without it reads every feature flag as off and sends
@@ -879,7 +887,8 @@ ANDROID_SERIAL=<device> ./gradlew :benchmark:connectedBenchmarkBenchAndroidTest 
 - Shipping goes through the `release` skill like every other release.
 - CI: `.github/workflows/happy-android.yml` runs `assembleDebug
   assembleRelease testDebugUnitTest :crypto:test` on changes under
-  `packages/happy-android/` and shared mobile resources. It has no signing secrets.
+  `packages/happy-android/` and shared mobile resources. It has no signing
+  secrets and no voice agent (`HAPPY_RELEASE_WITHOUT_CALL_AGENT=1`).
 
 The JDK toolchain (21) is provisioned by the foojay resolver if the machine
 only has a JRE. In the agent sandbox Gradle needs network and local sockets:
@@ -1840,7 +1849,17 @@ is `packages/happy-ios`. The wire keeps its own names
   existing ones). `HttpsTransport` (an agent with a public URL) has no
   clients: each socket is its own TLS connection tagged with its category,
   so `reset(category)` closes only that category's, with the same
-  deadlines; `AgentEndpointTransport` passes the category on. It uses
+  deadlines; `AgentEndpointTransport` passes the category on. A session
+  kept through the background (`AppGraph.setForeground` →
+  `AgentSessions.backgrounded`) resumes its transport before its link next
+  runs, open then or later (`Transport.resumed`, iOS's): every client is
+  woken (`TailcatClient.wake`), which checks rather than assumes anything
+  broke. The relay is pinged and replaced only if it doesn't answer within
+  two seconds, every direct path is probed and one that stopped answering
+  dropped, and an expired session rekeys; clients, requests under way and
+  live sessions stay. tailcat-kotlin watches no network itself, so a network
+  that returns gets the same check on every kept client
+  (`Transport.networkChanged`, from `AgentSession.networkReturned`). It uses
   tailcat-kotlin's default DERP map (`https://tailcat.dev/derpmap.json`),
   cached in `noBackupFilesDir/tailcat/derpmap.json` (`FileDerpMapCache`):
   with no network and no cached map, connecting fails.
@@ -2049,3 +2068,14 @@ command runs at once and the draft clears) and `draft` (a skill becomes
 `Problem.CommandGone`/`CommandBusy`); a skill is a user message `/name args`
 carrying one `read_skill` tool_call_request, as desktop sends it. The command's
 words never go out as a message otherwise.
+
+A new chat, before it has an agent, offers the computer's global skills in the
+same list (`ConversationApi.skills`: `GET /v0/skills` 100 a page, read again
+from the start on 409, enabled and ready ones only; 404/501 offer none). They
+are read as the new chat starts and again on `skills.updated` or a reconnect.
+A first message that is `/skill args` with an offered name (`Conversation.send`)
+goes as a skill does in a chat: `/name args` asking for `read_skill`, sent as
+the task or bot's first message once it is made. The new agent's catalog (its
+bootstrap) decides: without that name, or with attachments, the words go as
+plain text. A failure leaves the message failed with Retry, as a first send's
+does. Other commands wait for an agent.

@@ -63,14 +63,19 @@ final class Dictation {
     }
 
     /// Asks for what hasn't been asked: the microphone, then speech.
-    static func ask() async -> Access {
+    /// Allowed, the models for two languages start downloading at once,
+    /// not when a microphone next appears, so the next recordings can
+    /// already choose (`prefetch`).
+    static func ask(multilingual: Bool) async -> Access {
         if fileSource == nil, AVAudioApplication.shared.recordPermission == .undetermined {
             _ = await AVAudioApplication.requestRecordPermission()
         }
         if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
             _ = await askSpeech()
         }
-        return access()
+        let access = access()
+        if access == .granted { prefetch(multilingual: multilingual) }
+        return access
     }
 
     /// Speech answers on a queue of its own: the callback is made outside
@@ -87,20 +92,26 @@ final class Dictation {
         DictationLanguages.recognizer(allowUnavailableOnDevice: simulatorScript != nil)
     }
 
-    /// The languages to listen for at once, best ranked first; the
-    /// recording's words decide between them (`DictationRecognition`).
-    private static func candidates() -> [Locale] {
-        DictationLanguages.probeLocales(supported: Array(SFSpeechRecognizer.supportedLocales()))
+    /// Settings › Agents › Multilingual dictation, as the next recording
+    /// should use it.
+    var multilingual = true
+
+    /// The languages a recording listens in, best ranked first: two, for
+    /// the recording's words to decide between (`DictationRecognition`),
+    /// only when `multilingual` and the person has two.
+    private static func candidates(multilingual: Bool) -> [Locale] {
+        DictationLanguages.listeningLocales(supported: Array(SFSpeechRecognizer.supportedLocales()), multilingual: multilingual)
     }
 
     private static var prefetched: [Locale] = []
 
-    /// Downloads, in the background, the models for the languages a
-    /// recording would listen for, once speech recognition is allowed, so
-    /// the first recording in each can already choose. Nothing is heard.
-    static func prefetch() {
-        guard SFSpeechRecognizer.authorizationStatus() == .authorized else { return }
-        let locales = candidates()
+    /// Downloads, in the background, the models for listening in two
+    /// languages, so the first recording can already choose. Only with
+    /// `multilingual` on, speech recognition allowed and a second language
+    /// of the person's; nothing otherwise. Nothing is heard.
+    static func prefetch(multilingual: Bool) {
+        guard multilingual, SFSpeechRecognizer.authorizationStatus() == .authorized else { return }
+        let locales = candidates(multilingual: true)
         guard locales.count > 1, locales != prefetched else { return }
         prefetched = locales
         DictationRecognition.prefetch(locales)
@@ -111,7 +122,9 @@ final class Dictation {
         guard !isRunning, recognition == nil else { throw Failure.audio }
         guard let recognizer = Self.recognizer() else { throw Failure.unavailable }
         publish(DictationTranscript())
-        let recognition = DictationRecognition(recognizer: recognizer, candidates: Self.candidates())
+        let candidates = Self.candidates(multilingual: multilingual)
+        DictationLog.note("start multilingual \(multilingual) signals \(DictationLanguages.signals()) ranked \(DictationLanguages.rankedLocales(supported: Array(SFSpeechRecognizer.supportedLocales())).map(\.identifier)) listening \(candidates.map(\.identifier)) recognizer \(recognizer.locale.identifier) onDevice \(recognizer.supportsOnDeviceRecognition)")
+        let recognition = DictationRecognition(recognizer: recognizer, candidates: candidates)
         let audio = recognition.audio
         let level: @Sendable (CGFloat) -> Void = { [weak self] value in
             Task { @MainActor in self?.onLevel?(value) }
@@ -154,6 +167,7 @@ final class Dictation {
         stopAudio()
         if let recognition {
             _ = await recognition.finish()
+            DictationLog.note("finished \(recognition.engine?.rawValue ?? "none") \(recognition.locale.identifier) [\(transcript.text)]")
             self.recognition = nil
             if !transcript.text.isEmpty { DictationLanguages.rememberSuccess(locale: recognition.locale) }
         } else if let script = Self.simulatorScript, let words = try? String(contentsOf: script, encoding: .utf8) {
@@ -235,6 +249,30 @@ final class Dictation {
 
     // MARK: A recording in place of the microphone (DEBUG)
 
+    #if DEBUG
+    private static var trial: Dictation?
+
+    /// `HAPPY_DICTATION_TRIAL=<seconds>`: at launch, one recording of
+    /// `HAPPY_DICTATION_AUDIO` that long, with no one pressing anything;
+    /// what it chose and heard goes to Documents/dictation.log.
+    static func trialIfAsked() {
+        guard let seconds = ProcessInfo.processInfo.environment["HAPPY_DICTATION_TRIAL"].flatMap(Double.init) else { return }
+        let multilingual = ProcessInfo.processInfo.environment["HAPPY_DICTATION_MULTILINGUAL"] != "0"
+        Task { @MainActor in
+            let access = await ask(multilingual: multilingual)
+            DictationLog.note("trial access \(access) speech \(SFSpeechRecognizer.authorizationStatus().rawValue)")
+            let dictation = Dictation()
+            dictation.multilingual = multilingual
+            trial = dictation
+            do { try dictation.start() } catch { return DictationLog.note("trial start failed \(error)") }
+            try? await Task.sleep(for: .seconds(seconds))
+            let text = await dictation.finish()
+            DictationLog.note("trial done [\(text)]")
+            trial = nil
+        }
+    }
+    #endif
+
     /// `HAPPY_DICTATION_AUDIO`: a sound file, in Documents or a full path,
     /// played into the recognizer at its own pace in place of the
     /// microphone, so a device run hears the same words every time.
@@ -248,12 +286,16 @@ final class Dictation {
         #endif
     }
 
-    /// The simulator's recognizer can't load its model, so a simulator
-    /// run playing a file takes the file's words from a text file beside
-    /// it (`dictation.wav.txt`) instead.
+    /// A simulator run playing a file takes the file's words from a text
+    /// file beside it (`dictation.wav.txt`) when there is one. Without one
+    /// it tries Speech itself, which so far hears nothing: the iOS 27.0
+    /// simulator installs the models, but SpeechAnalyzer has no audio
+    /// format for them (`noFormat`), and iOS 26.5's has no on-device
+    /// recognizer at all.
     private static var simulatorScript: URL? {
         #if targetEnvironment(simulator)
-        return fileSource?.appendingPathExtension("txt")
+        guard let script = fileSource?.appendingPathExtension("txt"), FileManager.default.fileExists(atPath: script.path) else { return nil }
+        return script
         #else
         return nil
         #endif
@@ -293,5 +335,13 @@ final class Dictation {
             try? line.write(to: log)
         }
     }
+}
+#endif
+
+#if canImport(UIKit) && DEBUG
+/// The app's way in to `Dictation.trialIfAsked`.
+@MainActor
+public enum DictationTrial {
+    public static func startIfAsked() { Dictation.trialIfAsked() }
 }
 #endif

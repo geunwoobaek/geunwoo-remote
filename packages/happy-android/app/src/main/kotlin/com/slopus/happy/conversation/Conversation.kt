@@ -172,6 +172,8 @@ class Conversation(
     private val references: com.slopus.happy.references.ReferenceReader? = null,
     /** Which settings pages its connection has: a link to any other reads as its words. Null leaves every link. */
     private val hasSettingsPage: ((String) -> Boolean)? = null,
+    /** Its server takes no files yet (Happy Cloud, which has no folders): a send with files says so, and nothing goes. */
+    private val filesUnavailable: Boolean = false,
     /** The person's model preferences: a new chat opens on their start ([ModelPreferences.startMode]); null, on the catalog's default. */
     private val preferences: StateFlow<ModelPreferences>? = null,
     /** A new chat's first message went with this mode: it is the session's start. */
@@ -195,7 +197,9 @@ class Conversation(
         var images: List<Block.Image>,
         var files: List<OutgoingFile> = emptyList(),
         /** A tool the agent runs before it reads this (a skill's `read_skill`). */
-        val toolRequest: ToolRequest? = null,
+        var toolRequest: ToolRequest? = null,
+        /** New work's first words as one of the computer's skills: it asks for that skill once the agent made offers it ([skillRequested]). */
+        var skill: String? = null,
         /** A voice call's words ([sendAs]). */
         val voice: Boolean = false,
         var accepted: Boolean = false,
@@ -312,11 +316,15 @@ class Conversation(
             }
             // Preferences changed on another device: an unpicked new chat follows them.
             preferences?.let { flow -> launch { flow.collect { if (adoptStartMode()) publish() } } }
-            if (created) reload()
+            if (created) reload() else readSkills()
             signals.collect { signal ->
                 // The computer's models changed, or may have while away: the pickers read them again.
                 if (signal == ConversationSignal.Resync || (signal as? ConversationSignal.Event)?.type == "config.updated") rereadCatalog()
-                if (!created) return@collect
+                if (!created) {
+                    // A new chat offers the computer's skills: changed, or maybe while away, they are read again.
+                    if (signal == ConversationSignal.Resync || (signal as? ConversationSignal.Event)?.type == SKILLS_UPDATED) readSkills()
+                    return@collect
+                }
                 when (signal) {
                     ConversationSignal.Resync -> reload()
                     is ConversationSignal.Event -> held?.add(signal) ?: receive(signal)
@@ -343,6 +351,7 @@ class Conversation(
                 olderReading?.cancel()
                 questionReading?.cancel()
                 reconciling?.cancel()
+                skillsReading?.cancel()
                 held = null
                 publish { it.copy(syncing = false, loadingOlder = false) }
             }
@@ -370,6 +379,7 @@ class Conversation(
             olderReading?.cancel()
             questionReading?.cancel()
             reconciling?.cancel()
+            skillsReading?.cancel()
         }
     }
 
@@ -787,15 +797,21 @@ class Conversation(
     /**
      * Draws the message at once and delivers it; false when there is nothing
      * to send. A new chat's messages go once its task or bot is made
-     * ([ensureCreated], in [pump]); the first fixes what it will be.
+     * ([ensureCreated], in [pump]); the first fixes what it will be. A new
+     * chat's first words that are `/skill args`, one of the computer's
+     * skills it offers, go as a skill does in a chat ([runCommand]): `/name
+     * args`, asking for `read_skill` once the agent made offers it
+     * ([skillRequested]).
      */
     fun send(text: String, images: List<Block.Image> = emptyList()): Boolean {
         val trimmed = text.trim()
         if (trimmed.isEmpty() && images.isEmpty()) return false
         val id = ConversationApi.clientId()
         scope.launch(lane) {
+            val skill = if (!created && outgoing.isEmpty() && images.isEmpty()) SlashCommands.invocation(trimmed, snapshot.commands) else null
+            val words = skill?.let { skillText(it.command.name, it.arguments) } ?: trimmed
             if (!created) locked = true
-            queue(Outgoing(id, trimmed, images, sentAt = now()))
+            queue(Outgoing(id, words, images, skill = skill?.command?.name, sentAt = now()))
             setDraftNow("")
             publish()
             pump()
@@ -941,8 +957,7 @@ class Conversation(
             val given = arguments?.trim()?.takeIf { it.isNotEmpty() && command.hasArguments }
             setDraftNow("")
             if (command.isSkill) {
-                val text = if (given == null) "/$name" else "/$name $given"
-                queue(Outgoing(ConversationApi.clientId(), text, emptyList(), toolRequest = ToolRequest(READ_SKILL, mapOf("name" to name)), sentAt = now()))
+                queue(Outgoing(ConversationApi.clientId(), skillText(name, given), emptyList(), toolRequest = skillRequest(name), sentAt = now()))
                 publish()
                 pump()
                 return@launch
@@ -1043,12 +1058,14 @@ class Conversation(
                 // A create that fails is told as `task_created` or `bot_created`, not as this send's error too.
                 var made = false
                 try {
+                    if (filesUnavailable && next.files.isNotEmpty()) throw FilesUnavailable()
                     next.images.indices.forEach { uploads.set(UploadBoard.pictureKey(next.id, it), UploadPhase.Preparing) }
                     ensureCreated()
                     made = true
                     val mode = sendingMode() ?: throw IllegalStateException("No model is set up on this computer.")
                     upload(next.files)
                     val images = next.images
+                    skillRequested(next)
                     val message = withRetries {
                         // The bytes of each picture's base64 written say how far it is.
                         var ranges: UploadRanges? = null
@@ -1138,6 +1155,20 @@ class Conversation(
         }
     }
 
+    /**
+     * New work's first `/skill args` ([Outgoing.skill]) asks for the skill
+     * only once the agent just made offers it (its bootstrap's catalog);
+     * otherwise, a project skill of another name or one switched off
+     * meanwhile, the words go as they are, so nothing typed is lost.
+     * Decided once: a retry sends the same message.
+     */
+    private suspend fun skillRequested(send: Outgoing) {
+        val name = send.skill ?: return
+        val offered = withRetries { api.bootstrap(agentId) }.slashCommands.orEmpty().any { it.name == name && it.isSkill }
+        if (offered) send.toolRequest = skillRequest(name)
+        send.skill = null
+    }
+
     /** The task or bot a new chat lives in, made once: a retry repeats the same ids, which is the same one. */
     private suspend fun ensureCreated() {
         val task = newTask ?: return
@@ -1154,7 +1185,8 @@ class Conversation(
             newTask = null
             onTaskCreated(made)
             (made["task"] ?: made["bot"]).obj?.get("agent")?.let(AgentInfo::parse)?.let { agent = it }
-            publish { it.copy(created = true) }
+            // The computer's skills were the new chat's; the agent's own catalog comes with its history.
+            publish { it.copy(created = true, commands = emptyList()) }
             // Typed while it was made: that goes up now under the real agent.
             if (!draftSynced) saveDraftSoon(0)
             reload()
@@ -1266,6 +1298,28 @@ class Conversation(
                 adoptStartMode()
                 publish()
             }
+        }
+    }
+
+    private var skillsReading: Job? = null
+
+    /**
+     * A new chat's commands before it has an agent: the computer's global
+     * skills ([ConversationApi.skills]), so its first message can be one. A
+     * failed read offers what was there; the made agent's own catalog
+     * replaces them.
+     */
+    private fun readSkills() {
+        skillsReading?.cancel()
+        skillsReading = scope.launch(lane) {
+            val skills = try {
+                api.skills()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return@launch
+            }
+            if (!created && skills != snapshot.commands) publish { it.copy(commands = skills) }
         }
     }
 
@@ -1598,6 +1652,16 @@ class Conversation(
         /** The tool a skill's invocation asks the agent to run first. */
         const val READ_SKILL = "read_skill"
 
+        /** A skill's message: `/name`, then its arguments after one space. */
+        fun skillText(name: String, arguments: String?): String =
+            arguments?.trim()?.takeIf { it.isNotEmpty() }?.let { "/$name $it" } ?: "/$name"
+
+        /** The `read_skill` request a skill's message carries (desktop aa8a2529). */
+        fun skillRequest(name: String) = ToolRequest(READ_SKILL, mapOf("name" to name))
+
+        /** The computer's skills changed (API.md "Live synchronization"). */
+        const val SKILLS_UPDATED = "skills.updated"
+
         /** Pages of catch-up read after the kept history before reading the newest page whole instead. */
         const val MAX_CATCH_UP_PAGES = 4
 
@@ -1617,6 +1681,7 @@ class Conversation(
         }
 
         private fun describeOther(e: Exception): Problem = when (e) {
+            is FilesUnavailable -> Problem.FilesUnavailable
             is AgentConnectionException -> Problem.Link(e.reason)
             is ConversationApiException -> e.message?.takeIf { it.isNotBlank() }?.let(Problem::Said) ?: Problem.Refused(e.status)
             else -> e.message?.takeIf { it.isNotBlank() }?.let(Problem::Said) ?: Problem.Unknown
@@ -1649,3 +1714,6 @@ class Conversation(
         }
     }
 }
+
+/** A send's files, on a server that takes none yet. */
+private class FilesUnavailable : Exception("File attachments aren't available on this server yet.")

@@ -58,6 +58,10 @@ private class FakeAgent {
     /** What `GET /v0/config` answers. */
     var config = CONFIG
     var commandsAfter = """[{"name":"compact","hasArguments":false,"description":"Summarize.","kind":"compaction"}]"""
+    /** `GET /v0/skills`'s pages by `pageCursor`, null the first; with none it answers 404, a computer without skills. */
+    var skillPages: Map<String?, String> = emptyMap()
+    /** The next reads of a later skills page answer 409: the catalog changed under them. */
+    var skillConflicts = 0
 
     val request: AgentRequest = { method, path, body, _ ->
         requests += Triple(method, path, body as? JsonObject)
@@ -100,6 +104,13 @@ private class FakeAgent {
                 TransportResponse(commandStatus, body = """{"error":"The daemon's own words.","code":"conflict"}""".toByteArray())
             }
             route == "/v0/config" -> ok(config)
+            route == "/v0/skills" -> {
+                val cursor = path.substringAfter("pageCursor=", "").takeIf { it.isNotEmpty() }
+                when {
+                    cursor != null && skillConflicts > 0 -> { skillConflicts--; TransportResponse(409, body = """{"error":"Changed.","code":"conflict"}""".toByteArray()) }
+                    else -> skillPages[cursor]?.let(::ok) ?: TransportResponse(404, body = """{"error":"Not found.","code":"not_found"}""".toByteArray())
+                }
+            }
             route.endsWith("/draft") -> ok("""{"draft":${(body as JsonObject).let { """{"value":${it["draft"]},"updatedAt":${it["updatedAt"]}}""" }}}""")
             else -> ok("{}")
         }
@@ -143,6 +154,7 @@ class ConversationTest {
         typesetter: RowTypesetter? = null,
         preferences: kotlinx.coroutines.flow.StateFlow<ModelPreferences>? = null,
         started: (Mode) -> Unit = {},
+        filesUnavailable: Boolean = false,
         created: (JsonObject) -> Unit = {},
     ) = Conversation(
         api = ConversationApi(agent.request),
@@ -164,6 +176,7 @@ class ConversationTest {
         onStarted = started,
         record = { recorded += it },
         errorShown = { area, code -> recorded += AnalyticsEvent.ErrorShown(area, code) },
+        filesUnavailable = filesUnavailable,
     ).also { it.start() }
 
     private fun event(type: String, payload: String) = ConversationSignal.Event(type, Json.parseToJsonElement(payload).jsonObject)
@@ -242,6 +255,40 @@ class ConversationTest {
         advanceUntilIdle()
         assertFalse(chat.state.value.syncing)
         assertTrue(chat.state.value.error != null)
+    }
+
+    /** The call reads the rows the chat draws, newest first, as turns oldest first: each answer with its own question. */
+    @Test fun `a call reads a conversation's turns each with its own message`() = runTest {
+        val agent = FakeAgent()
+        agent.page = """{"runs":[
+          {"id":"r1","status":"completed","startedAt":1,"endedAt":3,"messages":[
+            {"id":"u1","role":"user","createdAt":1,"content":[{"type":"text","text":"First question"}],"metadata":{}},
+            {"id":"a1","role":"agent","createdAt":2,"content":[{"type":"text","text":"First answer"}],"metadata":{}}]},
+          {"id":"r2","status":"completed","startedAt":4,"endedAt":6,"messages":[
+            {"id":"u2","role":"user","createdAt":4,"content":[{"type":"text","text":"Second question"}],"metadata":{}},
+            {"id":"a2","role":"agent","createdAt":5,"content":[{"type":"text","text":"Second answer"}],"metadata":{}}]}
+        ],"hasMore":false}"""
+        val chat = conversation(agent)
+        advanceUntilIdle()
+        val target = com.slopus.happy.call.CallTarget("a1", "Fix it", com.slopus.happy.call.CallTarget.Kind.Task, com.slopus.happy.call.CallTarget.Status.Idle)
+        val read = com.slopus.happy.call.CallTargetState.from(chat.state.value, target)
+        assertEquals(
+            listOf(
+                com.slopus.happy.call.CallTurn("r1", "First question", "First answer", endedAt = 3),
+                com.slopus.happy.call.CallTurn("r2", "Second question", "Second answer", endedAt = 6),
+            ),
+            read.turns,
+        )
+        assertNull(read.unanswered)
+        assertEquals(listOf("First question", "First answer", "Second question", "Second answer"), read.messages.map { it.text })
+        assertEquals(listOf(null, "r1", null, "r2"), read.messages.map { it.turn })
+        // The person's next message, taken but not answered yet, is the one waiting.
+        agent.bootstrap = agent.bootstrap.replace("\"pending\":[]", """"pending":[{"id":"u3","role":"user","status":"pending","createdAt":7,"content":[{"type":"text","text":"Third question"}],"metadata":{}}]""")
+        val waiting = conversation(agent)
+        advanceUntilIdle()
+        val later = com.slopus.happy.call.CallTargetState.from(waiting.state.value, target)
+        assertEquals(listOf("First question", "Second question"), later.turns.map { it.user })
+        assertEquals("Third question", later.unanswered?.text)
     }
 
     @Test fun `reads history and pending messages in run order`() = runTest {
@@ -467,13 +514,13 @@ class ConversationTest {
         // A task unless a bot is picked, unnamed, and the keyboard up in the composer.
         assertEquals(NewWork(WorkChoice(WorkKind.Task, "")), chat.state.value.newWork)
         assertEquals(ComposerFocus(1, 0), chat.state.value.composerFocus)
-        // Only the picker's models are read.
-        assertEquals(listOf("/v0/config"), agent.paths("GET"))
+        // Only the picker's models and the computer's skills are read.
+        assertEquals(setOf("/v0/config", "/v0/skills"), agent.paths("GET").toSet())
         assertTrue(agent.paths("POST").isEmpty())
         chat.setDraft("typed")
         advanceUntilIdle()
         // Nothing is saved for an agent that doesn't exist yet.
-        assertEquals(listOf("/v0/config"), agent.requests.map { it.second })
+        assertEquals(setOf("/v0/config", "/v0/skills"), agent.requests.map { it.second.substringBefore('?') }.toSet())
         // Both are drawn at once and go once the task is made (iOS c344a0cb3).
         assertTrue(chat.send("First"))
         assertTrue(chat.send("Second"))
@@ -1099,6 +1146,22 @@ class ConversationTest {
         assertTrue(row.text.contains("./.happy-uploads/$id/1-clip.mp4"))
     }
 
+    @Test fun `files on a server that takes none say so and nothing goes`() = runTest {
+        val agent = FakeAgent()
+        val chat = conversation(agent, filesUnavailable = true)
+        advanceUntilIdle()
+        val dir = kotlin.io.path.createTempDirectory("uploads").toFile()
+        val doc = java.io.File(dir, "notes.pdf").apply { writeBytes(byteArrayOf(4, 5)) }
+        assertTrue(chat.send("Look", listOf(preview(doc.toURI().toString(), "application/pdf", 2, name = "notes.pdf"))) { emptyList() })
+        advanceUntilIdle()
+        assertTrue(agent.written.isEmpty() && agent.requests.none { it.second.endsWith("/send") })
+        assertEquals(Delivery.Failed(Problem.FilesUnavailable), chat.state.value.rows.filterIsInstance<ConversationRow.User>().single().delivery)
+        // Pictures alone still go.
+        assertTrue(chat.send("Just a picture", listOf(preview("a.jpg", "image/jpeg", 10))) { list -> list.map { Block.Image("image/jpeg", it.name) } })
+        advanceUntilIdle()
+        assertEquals(1, agent.requests.count { it.second.endsWith("/send") })
+    }
+
     private fun TestScope.held() = HeldConversations(CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob().also { jobs += it }))
 
     /** desktop 01659140: a send in hand when the screen goes stays with its conversation, which the next screen takes back. */
@@ -1674,6 +1737,128 @@ class ConversationTest {
         val second = conversation(offline, keeper = store)
         advanceUntilIdle()
         assertEquals(listOf("compact", "code-review"), second.state.value.commands.map { it.name })
+    }
+
+    private fun skillPage(skills: String, next: String? = null) =
+        """{"skills":[$skills],"nextPageCursor":${next?.let { "\"$it\"" } ?: "null"},"cursor":"c0"}"""
+
+    private fun skill(name: String, enabled: Boolean = true, status: String = "ready") =
+        """{"id":"s-$name","path":"$name","name":"$name","description":"$name it.","enabled":$enabled,"status":"$status","error":null}"""
+
+    /** A computer offering /code-review, a made agent offering it too, and its bootstrap. */
+    private fun FakeAgent.withSkill(offered: Boolean = true) = apply {
+        skillPages = mapOf(null to skillPage(skill("code-review")))
+        val commands = if (offered) ""","slashCommands":[{"name":"code-review","hasArguments":true,"description":"Review.","kind":"skill"}]""" else ""
+        bootstrap = """{"agent":{"id":"a9","workspaceId":"w1","status":"idle"},"draft":{"value":null,"updatedAt":null},"pending":[]$commands}"""
+    }
+
+    @Test fun `a new chat offers the computer's enabled ready skills, read again when they change`() = runTest {
+        val agent = FakeAgent().apply {
+            skillPages = mapOf(
+                null to skillPage(skill("code-review") + "," + skill("off", enabled = false) + "," + skill("broken", status = "invalid"), next = "p2"),
+                // Two folders of one name: the agent offers it once, and so does the list.
+                "p2" to skillPage(skill("deploy") + "," + skill("code-review")),
+            )
+            // The catalog changed under its pages: read again from the start.
+            skillConflicts = 1
+        }
+        val chat = conversation(agent, NewTask("t1", "w1", "a9", "m1"))
+        advanceUntilIdle()
+        assertEquals(
+            listOf(SlashCommand("code-review", true, "code-review it.", "skill"), SlashCommand("deploy", true, "deploy it.", "skill")),
+            chat.state.value.commands,
+        )
+        assertEquals(
+            listOf("/v0/skills?limit=100", "/v0/skills?limit=100&pageCursor=p2", "/v0/skills?limit=100", "/v0/skills?limit=100&pageCursor=p2"),
+            agent.requests.map { it.second }.filter { it.startsWith("/v0/skills") },
+        )
+        agent.skillPages = mapOf(null to skillPage(skill("deploy", enabled = false)))
+        signals.emit(event("skills.updated", """{"skillIds":null,"paths":[]}"""))
+        advanceUntilIdle()
+        assertTrue(chat.state.value.commands.isEmpty())
+        // An agent's chat offers its own catalog, not these.
+        val existing = FakeAgent().apply { skillPages = agent.skillPages }
+        conversation(existing)
+        advanceUntilIdle()
+        assertTrue(existing.requests.none { it.second.startsWith("/v0/skills") })
+    }
+
+    @Test fun `a computer without skills offers a new chat none and says nothing`() = runTest {
+        val agent = FakeAgent()
+        val chat = conversation(agent, NewTask("t1", "w1", "a9", "m1"))
+        advanceUntilIdle()
+        assertEquals(1, agent.requests.count { it.second.startsWith("/v0/skills") })
+        assertTrue(chat.state.value.commands.isEmpty())
+        assertNull(chat.state.value.alert)
+        assertNull(chat.state.value.error)
+    }
+
+    @Test fun `a new chat's first skill makes the task, then goes into it as a skill's message under the composer's mode`() = runTest {
+        val agent = FakeAgent().withSkill()
+        agent.sendStatus = 202
+        val chat = conversation(agent, NewTask("t1", "w1", "a9", "m1"))
+        advanceUntilIdle()
+        val picked = Mode("codex", "openai/gpt-5.6-luna", "low", null, "read_only")
+        chat.setMode(picked)
+        assertTrue(chat.send("/code-review  focus on auth"))
+        advanceUntilIdle()
+        assertTrue(chat.state.value.created)
+        assertEquals(listOf("/v0/tasks", "/v0/agents/a9/send"), agent.paths("POST"))
+        val body = agent.requests.single { it.second.endsWith("/send") }.third!!
+        // As a chat sends a skill: the person's words, asking for read_skill first.
+        assertEquals("/code-review focus on auth", body["text"]!!.jsonPrimitive.content)
+        assertEquals(
+            Json.parseToJsonElement("""[{"type":"tool_call_request","name":"read_skill","arguments":{"name":"code-review"}}]"""),
+            body["content"],
+        )
+        assertEquals(picked, Mode.parse(body["mode"]))
+        val row = chat.state.value.rows.single() as ConversationRow.User
+        assertEquals("/code-review focus on auth", row.text)
+        assertEquals(row.messageId, body["id"]!!.jsonPrimitive.content)
+    }
+
+    @Test fun `a first skill the new agent doesn't offer goes as the words`() = runTest {
+        val agent = FakeAgent().withSkill(offered = false)
+        agent.sendStatus = 202
+        val chat = conversation(agent, NewTask("t1", "w1", "a9", "m1"))
+        advanceUntilIdle()
+        chat.send("/code-review focus on auth")
+        advanceUntilIdle()
+        val body = agent.requests.single { it.second.endsWith("/send") }.third!!
+        assertEquals("/code-review focus on auth", body["text"]!!.jsonPrimitive.content)
+        assertFalse("content" in body)
+    }
+
+    @Test fun `a first skill with a picture goes as a message`() = runTest {
+        val agent = FakeAgent().withSkill()
+        agent.sendStatus = 202
+        val chat = conversation(agent, NewTask("t1", "w1", "a9", "m1"))
+        advanceUntilIdle()
+        chat.send("/code-review this", listOf(Block.Image("image/jpeg", "AAAA")))
+        advanceUntilIdle()
+        val body = agent.requests.single { it.second.endsWith("/send") }.third!!
+        assertEquals("/code-review this", body["text"]!!.jsonPrimitive.content)
+        assertTrue(body["content"]!!.jsonArray.none { it.jsonObject["type"]!!.jsonPrimitive.content == "tool_call_request" })
+    }
+
+    @Test fun `a first skill refused stays failed and Retry sends the same message again`() = runTest {
+        val agent = FakeAgent().withSkill()
+        agent.sendStatus = 400
+        val chat = conversation(agent, NewTask("t1", "w1", "a9", "m1"))
+        advanceUntilIdle()
+        chat.send("/code-review")
+        advanceUntilIdle()
+        val row = chat.state.value.rows.single() as ConversationRow.User
+        assertEquals("/code-review", row.text)
+        assertEquals(Delivery.Failed(Problem.Said("Unknown model.")), row.delivery)
+        agent.sendStatus = 202
+        chat.retrySend(row.messageId)
+        advanceUntilIdle()
+        val sends = agent.requests.filter { it.second.endsWith("/send") }.map { it.third!! }
+        assertEquals(2, sends.size)
+        assertEquals(sends[0], sends[1])
+        assertEquals("read_skill", sends[1]["content"]!!.jsonArray.single().jsonObject["name"]!!.jsonPrimitive.content)
+        assertEquals(Delivery.Pending, (chat.state.value.rows.single() as ConversationRow.User).delivery)
     }
 
 

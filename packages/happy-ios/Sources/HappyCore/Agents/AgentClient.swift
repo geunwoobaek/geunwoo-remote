@@ -34,6 +34,8 @@ public final class AgentClient: Sendable {
     }
 
     public func close() async { await transport.close() }
+    /// Back from the background: see `AgentTransport.resumed`.
+    public func resumed() async { await transport.resumed() }
 
     // MARK: Requests
 
@@ -399,6 +401,33 @@ public final class AgentClient: Sendable {
         if let arguments { body["arguments"] = .string(arguments) }
         let answer = try await decode(JSONValue.self, "POST", "/v0/agents/\(Self.escape(agentId))/slash-commands/\(Self.escape(name))", json: .object(body))
         return AgentWire.SlashCommand.catalog(answer["slashCommands"])
+    }
+
+    /// The connection's global skills new work's `/` offers before it has
+    /// an agent (`GET /v0/skills`, every page; a page cursor a change made
+    /// stale starts the list again), as `SlashCommands.globalSkills` keeps
+    /// them. Nil from a computer without skill management (404, 501).
+    public func globalSkills() async throws -> [AgentWire.SlashCommand]? {
+        var summaries: [JSONValue] = []
+        var page: String?
+        var restarts = 0
+        while true {
+            let answer: JSONValue
+            do {
+                answer = try await decode(JSONValue.self, "GET", "/v0/skills?limit=100" + (page.map { "&pageCursor=\(Self.escape($0))" } ?? ""))
+            } catch AgentClientError.status(let status, _, _) where status == 404 || status == 501 {
+                return nil
+            } catch AgentClientError.status(409, _, _) where page != nil && restarts < 3 {
+                summaries = []
+                page = nil
+                restarts += 1
+                continue
+            }
+            summaries += answer["skills"]?.arrayValue ?? []
+            guard let next = answer["nextPageCursor"]?.stringValue else { break }
+            page = next
+        }
+        return SlashCommands.globalSkills(summaries)
     }
 
     /// The composer's draft as the computer keeps it for this person.

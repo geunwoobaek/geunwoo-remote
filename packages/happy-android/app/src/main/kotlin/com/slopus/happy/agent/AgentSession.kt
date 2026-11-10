@@ -109,7 +109,7 @@ class AgentSession internal constructor(
      * The transport is made once; the bearer is asked for on every request,
      * so a team server's access token is refreshed as it nears expiry.
      */
-    val client: AgentClient = AgentClient.lazy {
+    val client: AgentClient = AgentClient.lazy(cloud = com.slopus.happy.connection.HappyCloud.isServer(connections.accounts.value.firstOrNull { it.id == connectionId }?.server)) {
         val (credentials, transport) = linkLock.withLock {
             route ?: run {
                 val credentials = connections.linkCredentials(connectionId) ?: throw AgentConnectionException(AgentConnectionException.Reason.Revoked)
@@ -134,6 +134,8 @@ class AgentSession internal constructor(
     private val redials = MutableStateFlow(0)
     /** Whether the live link runs now (the connection open, the app in front, signed in). */
     @Volatile private var linking = false
+    /** Kept through the last background, its tunnels not resumed since ([backgrounded]). */
+    private val suspended = AtomicBoolean(false)
     val status: StateFlow<AgentLinkStatus> = statusState.asStateFlow()
 
     private val reads = MutableStateFlow(0)
@@ -640,6 +642,9 @@ class AgentSession internal constructor(
                 when {
                     !signedIn -> statusState.value = AgentLinkStatus.SignInRequired
                     on -> coroutineScope {
+                        // Kept through a background: its tunnels check every way to the
+                        // agent before the stream asks them for anything.
+                        if (suspended.getAndSet(false)) linkLock.withLock { route?.second }?.resumed()
                         launch { watchGit() }
                         live()
                     }
@@ -665,12 +670,23 @@ class AgentSession internal constructor(
      * of the computer, so the header says connecting until this try answers.
      */
     fun networkReturned() {
-        val status = statusState.value
-        if (!linking) return
-        if (status != AgentLinkStatus.Connecting && status != AgentLinkStatus.Offline) return
-        statusState.value = AgentLinkStatus.Connecting
-        redials.update { it + 1 }
+        // Every tunnel kept checks its relay and every path first, replacing only what doesn't answer.
+        scope.launch {
+            linkLock.withLock { route?.second }?.networkChanged()
+            val status = statusState.value
+            if (!linking) return@launch
+            if (status != AgentLinkStatus.Connecting && status != AgentLinkStatus.Offline) return@launch
+            statusState.value = AgentLinkStatus.Connecting
+            redials.update { it + 1 }
+        }
     }
+
+    /**
+     * The app went to the background (iOS's `AgentConnections.suspended`):
+     * the next time the link runs, open now or later, its tunnels are
+     * resumed first ([Transport.resumed]). Not on a cold start.
+     */
+    fun backgrounded() = suspended.set(true)
 
     /** Stops the link and lets go of the tunnel. */
     suspend fun close() {
@@ -855,6 +871,8 @@ class AgentSession internal constructor(
 
     /** One renewing subscription per foreground account; rows never start network work. */
     private suspend fun watchGit() {
+        // Happy Cloud has no folders, so no git.
+        if (client.cloud) return
         combine(feed.map(::gitWorkspaceIds).distinctUntilChanged(), gitRenewal, status) { ids, renewal, status ->
             Triple(ids, renewal, status == AgentLinkStatus.Connected)
         }.distinctUntilChanged().collectLatest { (ids, _, connected) ->
@@ -911,6 +929,8 @@ class AgentSession internal constructor(
             }
             return
         }
+        // Happy Cloud has no folders to read.
+        if (stale.kind == "workspace" && client.cloud) return
         reads.update { it + 1 }
         val (path, key) = when (stale.kind) {
             "project" -> "/v0/projects/${AgentClient.escape(stale.id)}" to "project"
