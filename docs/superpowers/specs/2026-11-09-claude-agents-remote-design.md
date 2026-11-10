@@ -230,7 +230,9 @@ attach는 진짜 터미널을 요구한다. **tmux를 쓴다**(2026-11-09 결정
 - 거울 채팅 입력칸의 모델 표시는 세션이 실제로 쓰는 모델이다(`--model haiku`로 띄운 세션은 "Haiku 5.5"). 거울이 기록의 assistant 줄에서 모델을 읽어 `metadata.runningModel`로 알린다.
 - 폰의 중단 버튼으로 멈추면 맥 기록에 "[Request interrupted by user]"가 남지만, 폰에는 그 말이 사용자 말풍선으로 뜨지 않고 차례만 끝난다.
 - 맥 cmux 창을 위로 스크롤해 둔 상태(화면 아래에 "Jump to bottom"이 뜬 상태)에서도 입력칸 위 줄의 세션 이름은 보이므로, 폰 입력은 그 cmux 창으로 들어간다. 창은 맨 아래로 내려가 그 말을 사용자 입력으로 보이고, 답은 맥과 폰 양쪽에 한 번씩 뜬다.
+- 권한 창을 거부해 기록에 "[Request interrupted by user for tool use]"가 남아도 폰에는 말풍선이 뜨지 않고 차례만 끝난다. 확인한 창은 폰이 모양을 읽지 못하는 창(EnterWorktree의 "Tool use" 창)이었고, 폰 카드는 "Answer this on your Mac"이어서 맥에서 거부했다. 기록에 남는 줄은 누가 거부했든 같다.
+- 폰이 읽지 못한 창의 카드("Unknown")는 맥에서 답해 닫힌 뒤에도 "Answer this on your Mac"으로 남고 Yes/No 버튼이 생기지 않는다. 거울은 그런 요청을 사유 없는 `canceled`로 닫는다.
 
 **아직 실기기로 확인하지 않은 것**
 
-- 폰에서 권한을 거부했을 때의 "[Request interrupted by user for tool use]"도 같은 규칙으로 말풍선 없이 차례만 끝나는지(시험으로만 확인. 배경 세션이 권한 창 없이 실행해 실기기로 띄우지 못했다).
+- 없음.
