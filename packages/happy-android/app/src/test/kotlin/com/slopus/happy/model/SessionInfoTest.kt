@@ -21,6 +21,14 @@ class SessionInfoTest {
         assertNull(rigMetadata(path = "/tmp/project") { put("flavor", "codex"); put("codexThreadId", "thread-1") }.resumeCommand())
     }
 
+    @Test fun neverOffersATerminalResumeForAMirroredClaudeAgent() {
+        val meta = metadata(path = "/Users/tester/project") {
+            put("os", "darwin"); put("flavor", "claude"); put("claudeSessionId", claudeId); put("claudeAgentId", "demo-agent")
+        }
+        assertNull(meta.resumeCommandBlock())
+        assertNull(meta.resumeCommand())
+    }
+
     @Test fun claudeResumeEntersTheSessionDirectoryFirst() {
         val meta = metadata(path = "/tmp/project") { put("os", "darwin"); put("flavor", "claude"); put("claudeSessionId", claudeId) }
         assertEquals("cd '/tmp/project' && happy claude --resume $claudeId", meta.resumeCommand())

@@ -21,9 +21,13 @@ data class ResumeCommandBlock(val lines: List<String>, val copyText: String)
 
 private fun SessionMetadata.isWindows() = os?.lowercase() == "win32"
 
-/** resumeCommand.ts `buildResumeCommandBlock`: cd into the folder, then `happy claude|codex --resume`. */
+/**
+ * resumeCommand.ts `buildResumeCommandBlock`: cd into the folder, then `happy claude|codex --resume`.
+ * A mirrored `claude agents` session has none: the agent lives on in `claude agents`, and resuming
+ * its transcript elsewhere would fork it.
+ */
 fun SessionMetadata?.resumeCommandBlock(): ResumeCommandBlock? {
-    if (this == null || client?.id == "rig" || (raw["capabilities"] as? JsonObject)?.get("resume") == JsonPrimitive(false)) return null
+    if (this == null || client?.id == "rig" || isClaudeAgentMirror() || (raw["capabilities"] as? JsonObject)?.get("resume") == JsonPrimitive(false)) return null
     val invocation = when {
         (flavor == "codex" || flavor == "openai" || flavor == "gpt") && !codexThreadId.isNullOrEmpty() -> "happy codex --resume $codexThreadId"
         !claudeSessionId.isNullOrEmpty() -> "happy claude --resume $claudeSessionId"
