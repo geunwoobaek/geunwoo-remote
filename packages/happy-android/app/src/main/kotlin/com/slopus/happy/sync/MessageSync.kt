@@ -1,5 +1,6 @@
 package com.slopus.happy.sync
 
+import com.slopus.happy.chat.RecentWindow
 import com.slopus.happy.data.HappyStore
 import com.slopus.happy.data.MessageRecord
 import com.slopus.happy.net.HttpStatusException
@@ -21,6 +22,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
@@ -105,12 +109,45 @@ class MessageSync(
     val loadingOlder: StateFlow<Set<String>> = loadingOlderState.asStateFlow()
 
     /**
+     * A chat's window: what it shows is the stored run from [floor] up.
+     * [floor] is null until the window settles, and from then on only
+     * lowers. [shownOldest] is the lowest seq shown so far, which the floor
+     * settles at or below so nothing shown disappears. [showing] is on for
+     * the whole of one [showOlder] batch.
+     */
+    private data class Window(
+        val token: String?,
+        val floor: Long? = null,
+        val shownOldest: Long? = null,
+        val showing: Boolean = false,
+    )
+
+    /** One window per session, kept until [forget]: leaving the app for a moment keeps it, a new chat screen replaces it. */
+    private val windows = ConcurrentHashMap<String, MutableStateFlow<Window>>()
+
+    private fun window(sessionId: String): MutableStateFlow<Window> =
+        windows.computeIfAbsent(sessionId) { MutableStateFlow(Window(token = null)) }
+
+    /**
      * A session's stored messages, oldest first, re-read whenever they
      * change. Collecting it opens the chat: its newest messages are fetched,
      * then a few older pages in the background.
+     *
+     * Only the chat's window is read: about the newest [RecentWindow.SPAN]
+     * records, cut where a turn begins, lowered by [showOlder]. A
+     * [windowToken] other than the current window's opens a new one (a chat
+     * screen opened afresh); null joins the current window (another screen
+     * of the same chat, such as a message's detail).
      */
-    fun messages(sessionId: String): Flow<List<MessageRecord>> = store.messageChanges(sessionId)
-        .map { store.messages(sessionId) }
+    fun messages(sessionId: String, windowToken: String? = null): Flow<List<MessageRecord>> = flow {
+        val window = window(sessionId)
+        if (windowToken != null) window.update { if (it.token == windowToken) it else Window(windowToken) }
+        emitAll(
+            combine(store.messageChanges(sessionId), window.map { it.token to it.floor }.distinctUntilChanged()) { _, _ ->
+                windowed(sessionId, window)
+            },
+        )
+    }
         .distinctUntilChanged()
         .onStart {
             viewing.merge(sessionId, 1, Int::plus)
@@ -119,16 +156,103 @@ class MessageSync(
         .onCompletion { viewing.computeIfPresent(sessionId) { _, count -> if (count <= 1) null else count - 1 } }
         .flowOn(io)
 
-    fun paging(sessionId: String): Flow<MessagePaging> = combine(
-        store.messageChanges(sessionId).map { store.messageHistory(sessionId) },
-        loadingOlderState.map { sessionId in it },
-    ) { history, loading ->
-        MessagePaging(
-            isLoaded = history?.isLoaded == true,
-            hasMoreOlder = history?.hasOlder == true,
-            isLoadingOlder = loading,
+    /**
+     * The window's records. Until it settles, the newest [RecentWindow.MAX_SPAN];
+     * it settles once, as soon as there is a window's worth stored or the
+     * whole history is, at or below what was already shown.
+     */
+    private fun windowed(sessionId: String, window: MutableStateFlow<Window>): List<MessageRecord> {
+        val current = window.value
+        val records = current.floor?.let { store.messagesFrom(sessionId, it) } ?: run {
+            val newest = store.messages(sessionId, RecentWindow.MAX_SPAN)
+            val history = store.messageHistory(sessionId)
+            if (history == null || !history.isLoaded || newest.isEmpty() || newest.size < RecentWindow.SPAN && history.hasOlder) {
+                return@run newest
+            }
+            val atBeginning = !history.hasOlder && newest.first().seq == history.oldestSeq
+            val picked = RecentWindow.floor(newest, atBeginning)!!
+            val floor = current.shownOldest?.let { minOf(it, picked) } ?: picked
+            window.update { if (it.token == current.token && it.floor == null) it.copy(floor = floor) else it }
+            newest.dropWhile { it.seq < floor }
+        }
+        val first = records.firstOrNull()?.seq ?: return records
+        window.update {
+            if (it.token != current.token || it.shownOldest != null && it.shownOldest <= first) it
+            else it.copy(shownOldest = first)
+        }
+        return records
+    }
+
+    fun paging(sessionId: String): Flow<MessagePaging> = flow {
+        emitAll(
+            combine(
+                store.messageChanges(sessionId).map { store.messageHistory(sessionId) },
+                loadingOlderState.map { sessionId in it },
+                window(sessionId),
+            ) { history, loading, window ->
+                val floor = window.floor
+                MessagePaging(
+                    isLoaded = history?.isLoaded == true,
+                    // Older records are on this device below the floor, or on the server.
+                    hasMoreOlder = history?.hasOlder == true ||
+                        history?.isLoaded == true && floor != null && floor > history.oldestSeq,
+                    isLoadingOlder = loading || window.showing,
+                )
+            },
         )
     }.distinctUntilChanged().flowOn(io)
+
+    /**
+     * The user reached the top of the chat: its window lowers by one batch,
+     * about [RecentWindow.SPAN] records cut where a turn begins, from this
+     * device first; older pages are fetched only when the device runs out,
+     * at most [RecentWindow.MAX_SPAN] records for the batch. True when the
+     * window moved back. A window not settled yet shows everything stored,
+     * so one older page is fetched instead.
+     */
+    suspend fun showOlder(sessionId: String): Boolean {
+        val window = windows[sessionId] ?: return loadOlder(sessionId)
+        val start = window.value
+        val floor = start.floor ?: return loadOlder(sessionId)
+        // One batch at a time, shown as one load from start to end.
+        if (!window.compareAndSet(start.copy(showing = false), start.copy(showing = true))) return false
+        try {
+            var history = withContext(io) { store.messageHistory(sessionId) } ?: return false
+            var below = withContext(io) { store.messagesBelow(sessionId, floor, RecentWindow.MAX_SPAN) }
+            val startOldest = history.oldestSeq
+            while (below.size < RecentWindow.SPAN && below.firstOrNull()?.let(RecentWindow::isTurnStart) != true &&
+                history.hasOlder && startOldest - history.oldestSeq < RecentWindow.MAX_SPAN
+            ) {
+                val advanced = try {
+                    loadOlder(sessionId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // What the device has still makes a batch; with nothing, the failure is the answer.
+                    if (below.isEmpty()) throw e
+                    break
+                }
+                if (!advanced) {
+                    // A background page may be loading: wait for it, then go on only if it moved the run back.
+                    loadingOlderState.first { sessionId !in it }
+                }
+                val before = history.oldestSeq
+                history = withContext(io) { store.messageHistory(sessionId) } ?: return false
+                if (!advanced && history.oldestSeq == before) break
+                below = withContext(io) { store.messagesBelow(sessionId, floor, RecentWindow.MAX_SPAN) }
+            }
+            if (below.isEmpty()) return false
+            val atBeginning = !history.hasOlder && below.first().seq == history.oldestSeq
+            val next = withContext(io) { RecentWindow.floor(below, atBeginning) } ?: return false
+            while (true) {
+                val current = window.value
+                if (current.token != start.token || current.floor != floor || next >= floor) return false
+                if (window.compareAndSet(current, current.copy(floor = next))) return true
+            }
+        } finally {
+            window.update { if (it.token == start.token) it.copy(showing = false) else it }
+        }
+    }
 
     /** The user opened the chat (sync.ts onSessionVisible): catch up, then fill in history. */
     fun onSessionVisible(sessionId: String) {
@@ -210,6 +334,7 @@ class MessageSync(
         syncs.remove(sessionId)?.cancel()
         prefetchAttempts.remove(sessionId)
         locks.remove(sessionId)
+        windows.remove(sessionId)
     }
 
     private fun sync(sessionId: String): InvalidateSync =

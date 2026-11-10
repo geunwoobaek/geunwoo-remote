@@ -51,7 +51,13 @@ private fun processOrphans(state: TracerState, parentUuid: String, sidechainId: 
     return results
 }
 
-fun traceMessages(state: TracerState, messages: List<NormalizedMessage>): List<TracedMessage> {
+/**
+ * [holdUnowned]: a sub-agent record whose owner is not known yet waits for
+ * it instead of showing as a stray top-level row. Used while the loaded
+ * window may stop between a Task call and its sub-agent's records. A later
+ * call without it shows the ones still waiting on a subagent id standalone.
+ */
+fun traceMessages(state: TracerState, messages: List<NormalizedMessage>, holdUnowned: Boolean = false): List<TracedMessage> {
     val results = ArrayList<TracedMessage>()
     for (message in messages) {
         if (message.id in state.processedIds) continue
@@ -96,7 +102,7 @@ fun traceMessages(state: TracerState, messages: List<NormalizedMessage>): List<T
                 if (uuid != null) state.uuidToSidechainId[uuid] = parentSidechainId
                 results.add(TracedMessage(message, parentSidechainId))
                 if (uuid != null) results.addAll(processOrphans(state, uuid, parentSidechainId))
-            } else if (!UUID_LIKE.matches(parentUuid)) {
+            } else if (!UUID_LIKE.matches(parentUuid) && !holdUnowned) {
                 // A subagent id with no known owner: show it standalone rather
                 // than orphan it forever.
                 state.processedIds.add(message.id)
@@ -107,6 +113,16 @@ fun traceMessages(state: TracerState, messages: List<NormalizedMessage>): List<T
         } else {
             state.processedIds.add(message.id)
             results.add(TracedMessage(message))
+        }
+    }
+    if (!holdUnowned) {
+        // Held while an older record might still own them; none can now (the window reached the
+        // beginning), so they show standalone, as a reduction of the whole history shows them.
+        for (parentUuid in state.orphanMessages.keys.filterNot { UUID_LIKE.matches(it) }) {
+            for (orphan in state.orphanMessages.remove(parentUuid).orEmpty()) {
+                state.processedIds.add(orphan.id)
+                results.add(TracedMessage(orphan))
+            }
         }
     }
     return results

@@ -23,6 +23,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -265,7 +266,8 @@ fun ChatScreen(
     }
     val listState = rememberLazyListState()
     val loadOlder by rememberUpdatedState(actions.loadOlder)
-    val pager = remember(session?.id) { OlderPager { loadOlder() } }
+    val pagerScope = rememberCoroutineScope()
+    val pager = remember(session?.id) { OlderPager(pagerScope) { loadOlder() } }
     val callbacks = remember(actions) {
         MessageCallbacks(
             onOptionPress = { actions.onSend(it) },

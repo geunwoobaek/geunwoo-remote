@@ -183,7 +183,28 @@ class HappyStoreTest {
         assertNull(store.cursor("x"))
     }
 
-    private fun obj(vararg pairs: Pair<String, Boolean>) = JsonObject(pairs.associate { (k, v) -> k to JsonPrimitive(v) })
+    @Test
+    fun readsFromAFloor() {
+        store.upsertSessions(listOf(session("s"), session("t")))
+        store.insertMessages("s", (1L..10L).map { message("s", it) })
+        store.insertMessages("t", (1L..10L).map { message("t", it) })
+        assertEquals(listOf(7L, 8L, 9L, 10L), store.messagesFrom("s", 7).map { it.seq })
+        assertEquals(setOf("s"), store.messagesFrom("s", 1).map { it.sessionId }.toSet())
+        assertEquals(emptyList<Long>(), store.messagesFrom("s", 11).map { it.seq })
+    }
+
+    @Test
+    fun readsTheNewestBelowAFloor() {
+        store.upsertSessions(listOf(session("s"), session("t")))
+        store.insertMessages("s", (1L..10L).map { message("s", it) })
+        store.insertMessages("t", (1L..10L).map { message("t", it) })
+        assertEquals(listOf(4L, 5L, 6L), store.messagesBelow("s", 7, 3).map { it.seq })
+        assertEquals(emptyList<Long>(), store.messagesBelow("s", 1, 3).map { it.seq })
+        assertEquals(listOf(1L, 2L), store.messagesBelow("s", 3, 10).map { it.seq })
+        assertEquals(setOf("s"), store.messagesBelow("s", 11, 100).map { it.sessionId }.toSet())
+    }
+
+    private fun obj(vararg pairs: Pair<String, Boolean>) =JsonObject(pairs.associate { (k, v) -> k to JsonPrimitive(v) })
 
     private fun session(id: String, updatedAt: Long = 1, seq: Long = 0, metadata: String = "{}") = SessionRecord(
         id = id, seq = seq, createdAt = 1, updatedAt = updatedAt, active = false, activeAt = 1,

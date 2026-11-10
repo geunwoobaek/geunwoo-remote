@@ -40,6 +40,18 @@ class WorkGroupsTest {
         text("a1", 20), tool("t1", 10), user("u1", 0),
     )
 
+    @Test fun topTurnWithoutAUserMessageGroups() {
+        // The window starts mid-turn: the oldest row is a tool, not a prompt.
+        val rows = listOf(text("a1", 30), tool("t2", 20), tool("t1", 10))
+        val items = groupChatRowsForDisplay(rows, enabled = true, collapseCurrentTurn = true)
+        assertEquals(listOf("a1", "work-a1"), keys(items))
+        val group = (items[1] as ChatDisplayItem.WorkGroup).group
+        assertEquals(listOf("t1", "t2"), group.rows.map { it.key })
+        assertEquals(null, group.turnUserMessageId)
+        val flat = groupChatRowsForDisplay(rows, enabled = true, collapseCurrentTurn = false)
+        assertEquals("t1", flat.last().key)
+    }
+
     @Test fun aFinishedTurnFoldsItsWorkUnderItsAnswer() {
         val items = groupChatRowsForDisplay(history, enabled = true, collapseCurrentTurn = true)
         assertEquals(listOf("a2", "work-a2", "u2", "a1", "work-a1", "u1"), keys(items))

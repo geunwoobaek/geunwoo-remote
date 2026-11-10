@@ -74,6 +74,8 @@ import com.slopus.happy.ui.layout.LocalWindowLayout
 import com.slopus.happy.ui.theme.HappyTheme
 import com.slopus.happy.ui.theme.happyTextStyle
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -126,17 +128,27 @@ object ChatListSpec {
 enum class OlderBlock { Error, Limit }
 
 /**
- * Pages older history in from the server as the reader nears it (ChatList's
- * `fillOlder`, EmptyMessages' loop). A page that brings no visible row
- * counts against a budget of five; past it the list waits for "Load more".
- * A failure waits for "Retry".
+ * Pages older history in as the reader reaches it (ChatList's
+ * `onOldestVisible`, EmptyMessages' loop). Reaching the oldest row asks
+ * for one batch, never a chain: the next one comes when the reader leaves
+ * the top and reaches it again, or taps "Load more" ([awaitingTap], set
+ * when a batch landed and the oldest row is still in view). A page that
+ * brings no visible row counts against a budget of five (the empty chat's
+ * loop); past it the list waits for "Load more". A failure waits for
+ * "Retry". [scope] runs the batch a tap or a retry asks for.
  */
 @Stable
-class OlderPager(private val load: suspend () -> Boolean) {
+class OlderPager(private val scope: CoroutineScope? = null, private val load: suspend () -> Boolean) {
     var blocked by mutableStateOf<OlderBlock?>(null)
+        private set
+
+    /** A batch landed and the oldest row is still in view: the reader asks for the next one. */
+    var awaitingTap by mutableStateOf(false)
         private set
     private var pending = false
     private var invisiblePages = 0
+    private var oldestWasVisible = false
+    private var lastRequest: (suspend () -> Unit)? = null
 
     /** Fetches one page unless one is in flight or paging is blocked. [oldest] reads the oldest visible row's key. */
     suspend fun request(oldest: () -> String?) {
@@ -162,22 +174,61 @@ class OlderPager(private val load: suspend () -> Boolean) {
         }
     }
 
+    /**
+     * Reports whether the item holding the oldest chat row is in view.
+     * [request] runs once, when it comes into view after not being (a list
+     * that starts at its top counts as coming into view). Staying in view
+     * asks for nothing more.
+     */
+    suspend fun onOldestVisible(visible: Boolean, request: suspend () -> Unit) {
+        lastRequest = request
+        val reached = visible && !oldestWasVisible
+        oldestWasVisible = visible
+        if (!reached) {
+            if (!visible) awaitingTap = false
+            return
+        }
+        awaitingTap = false
+        run(request)
+    }
+
+    private suspend fun run(request: suspend () -> Unit) {
+        request()
+        awaitingTap = oldestWasVisible
+    }
+
+    /** The list is gone or starts over: the next sight of the oldest row is a reach again. */
+    fun resetReach() {
+        oldestWasVisible = false
+        awaitingTap = false
+    }
+
     fun retry() {
         blocked = null
+        askAgain()
     }
 
     fun loadMore() {
         invisiblePages = 0
         blocked = null
+        awaitingTap = false
+        askAgain()
+    }
+
+    /** What the reader asked for by a tap: one more batch, as the last reach did. */
+    private fun askAgain() {
+        val request = lastRequest ?: return
+        scope?.launch(start = CoroutineStart.UNDISPATCHED) { run(request) }
     }
 }
 
 /** What the older end of the list shows (ChatList `olderStatus`). */
 enum class OlderStatus { Idle, Loading, Error, LoadMore }
 
-fun olderStatus(blocked: OlderBlock?, hasMoreOlder: Boolean, isLoadingOlder: Boolean): OlderStatus = when {
+fun olderStatus(blocked: OlderBlock?, hasMoreOlder: Boolean, isLoadingOlder: Boolean, awaitingTap: Boolean = false): OlderStatus = when {
     blocked == OlderBlock.Error && hasMoreOlder -> OlderStatus.Error
     blocked == OlderBlock.Limit && hasMoreOlder -> OlderStatus.LoadMore
+    awaitingTap && hasMoreOlder && !isLoadingOlder -> OlderStatus.LoadMore
     isLoadingOlder -> OlderStatus.Loading
     else -> OlderStatus.Idle
 }
@@ -188,8 +239,10 @@ fun olderStatus(blocked: OlderBlock?, hasMoreOlder: Boolean, isLoadingOlder: Boo
  * the newest row the footer (ChatFooter), just past the oldest a 32-high
  * slot: a spinner while a page loads, "Retry" after a failure, "Load more"
  * once five pages in a row brought nothing visible (small inverted
- * RoundButtons), with a spacer beyond it ([olderInset]). History is fetched whenever the oldest row is within a
- * viewport of the screen. Past 300 from the newest row a 32 round button
+ * RoundButtons), with a spacer beyond it ([olderInset]). Reaching the oldest
+ * row (the list item holding it comes into view) fetches one batch, never a
+ * chain; a batch that lands with the oldest row still in view waits for
+ * "Load more". Past 300 from the newest row a 32 round button
  * (surface at 0.9, 1 divider border, Octicons arrow-down 14, the arrow
  * shimmering while [working], as iOS's jump does), centred,
  * scrolls back down: 16 above the composer card when the dock floats over
@@ -248,13 +301,6 @@ fun ChatList(
             }
         }
     }
-    val nearOldest by remember {
-        derivedStateOf {
-            val info = state.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@derivedStateOf true
-            last >= info.totalItemsCount - 1 - info.visibleItemsInfo.size
-        }
-    }
     if (onNewestVisibleChange != null) {
         val report by rememberUpdatedState(onNewestVisibleChange)
         val showPx = with(density) { ChatListSpec.dockDetailsShowOffset.toPx() }
@@ -285,9 +331,25 @@ fun ChatList(
     val listItems = remember(displayItems, observed) { chatListItems(displayItems, observed::isExpanded) }
     val mediaPaths = remember(listItems) { chatMediaPaths(listItems) }
     val blocked = pager.blocked
-    LaunchedEffect(nearOldest, hasMoreOlder, isLoadingOlder, blocked, rows) {
-        if (nearOldest && hasMoreOlder && !isLoadingOlder && blocked == null) {
-            scope.launch { pager.request { currentRows.lastOrNull()?.key } }
+    // The item holding the oldest chat row (the last list item; the footer is the first), not a count of folded rows.
+    val latestListItems by rememberUpdatedState(listItems)
+    val oldestVisible by remember {
+        derivedStateOf {
+            val key = latestListItems.lastOrNull()?.key ?: return@derivedStateOf false
+            state.layoutInfo.visibleItemsInfo.any { it.key == key }
+        }
+    }
+    val latestHasMoreOlder by rememberUpdatedState(hasMoreOlder)
+    LaunchedEffect(pager) {
+        pager.resetReach()
+        val reaches = this
+        snapshotFlow { oldestVisible }.collect { visible ->
+            // Its own coroutine: a batch in flight must not hold back the report that the top went out of view.
+            reaches.launch(start = CoroutineStart.UNDISPATCHED) {
+                pager.onOldestVisible(visible) {
+                    if (latestHasMoreOlder) pager.request { currentRows.lastOrNull()?.key }
+                }
+            }
         }
     }
 
@@ -334,7 +396,7 @@ fun ChatList(
                 }
             }
             item(key = "older", contentType = "older") {
-                OlderEnd(olderStatus(blocked, hasMoreOlder, isLoadingOlder), olderInset(), onRetry = pager::retry, onLoadMore = pager::loadMore)
+                OlderEnd(olderStatus(blocked, hasMoreOlder, isLoadingOlder, pager.awaitingTap), olderInset(), onRetry = pager::retry, onLoadMore = pager::loadMore)
             }
         }
         if (showScrollButton) {

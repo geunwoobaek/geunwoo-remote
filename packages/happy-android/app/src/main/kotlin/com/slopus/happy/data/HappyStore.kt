@@ -444,6 +444,20 @@ class HappyStore(@Volatile private var helper: SQLiteOpenHelper) {
             arrayOf(sessionId, limit.toString()),
         ) { c -> buildList { while (c.moveToNext()) add(c.toMessage()) } }
 
+    /** A session's messages from [fromSeq] on, oldest first: a chat window from its floor. */
+    fun messagesFrom(sessionId: String, fromSeq: Long): List<MessageRecord> =
+        query(
+            "SELECT $MESSAGE_COLUMNS FROM messages WHERE session_id = ? AND seq >= ? ORDER BY seq ASC",
+            arrayOf(sessionId, fromSeq.toString()),
+        ) { c -> buildList { while (c.moveToNext()) add(c.toMessage()) } }
+
+    /** The newest [limit] messages of a session before [beforeSeq], oldest first: what lies under a chat window. */
+    fun messagesBelow(sessionId: String, beforeSeq: Long, limit: Int): List<MessageRecord> =
+        query(
+            "SELECT * FROM (SELECT $MESSAGE_COLUMNS FROM messages WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?) ORDER BY seq ASC",
+            arrayOf(sessionId, beforeSeq.toString(), limit.toString()),
+        ) { c -> buildList { while (c.moveToNext()) add(c.toMessage()) } }
+
     /**
      * The newest [limit] stored messages, of any session, whose decrypted
      * JSON holds [needle] (SQLite LIKE: ASCII case aside, as written). Only

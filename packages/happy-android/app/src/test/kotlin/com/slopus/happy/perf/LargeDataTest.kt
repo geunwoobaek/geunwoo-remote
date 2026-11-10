@@ -105,7 +105,7 @@ class LargeDataTest {
         val feed = ChatFeed(
             messages = object : ChatMessagesSource {
                 // Upstream of the feed's flowOn: it runs where the reduction runs.
-                override fun messages(sessionId: String): Flow<ChatPage> =
+                override fun messages(sessionId: String, windowToken: String?): Flow<ChatPage> =
                     flowOf(ChatPage(records)).onEach { threads += Thread.currentThread() }
                 override suspend fun loadOlder(sessionId: String) = false
             },

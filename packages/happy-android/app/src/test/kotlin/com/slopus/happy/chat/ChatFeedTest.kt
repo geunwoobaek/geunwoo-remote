@@ -9,7 +9,9 @@ import com.slopus.happy.model.SessionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -185,7 +187,7 @@ class ChatFeedTest {
         val live = MutableStateFlow<SessionPresenceState?>(null)
         val feed = ChatFeed(
             messages = object : ChatMessagesSource {
-                override fun messages(sessionId: String): Flow<ChatPage> = records
+                override fun messages(sessionId: String, windowToken: String?): Flow<ChatPage> = records
                 override suspend fun loadOlder(sessionId: String) = false
             },
             sessions = object : ChatSessionSource {
@@ -205,5 +207,75 @@ class ChatFeedTest {
         record.value = null
         val deleted = feed.state("s").first { it.sessionLoaded && it.session == null }
         assertEquals(1, deleted.snapshot.rows.size)
+    }
+
+    /** A sub-agent's record naming an owner that no record ever turns out to be. */
+    private fun stray(id: String, text: String, at: Long) = MessageRecord(
+        "s", at, id, null,
+        """{"role":"session","content":{"id":"e-$id","time":$at,"role":"agent","turn":"t","subagent":"tz4a98xxat96iws9zmbrgj3a","ev":{"t":"text","text":${quote(text)}}}}""",
+        at, at,
+    )
+
+    private fun ChatSnapshot.texts() = rows.mapNotNull { (it.message as? ChatMessage.AgentText)?.text }
+
+    /**
+     * While older records may still own it, a sub-agent record without an
+     * owner waits; once the window reaches the beginning nothing older can,
+     * and it shows standalone as a whole-history reduction shows it.
+     */
+    @Test
+    fun anOwnerlessSubagentRecordShowsOnceTheWindowReachesTheBeginning() {
+        val info = ChatSessionInfo.from(session())
+        val window = listOf(user("u11", "ask", 11), stray("x12", "stray output", 12), agent("a13", "answer", 13))
+        val whole = listOf(user("u1", "start", 1), agent("a2", "first", 2)) + window
+        val fresh = ChatReduction { 0 }.apply(ChatPage(whole), info)
+        assertTrue(fresh.texts().contains("stray output"))
+
+        // The window lowers to the beginning with older records.
+        val lowered = ChatReduction { 0 }
+        assertFalse(lowered.apply(ChatPage(window, hasMoreOlder = true), info).texts().contains("stray output"))
+        val all = lowered.apply(ChatPage(whole, hasMoreOlder = false), info)
+        assertEquals(fresh.texts(), all.texts())
+
+        // Nothing older came: the history simply turned out to end at the window.
+        val ended = ChatReduction { 0 }
+        assertFalse(ended.apply(ChatPage(window, hasMoreOlder = true), info).texts().contains("stray output"))
+        assertTrue(ended.apply(ChatPage(window, hasMoreOlder = false), info).texts().contains("stray output"))
+    }
+
+    /**
+     * A window only grows downward, so a new record adds to it and drops
+     * nothing: the reduction carries on rather than starting over, and the
+     * rows already shown keep their instances.
+     */
+    @Test
+    fun newMessagesDoNotReReduceTheWindow() = runBlocking {
+        // The settled window of a longer chat: seq 901 (a prompt) to 1200.
+        val window = (901L..1_200L).map { seq -> if (seq % 10 == 1L) user("u$seq", "ask $seq", seq) else agent("a$seq", "answer $seq", seq) }
+        val records = MutableStateFlow(ChatPage(window, hasMoreOlder = true))
+        val tokens = mutableListOf<String?>()
+        val feed = ChatFeed(
+            messages = object : ChatMessagesSource {
+                override fun messages(sessionId: String, windowToken: String?): Flow<ChatPage> {
+                    tokens += windowToken
+                    return records
+                }
+                override suspend fun loadOlder(sessionId: String) = false
+            },
+            sessions = object : ChatSessionSource {
+                override fun session(sessionId: String): Flow<SessionRecord?> = MutableStateFlow(session())
+            },
+            presence = NoLivePresence,
+        )
+        // One collector: one reduction, as the chat screen holds it.
+        val latest = MutableStateFlow<ChatState?>(null)
+        val screen = launch { feed.state("s", "t1").collect { latest.value = it } }
+        val before = withTimeout(10_000) { latest.first { it != null && it.sessionLoaded && it.snapshot.rows.size == 300 } }!!.snapshot.rows
+        assertEquals(listOf<String?>("t1"), tokens)
+        records.value = ChatPage(window + agent("a1201", "more", 1_201), hasMoreOlder = true)
+        val after = withTimeout(10_000) { latest.first { it != null && it.snapshot.rows.size == 301 } }!!.snapshot.rows
+        screen.cancel()
+        assertEquals(before.size, after.size - 1)
+        before.zip(after.drop(1)).forEach { (old, new) -> assertSame(old, new) }
     }
 }

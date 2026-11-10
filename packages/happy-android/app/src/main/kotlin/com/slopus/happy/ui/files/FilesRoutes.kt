@@ -13,6 +13,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
@@ -49,13 +50,19 @@ import com.slopus.happy.ui.components.Screen
 import com.slopus.happy.ui.components.StackHeader
 import android.text.format.DateUtils
 import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 
 /** `/session/{id}/changes?file=`: the session's changes, scrolled to [file] when set. */
@@ -118,7 +125,7 @@ fun toolPressRoute(sessionId: String, message: ChatMessage.ToolCallMessage): Any
         else -> null
     }
     // A page opens rendered, as its card under the turn does.
-    return if (path != null) SessionFileRoute(sessionId, path, rendered = SessionMedia.kindOf(path) == MediaKind.Page) else MessageDetailRoute(sessionId, message.id)
+    return if (path != null) SessionFileRoute(sessionId, path, rendered = SessionMedia.kindOf(path) == MediaKind.Page) else MessageDetailRoute(sessionId, detailKey(message))
 }
 
 fun NavGraphBuilder.filesRoutes(graph: AppGraph, nav: NavHostController) {
@@ -327,22 +334,102 @@ private fun WorktreeChoiceScreen(name: String, copies: List<WorktreeLookup.Copy>
 private suspend fun SessionFileOps.readBytes(sessionId: String, path: String): ByteArray? =
     runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { readMediaBytes(sessionId, path) } }.getOrNull()
 
-/** The message and the nested sub-agent messages under it, by id. */
-private fun findMessage(rows: List<ChatMessage>, id: String): ChatMessage? {
+/**
+ * What a tool's detail screen is opened by. A row id (`m<n>`) is handed out in
+ * reduction order, so the detail screen's own reduction of the same records
+ * can number them differently; the provider's call id does not change. A tool
+ * without one falls back to its row id.
+ */
+fun detailKey(message: ChatMessage.ToolCallMessage): String = message.tool.callId ?: message.id
+
+/**
+ * The message and the nested sub-agent messages under it, by [detailKey]
+ * (a tool's call id) or row id (what a deep link still carries).
+ */
+internal fun findMessage(rows: List<ChatMessage>, key: String): ChatMessage? {
     for (message in rows) {
-        if (message.id == id) return message
-        if (message is ChatMessage.ToolCallMessage) findMessage(message.children, id)?.let { return it }
+        if (message.id == key) return message
+        if (message is ChatMessage.ToolCallMessage) {
+            if (message.tool.callId == key) return message
+            findMessage(message.children, key)?.let { return it }
+        }
     }
     return null
+}
+
+/** How many times the detail screen lowers the chat's window looking for a message. */
+internal const val DETAIL_MAX_LOWERINGS = 10
+
+/**
+ * Waits for [states] to load, then looks for [key]; when it is not there and
+ * the chat has older records, asks [loadOlder] (which lowers the window one
+ * batch) and looks again, up to [maxLowerings] times. Calls [onBack] once when
+ * it is not found: nothing older is left, a try found nothing further or
+ * failed (offline, a server error), or the tries ran out. True when the
+ * message was found.
+ */
+internal suspend fun lowerUntilFound(
+    states: Flow<ChatState>,
+    key: String,
+    loadOlder: suspend () -> Boolean,
+    onBack: () -> Unit,
+    maxLowerings: Int = DETAIL_MAX_LOWERINGS,
+    settleMillis: Long = 2_000,
+): Boolean = coroutineScope {
+    val latest = MutableStateFlow<ChatState?>(null)
+    val collector = launch { states.collect { latest.value = it } }
+    try {
+        var tries = 0
+        var found = false
+        var done = false
+        while (!done) {
+            val state = latest.filterNotNull().first { it.sessionLoaded && it.session != null && it.snapshot.loaded }
+            val snapshot = state.snapshot
+            if (findMessage(snapshot.rows.map { it.message }, key) != null) {
+                found = true
+                done = true
+            } else if (!snapshot.hasMoreOlder || tries >= maxLowerings) {
+                onBack()
+                done = true
+            } else if (snapshot.isLoadingOlder) {
+                // The reduction may not have caught up with the last try; a page that never settles counts as one.
+                if (withTimeoutOrNull(settleMillis) { latest.first { it !== state } } == null) tries++
+            } else {
+                tries++
+                // Offline or a server error: the message cannot be reached, so it is not found.
+                val lowered = try {
+                    loadOlder()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    false
+                }
+                if (lowered) {
+                    // A page of hidden rows changes nothing the screen shows, so don't wait for a change forever.
+                    withTimeoutOrNull(settleMillis) { latest.first { it !== state } }
+                } else {
+                    onBack()
+                    done = true
+                }
+            }
+        }
+        found
+    } finally {
+        collector.cancel()
+    }
 }
 
 @Composable
 private fun MessageDetailRouteScreen(graph: AppGraph, route: MessageDetailRoute, onBack: () -> Unit) {
     val account by graph.account.collectAsStateWithLifecycle()
-    val feed = remember(account) {
+    val source = remember(account) {
+        val sync = account
+        sync?.let { SyncChatMessagesSource(it.messages, it.sender) } ?: StoreChatMessagesSource(graph.store)
+    }
+    val feed = remember(account, source) {
         val sync = account
         ChatFeed(
-            messages = sync?.let { SyncChatMessagesSource(it.messages, it.sender) } ?: StoreChatMessagesSource(graph.store),
+            messages = source,
             sessions = StoreChatSessionSource(graph.store),
             presence = sync?.let { SyncChatPresenceSource(it.presence) } ?: NoLivePresence,
         )
@@ -352,8 +439,15 @@ private fun MessageDetailRouteScreen(graph: AppGraph, route: MessageDetailRoute,
     val local by graph.localSettings.values.collectAsStateWithLifecycle()
     val message = remember(state.snapshot.rows, route.messageId) { findMessage(state.snapshot.rows.map { it.message }, route.messageId) }
     val loaded = state.sessionLoaded && state.session != null && state.snapshot.loaded
-    // A message that is gone once everything has loaded: nothing to show, go back.
-    LaunchedEffect(loaded, message) { if (loaded && message == null) onBack() }
+    // A message that is not in the window: lower it a batch at a time, and go back only when it is not to be found.
+    LaunchedEffect(feed, source, route.id, route.messageId) {
+        lowerUntilFound(
+            states = snapshotFlow { state },
+            key = route.messageId,
+            loadOlder = { source.loadOlder(route.id) },
+            onBack = onBack,
+        )
+    }
     MessageDetailScreen(
         message = message,
         loaded = loaded,

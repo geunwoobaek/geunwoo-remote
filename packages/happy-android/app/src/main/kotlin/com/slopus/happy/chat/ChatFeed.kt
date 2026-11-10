@@ -97,6 +97,8 @@ class ChatReduction(private val now: () -> Long = System::currentTimeMillis) {
     /** The row last built for each message id, with the message it was built from. */
     private val rows = HashMap<String, Pair<ChatMessage, ChatRow?>>()
     private var lastAgentState: AgentState? = null
+    /** Whether the last reduction ran with older records beyond the window ([ReducerOptions.windowStartAt]). */
+    private var lastWindowed = false
     private var lastClaude = true
     private var snapshot = ChatSnapshot()
     private var lastDelivery: Map<String, Pair<OutboxState, String?>> = emptyMap()
@@ -128,15 +130,20 @@ class ChatReduction(private val now: () -> Long = System::currentTimeMillis) {
             lastClaude = claude
         }
         val incoming = records.filter { fed.add(it.id) }.mapNotNull(ChatNormalizer::normalize)
+        val windowStartAt = if (page.hasMoreOlder) page.records.firstOrNull()?.createdAt else null
+        // The window reached the beginning: records held for an older owner are reduced again, even with nothing new.
+        val reachedBeginning = lastWindowed && windowStartAt == null
         var changed = false
-        if (incoming.isNotEmpty() || agentState != lastAgentState || !snapshot.loaded) {
+        if (incoming.isNotEmpty() || agentState != lastAgentState || !snapshot.loaded || reachedBeginning) {
             lastAgentState = agentState
+            lastWindowed = windowStartAt != null
             val result = reducer.reduce(
                 incoming,
                 agentState,
                 ReducerOptions(
                     holdUserMessagesUntilAccepted = session?.sendsMessageReceipts == true,
                     mirror = session?.metadata.isClaudeAgentMirror(),
+                    windowStartAt = windowStartAt,
                 ),
             )
             for (message in result.messages) messages[message.id] = message
@@ -269,12 +276,13 @@ class ChatFeed(
     private val sessions: ChatSessionSource,
     private val presence: ChatPresenceSource,
 ) {
-    fun state(sessionId: String): Flow<ChatState> = flow {
+    /** [windowToken] names the chat screen's window of records ([ChatMessagesSource.messages]). */
+    fun state(sessionId: String, windowToken: String? = null): Flow<ChatState> = flow {
         // One reduction per collector: it holds the reducer's state for this view.
         val reduction = ChatReduction()
         val session = sessions.session(sessionId).map { it?.let(ChatSessionInfo::from) }.distinctUntilChanged()
         val combined = combine(
-            messages.messages(sessionId),
+            messages.messages(sessionId, windowToken),
             session.map { true to it }.onStart { emit(false to null) },
             presence.presence(sessionId).onStart { emit(null) },
         ) { page, (sessionLoaded, info), live -> Triple(page, sessionLoaded to info, live) }

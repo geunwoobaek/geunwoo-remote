@@ -465,6 +465,89 @@ class ChatReducerTest {
         assertEquals(listOf("early", "orphan"), parent.children.map { (it as ChatMessage.AgentText).text })
     }
 
+    // window edges
+
+    private val oldCompleted = """{"completedRequests":{"perm-old":{"tool":"Bash","arguments":{"command":"ls"},"createdAt":100,"completedAt":150,"status":"approved"}}}"""
+
+    @Test fun `completed request before the window makes no row`() {
+        val windowed = ReducerState(now = { 999_999 }).reduce(
+            emptyList(), agentState(oldCompleted), ReducerOptions(windowStartAt = 500),
+        )
+        assertEquals(0, windowed.messages.size)
+        val whole = ReducerState(now = { 999_999 }).reduce(emptyList(), agentState(oldCompleted), ReducerOptions(windowStartAt = null))
+        assertEquals(1, whole.messages.size)
+        assertEquals("Bash", whole.messages.single().tool.name)
+    }
+
+    @Test fun `completed request inside the window still makes its row`() {
+        val result = ReducerState(now = { 999_999 }).reduce(emptyList(), agentState(oldCompleted), ReducerOptions(windowStartAt = 100))
+        assertEquals(1, result.messages.size)
+    }
+
+    @Test fun `a completed request before the window still joins a real tool line that arrives later`() {
+        val s = ReducerState(now = { 999_999 })
+        s.reduce(emptyList(), agentState(oldCompleted), ReducerOptions(windowStartAt = 500))
+        val result = s.reduce(
+            listOf(agentMsg("m", 90, toolUse("perm-old", "Bash", """{"command":"ls"}"""))),
+            agentState(oldCompleted), ReducerOptions(windowStartAt = 50),
+        )
+        val tool = result.messages.single().tool
+        assertEquals(PermissionStatus.Approved, tool.permission?.status)
+    }
+
+    @Test fun `pending request before the window still shows`() {
+        val pending = agentState("""{"requests":{"tool-1":{"tool":"Bash","arguments":{"command":"ls"},"createdAt":100}}}""")
+        val result = ReducerState(now = { 999_999 }).reduce(emptyList(), pending, ReducerOptions(windowStartAt = 500))
+        assertEquals(PermissionStatus.Pending, result.messages.single().tool.permission?.status)
+    }
+
+    @Test fun `older context reset does not wipe newer todos`() {
+        val s = ReducerState(now = { 999_999 })
+        val todoJson = """{"oldTodos":[],"newTodos":[{"content":"Newer task","status":"pending"}]}"""
+        s.reduce(
+            agentMsg("todo-call", 890, toolUse("t1", "TodoWrite", """{"todos":[{"content":"Newer task","status":"pending"}]}""")),
+            agentMsg("todo-result", 900, toolResult("t1", json(todoJson))),
+            agentMsg("u", 905, text("x"), usage = UsageData(10, 5)),
+        )
+        val older = s.reduce(eventMsg("reset-old", AgentEvent.Message("Context was reset"), 100))
+        assertEquals(listOf(TodoItem("Newer task", "pending")), older.todos)
+        assertEquals(10L, older.usage?.contextSize?.toLong())
+        val newer = s.reduce(eventMsg("reset-new", AgentEvent.Message("Context was reset"), 1000))
+        assertEquals(emptyList<TodoItem>(), newer.todos)
+        assertEquals(ContextUsage(0, 0, 0, 0, 0), newer.usage)
+    }
+
+    @Test fun `older compaction completed does not wipe newer usage`() {
+        val s = ReducerState(now = { 999_999 })
+        s.reduce(agentMsg("u", 900, text("x"), usage = UsageData(10, 5)))
+        val older = s.reduce(eventMsg("compact-old", AgentEvent.Message("Compaction completed"), 100))
+        assertEquals(10L, older.usage?.contextSize?.toLong())
+        val newer = s.reduce(eventMsg("compact-new", AgentEvent.Message("Compaction completed"), 1000))
+        assertEquals(ContextUsage(0, 0, 0, 0, 0), newer.usage)
+    }
+
+    @Test fun `subagent whose task is below the window is not a stray top row`() {
+        val s = ReducerState(now = { 999_999 })
+        val windowed = ReducerOptions(windowStartAt = 500)
+        val first = s.reduce(
+            listOf(agentMsg("child", 600, text("sub output", "child-uuid", "toolu_01task"), sidechain = true)),
+            null, windowed,
+        )
+        assertEquals(0, first.messages.size)
+        val result = s.reduce(
+            listOf(agentMsg("parent", 100, toolUse("toolu_01task", "Task", """{"prompt":"go"}"""))),
+            null, ReducerOptions(windowStartAt = null),
+        )
+        val parent = result.messages.single() as ChatMessage.ToolCallMessage
+        assertEquals("sub output", (parent.children.single() as ChatMessage.AgentText).text)
+    }
+
+    @Test fun `subagent without a window and without its task still shows standalone`() {
+        val s = ReducerState(now = { 999_999 })
+        val result = s.reduce(agentMsg("child", 600, text("sub output", "child-uuid", "toolu_01task"), sidechain = true))
+        assertEquals(1, result.messages.size)
+    }
+
     // TodoWrite latestTodos
 
     @Test fun `does not update todos from a running TodoWrite input`() {

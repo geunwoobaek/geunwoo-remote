@@ -47,9 +47,14 @@ data class ChatPage(
 )
 
 interface ChatMessagesSource {
-    fun messages(sessionId: String): Flow<ChatPage>
+    /**
+     * The chat's records: a window of the newest, lowered by [loadOlder].
+     * [windowToken] names the chat screen: a new one opens a fresh window,
+     * null joins the current one (a detail screen of the same chat).
+     */
+    fun messages(sessionId: String, windowToken: String? = null): Flow<ChatPage>
 
-    /** Fetches one older page. True if it reached further back. */
+    /** Shows one older batch, from this device or the server. True if it reached further back. */
     suspend fun loadOlder(sessionId: String): Boolean
 }
 
@@ -140,17 +145,20 @@ interface ChatActions {
  * (newest page, catch-up, background history) and pages back on demand.
  */
 class SyncChatMessagesSource(private val sync: MessageSync, private val sender: MessageSender) : ChatMessagesSource {
-    override fun messages(sessionId: String): Flow<ChatPage> =
-        combine(sync.messages(sessionId), sync.paging(sessionId), sender.outbox(sessionId)) { records, paging, outbox ->
+    override fun messages(sessionId: String, windowToken: String?): Flow<ChatPage> =
+        combine(sync.messages(sessionId, windowToken), sync.paging(sessionId), sender.outbox(sessionId)) { records, paging, outbox ->
             ChatPage(records, paging.hasMoreOlder, paging.isLoadingOlder, loaded = paging.isLoaded, outbox = outbox)
         }.distinctUntilChanged()
 
-    override suspend fun loadOlder(sessionId: String): Boolean = sync.loadOlder(sessionId)
+    override suspend fun loadOlder(sessionId: String): Boolean = sync.showOlder(sessionId)
 }
 
-/** Every stored record of the session, without fetching: for signed-out previews and tests. */
+/**
+ * Every stored record of the session, without fetching or a window: for
+ * signed-out previews and tests. Nothing syncs here, so a chat rarely grows long.
+ */
 class StoreChatMessagesSource(private val store: HappyStore) : ChatMessagesSource {
-    override fun messages(sessionId: String): Flow<ChatPage> =
+    override fun messages(sessionId: String, windowToken: String?): Flow<ChatPage> =
         combine(store.messageChanges(sessionId), store.outboxChanges(sessionId)) { _, _ ->
             ChatPage(store.messages(sessionId), outbox = store.outbox(sessionId))
         }.distinctUntilChanged().flowOn(Dispatchers.IO)

@@ -77,7 +77,17 @@ data class ReducerResult(
  * [mirror]: the session mirrors a Mac `claude agents` background session
  * ([com.slopus.happy.model.isClaudeAgentMirror]).
  */
-data class ReducerOptions(val holdUserMessagesUntilAccepted: Boolean = false, val mirror: Boolean = false)
+/**
+ * [windowStartAt]: set while older messages exist beyond the loaded window,
+ * it is the window's oldest message time. Records that belong to something
+ * older than the window are not invented from partial evidence (see the
+ * phases below). Null: the whole history is loaded.
+ */
+data class ReducerOptions(
+    val holdUserMessagesUntilAccepted: Boolean = false,
+    val mirror: Boolean = false,
+    val windowStartAt: Long? = null,
+)
 
 internal class ReducerMessage(
     val id: String,
@@ -179,7 +189,7 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
         val settledIds = LinkedHashSet<String>()
         var hasReadyEvent = false
 
-        val traced = traceMessages(tracer, incoming)
+        val traced = traceMessages(tracer, incoming, holdUnowned = options.windowStartAt != null)
         val sidechainMessages = traced.filter { it.sidechainId != null }
         var nonSidechain = traced.filter { it.sidechainId == null }.map { it.message }
 
@@ -227,12 +237,19 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
                 messageIds[msg.id] = msg.id
                 continue
             }
+            // An older batch (the window growing downward) must not wipe values a newer record set.
             if (event is AgentEvent.Message && event.message == "Context was reset") {
-                latestTodos = emptyList<TodoItem>() to msg.createdAt
-                latestUsage = TimedUsage(ContextUsage(0, 0, 0, 0, 0), msg.createdAt)
+                if (latestTodos.let { it == null || msg.createdAt >= it.second }) {
+                    latestTodos = emptyList<TodoItem>() to msg.createdAt
+                }
+                if (latestUsage.let { it == null || msg.createdAt >= it.timestamp }) {
+                    latestUsage = TimedUsage(ContextUsage(0, 0, 0, 0, 0), msg.createdAt)
+                }
             }
             if (event is AgentEvent.Message && event.message == "Compaction completed") {
-                latestUsage = TimedUsage(ContextUsage(0, 0, 0, 0, 0), msg.createdAt)
+                if (latestUsage.let { it == null || msg.createdAt >= it.timestamp }) {
+                    latestUsage = TimedUsage(ContextUsage(0, 0, 0, 0, 0), msg.createdAt)
+                }
             }
 
             val asEvent = parseMessageAsEvent(msg)
@@ -351,6 +368,13 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
                         continue
                     }
                     if (permId in agentState.requests) continue
+                    // Older than the window: its tool line is not loaded, and the
+                    // permission is kept so the line joins it when the window reaches it.
+                    val windowStart = options.windowStartAt
+                    if (windowStart != null && completed.createdAt != null && completed.createdAt < windowStart) {
+                        permissions[joinId] = stored
+                        continue
+                    }
 
                     val mid = allocateId()
                     val createdAt = stored.createdAt
