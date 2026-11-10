@@ -1,10 +1,11 @@
 /**
- * Reads the list of Claude Code background agents by running `claude agents --json`.
+ * Reads the list of Claude Code background agents by running `claude agents --json`, and runs
+ * the other `claude` commands the daemon needs for them (`--bg`, `stop`, `rm`).
  * Only `kind === 'background'` entries are kept. The `claude` binary is located through
  * a login shell so a globally installed CLI is found (never the Agent SDK bundled one).
  */
 
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import type { ClaudeAgent, ClaudeAgentStatus } from './types';
@@ -74,6 +75,72 @@ export async function resolveClaudeBinary(): Promise<string | null> {
     } catch {
         return null;
     }
+}
+
+const BG_TIMEOUT_MS = 30_000;
+/** How long to keep reading output after `claude --bg` exited (a detached child may hold the pipes). */
+const BG_OUTPUT_GRACE_MS = 1_000;
+const AGENT_COMMAND_TIMEOUT_MS = 15_000;
+
+/**
+ * Runs `claude <args>` (for `claude --bg`) in `cwd` and resolves with its output and exit code,
+ * whatever the code: the untrusted-folder refusal is read from the output of a failing run.
+ * Settles shortly after the process exits even if a background child keeps the pipes open.
+ * Rejects only when the process cannot be started.
+ */
+export function runClaudeBackground(
+    claudePath: string,
+    cwd: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+): Promise<{ stdout: string; stderr: string; code: number | null }> {
+    return new Promise((resolve, reject) => {
+        const child = spawn(claudePath, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '';
+        let stderr = '';
+        let exitCode: number | null = null;
+        let settled = false;
+        let graceTimer: NodeJS.Timeout | undefined;
+        child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
+        child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
+
+        const finish = (): void => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(killTimer);
+            clearTimeout(graceTimer);
+            child.stdout.destroy();
+            child.stderr.destroy();
+            resolve({ stdout, stderr, code: exitCode });
+        };
+        const killTimer = setTimeout(() => {
+            child.kill('SIGTERM');
+            finish();
+        }, BG_TIMEOUT_MS);
+
+        child.on('error', (error) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(killTimer);
+            clearTimeout(graceTimer);
+            reject(error);
+        });
+        child.on('exit', (code) => {
+            exitCode = code;
+            graceTimer = setTimeout(finish, BG_OUTPUT_GRACE_MS);
+        });
+        child.on('close', finish);
+    });
+}
+
+/** `claude stop <id>` (one id per call). */
+export async function stopClaudeAgent(claudePath: string, id: string, env: NodeJS.ProcessEnv): Promise<void> {
+    await execFileAsync(claudePath, ['stop', id], { env, timeout: AGENT_COMMAND_TIMEOUT_MS });
+}
+
+/** `claude rm <id>` (one id per call). */
+export async function removeClaudeAgent(claudePath: string, id: string, env: NodeJS.ProcessEnv): Promise<void> {
+    await execFileAsync(claudePath, ['rm', id], { env, timeout: AGENT_COMMAND_TIMEOUT_MS });
 }
 
 /**

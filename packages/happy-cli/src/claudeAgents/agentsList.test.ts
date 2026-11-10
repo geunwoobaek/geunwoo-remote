@@ -1,8 +1,8 @@
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { fetchClaudeAgents, parseClaudeAgents } from './agentsList';
+import { fetchClaudeAgents, parseClaudeAgents, removeClaudeAgent, runClaudeBackground, stopClaudeAgent } from './agentsList';
 
 const background = (overrides: Record<string, unknown> = {}) => ({
     pid: 1001,
@@ -136,5 +136,62 @@ describe('fetchClaudeAgents', () => {
         const claudePath = await fakeClaude('[]');
 
         await expect(fetchClaudeAgents(claudePath)).resolves.toEqual([]);
+    });
+});
+
+// A shell script stands in for `claude`; the real binary is never run.
+describe('running claude for background agents', () => {
+    let dir: string;
+
+    beforeEach(async () => {
+        dir = await realpath(await mkdtemp(join(tmpdir(), 'fake-claude-')));
+    });
+
+    afterEach(async () => {
+        await rm(dir, { recursive: true, force: true });
+    });
+
+    async function fakeClaude(script: string): Promise<string> {
+        const path = join(dir, 'claude');
+        await writeFile(path, `#!/bin/sh\n${script}\n`);
+        await chmod(path, 0o755);
+        return path;
+    }
+
+    it('runs in the given folder and returns the output of a successful run', async () => {
+        const claudePath = await fakeClaude('echo "warning: no prompt" >&2; echo "backgrounded · 35d81094 · demo $*"; pwd -P > "$FAKE_OUT"');
+        const out = join(dir, 'pwd.txt');
+        const result = await runClaudeBackground(claudePath, dir, ['--bg', '--name', 'demo'], { ...process.env, FAKE_OUT: out });
+        expect(result.code).toBe(0);
+        expect(result.stdout).toContain('backgrounded · 35d81094 · demo --bg --name demo');
+        expect(result.stderr).toContain('warning: no prompt');
+        expect((await readFile(out, 'utf8')).trim()).toBe(dir);
+    });
+
+    it('returns the output of a failing run instead of rejecting', async () => {
+        const claudePath = await fakeClaude('echo "Workspace not trusted. Run claude in $PWD once and accept the trust prompt, then retry." >&2; exit 1');
+        const result = await runClaudeBackground(claudePath, dir, ['--bg'], process.env);
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('Workspace not trusted');
+    });
+
+    it('settles soon after exit when a detached child keeps the output open', async () => {
+        const claudePath = await fakeClaude('echo "backgrounded · 35d81094 · demo"; sleep 8 & exit 0');
+        const started = Date.now();
+        const result = await runClaudeBackground(claudePath, dir, ['--bg'], process.env);
+        expect(result.stdout).toContain('backgrounded · 35d81094');
+        expect(Date.now() - started).toBeLessThan(5_000);
+    });
+
+    it('rejects when the binary cannot be started', async () => {
+        await expect(runClaudeBackground(join(dir, 'missing'), dir, ['--bg'], process.env)).rejects.toThrow();
+    });
+
+    it('stop and rm each pass exactly one id', async () => {
+        const log = join(dir, 'args.txt');
+        const claudePath = await fakeClaude(`echo "$*" >> "${log}"`);
+        await stopClaudeAgent(claudePath, '35d81094', process.env);
+        await removeClaudeAgent(claudePath, '35d81094', process.env);
+        expect((await readFile(log, 'utf8')).trim().split('\n')).toEqual(['stop 35d81094', 'rm 35d81094']);
     });
 });

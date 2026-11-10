@@ -136,6 +136,11 @@ function requireNonEmptyString(value: unknown, name: string): string {
     return value;
 }
 
+/** A non-empty string, or undefined for anything else (absent, null, empty, wrong type). */
+function optionalString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
 async function withCodexAppServerClient<T>(handler: (client: CodexAppServerClient) => Promise<T>): Promise<T> {
     const client = new CodexAppServerClient();
     await client.connect();
@@ -185,10 +190,23 @@ export class ApiMachineClient {
         this.resumeSessionHandler = resumeSession ?? null;
 
         if (claudeAgents) {
-            // Both answer with their result object (errors included) so the app can show the message.
+            // All answer with their result object (errors included) so the app can show the message.
             this.rpcHandlerManager.registerHandler('list-claude-agents', () => claudeAgents.list());
             this.rpcHandlerManager.registerHandler('open-claude-agent', (params: any) =>
                 claudeAgents.open(requireNonEmptyString(params?.id, 'id')));
+            this.rpcHandlerManager.registerHandler('start-claude-agent', (params: any) =>
+                claudeAgents.start({
+                    directory: requireNonEmptyString(params?.directory, 'directory'),
+                    name: requireNonEmptyString(params?.name, 'name'),
+                    model: optionalString(params?.model),
+                    permissionMode: optionalString(params?.permissionMode),
+                    effort: optionalString(params?.effort),
+                    // Unlike spawn-happy-session, a missing folder is created only when the request says so.
+                    approvedNewDirectoryCreation: params?.approvedNewDirectoryCreation === true,
+                    clientRequestId: optionalString(params?.clientRequestId),
+                }));
+            this.rpcHandlerManager.registerHandler('discard-claude-agent', (params: any) =>
+                claudeAgents.discard(requireNonEmptyString(params?.id, 'id')));
         }
 
         // Register spawn session handler

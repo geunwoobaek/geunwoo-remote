@@ -1,14 +1,25 @@
 /**
  * Machine RPC handlers for Claude Code background agents (`claude agents`):
  * `list-claude-agents` lists them, `open-claude-agent` opens the mirror session of one
- * (the daemon spawns, or reconnects, `happy claude-agent-mirror <agentId>`).
+ * (the daemon spawns, or reconnects, `happy claude-agent-mirror <agentId>`),
+ * `start-claude-agent` starts a new one with `claude --bg` and opens its mirror, and
+ * `discard-claude-agent` stops and removes one that this daemon started.
  *
- * Everything the daemon owns (tracked processes, persisted keys, spawning) comes in through
- * `deps`, so this module has no daemon state of its own beyond the in-flight `open` calls.
+ * Everything the daemon owns (tracked processes, persisted keys, spawning, running `claude`)
+ * comes in through `deps`, so this module's own state is limited to in-flight calls, recent
+ * start results and the ids of the agents it started.
  */
 
 import type { Metadata } from '@/api/types';
-import type { ClaudeAgent, ClaudeAgentsListing } from './types';
+import { agentNameFrom, buildBgArgs, isUntrustedOutput, parseBackgroundedId } from './startAgent';
+import type {
+    ClaudeAgent,
+    ClaudeAgentsListing,
+    DiscardClaudeAgentResult,
+    EnsureDirectoryResult,
+    StartClaudeAgentRequest,
+    StartClaudeAgentResult,
+} from './types';
 
 /** Refusal for the ordinary `resume-happy-session` path: a mirror is reopened as an agent, not resumed. */
 export const MIRROR_RESUME_REFUSAL = 'This session mirrors a Mac background session. Open it from the background session list.';
@@ -20,7 +31,15 @@ export type OpenClaudeAgentResult =
 export type ClaudeAgentHandlers = {
     list(): Promise<ClaudeAgentsListing>;
     open(agentId: string): Promise<OpenClaudeAgentResult>;
+    start(request: StartClaudeAgentRequest): Promise<StartClaudeAgentResult>;
+    discard(agentId: string): Promise<DiscardClaudeAgentResult>;
 };
+
+/** How long a started agent may take to show up in `claude agents --json`. */
+export const START_APPEAR_TIMEOUT_MS = 10_000;
+export const START_POLL_INTERVAL_MS = 500;
+/** How long a successful start is answered again for a repeated `clientRequestId`. */
+export const START_RESULT_REUSE_MS = 5 * 60_000;
 
 export type PersistedMirror = {
     happySessionId: string;
@@ -50,6 +69,15 @@ export type ClaudeAgentHandlerDeps = {
         reconnect: { happySessionId: string; env: Record<string, string> } | undefined,
         cwd: string,
     ): Promise<OpenClaudeAgentResult>;
+    /** Runs `claude <args>` in `cwd`; resolves with its output whatever the exit code. */
+    runClaudeBg(claudePath: string, cwd: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number | null }>;
+    /** `claude stop <id>`. */
+    stopAgent(claudePath: string, id: string): Promise<void>;
+    /** `claude rm <id>`. */
+    removeAgent(claudePath: string, id: string): Promise<void>;
+    /** Uses `directory` when it exists, otherwise creates it once `approved` (the `spawn-happy-session` rules). */
+    ensureDirectory(directory: string, approved: boolean): Promise<EnsureDirectoryResult>;
+    sleep(ms: number): Promise<void>;
 };
 
 /** True when the session is the mirror of a Claude background agent. */
@@ -125,10 +153,10 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
         try {
             const claudePath = await deps.resolveClaude();
             if (claudePath === null) {
-                return { agents: [], unavailable: 'claude-missing' };
+                return { agents: [], unavailable: 'claude-missing', startSupported: true };
             }
             if (!(await deps.tmuxInstalled())) {
-                return { agents: [], unavailable: 'tmux-missing' };
+                return { agents: [], unavailable: 'tmux-missing', startSupported: true };
             }
             const agents = await deps.fetchAgents(claudePath);
             const live = deps.liveMirrors();
@@ -137,9 +165,10 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
                     const mirrorSessionId = live.get(agent.id);
                     return mirrorSessionId === undefined ? agent : { ...agent, mirrorSessionId };
                 }),
+                startSupported: true,
             };
         } catch {
-            return { agents: [], unavailable: 'agents-command-failed' };
+            return { agents: [], unavailable: 'agents-command-failed', startSupported: true };
         }
     }
 
@@ -201,5 +230,168 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
         return attempt;
     }
 
-    return { list, open };
+    // Ids of the agents `start` created. `discard` acts on these only: a session the user started
+    // on the Mac must never be stopped from the phone.
+    const startedHere = new Set<string>();
+    const startsInFlight = new Map<string, Promise<StartClaudeAgentResult>>();
+    const startSuccesses = new Map<string, { at: number; result: StartClaudeAgentResult & { type: 'success' } }>();
+
+    /** `claude stop` then `claude rm`; `rm` is tried even when `stop` fails (the agent may already be stopped). */
+    async function stopAndRemove(claudePath: string, agentId: string): Promise<void> {
+        try {
+            await deps.stopAgent(claudePath, agentId);
+        } catch {
+            // `rm` below decides whether the agent is gone.
+        }
+        await deps.removeAgent(claudePath, agentId);
+        startedHere.delete(agentId);
+        for (const [requestId, known] of startSuccesses) {
+            if (known.result.agentId === agentId) {
+                startSuccesses.delete(requestId);
+            }
+        }
+    }
+
+    async function failAfterStart(claudePath: string, agentId: string, errorMessage: string): Promise<StartClaudeAgentResult> {
+        try {
+            await stopAndRemove(claudePath, agentId);
+        } catch {
+            // Cleanup is best effort; the agent stays in `startedHere` so a discard can retry it.
+        }
+        return { type: 'error', code: 'start-failed', errorMessage };
+    }
+
+    async function waitForAgent(claudePath: string, agentId: string): Promise<boolean> {
+        const deadline = Date.now() + START_APPEAR_TIMEOUT_MS;
+        for (let waited = 0; ; waited += START_POLL_INTERVAL_MS) {
+            try {
+                if ((await deps.fetchAgents(claudePath)).some((candidate) => candidate.id === agentId)) {
+                    return true;
+                }
+            } catch {
+                // A listing that fails once is retried like one that does not show the agent yet.
+            }
+            if (waited >= START_APPEAR_TIMEOUT_MS || Date.now() >= deadline) {
+                return false;
+            }
+            await deps.sleep(START_POLL_INTERVAL_MS);
+        }
+    }
+
+    async function startUncached(request: StartClaudeAgentRequest): Promise<StartClaudeAgentResult> {
+        const { directory } = request;
+        const claudePath = await deps.resolveClaude();
+        if (claudePath === null) {
+            return { type: 'error', code: 'claude-missing', errorMessage: 'claude was not found in the login shell. Install Claude Code first.' };
+        }
+        if (!(await deps.tmuxInstalled())) {
+            return { type: 'error', code: 'tmux-missing', errorMessage: 'tmux is required to run a background session.' };
+        }
+
+        const folder = await deps.ensureDirectory(directory, request.approvedNewDirectoryCreation === true);
+        if (folder.type === 'requestToApproveDirectoryCreation') {
+            return folder;
+        }
+        if (folder.type === 'error') {
+            return { type: 'error', code: 'start-failed', errorMessage: folder.errorMessage, directory };
+        }
+
+        // Normalized again here: the name is the last thing before exec, and must never read as an option.
+        const name = agentNameFrom(request.name, directory);
+        const args = buildBgArgs({ name, permissionMode: request.permissionMode, model: request.model, effort: request.effort });
+        const ran = await deps.runClaudeBg(claudePath, directory, args);
+        const output = `${ran.stdout}\n${ran.stderr}`;
+        if (isUntrustedOutput(output)) {
+            return {
+                type: 'error',
+                code: 'untrusted-folder',
+                errorMessage: `Claude on the Mac does not trust ${directory} yet. Run claude there once and accept the trust prompt, then try again.`,
+                directory,
+            };
+        }
+        const agentId = parseBackgroundedId(output);
+        if (agentId === null) {
+            const printed = output.trim().slice(0, 300);
+            return {
+                type: 'error',
+                code: 'start-failed',
+                errorMessage: `claude --bg did not report a background session (exit code ${ran.code ?? 'none'})${printed ? `: ${printed}` : '.'}`,
+            };
+        }
+
+        // From here on the Mac has a session: every failure removes it before answering.
+        startedHere.add(agentId);
+        try {
+            if (!(await waitForAgent(claudePath, agentId))) {
+                return failAfterStart(claudePath, agentId, `Background session ${agentId} did not appear in claude agents within ${START_APPEAR_TIMEOUT_MS / 1000} seconds.`);
+            }
+            const opened = await open(agentId);
+            if (opened.type === 'error') {
+                return failAfterStart(claudePath, agentId, opened.errorMessage);
+            }
+            return { type: 'success', sessionId: opened.sessionId, agentId };
+        } catch (error) {
+            return failAfterStart(claudePath, agentId, `Failed to start background session: ${describeError(error)}`);
+        }
+    }
+
+    function start(request: StartClaudeAgentRequest): Promise<StartClaudeAgentResult> {
+        const requestId = request.clientRequestId;
+        if (requestId !== undefined) {
+            const known = startSuccesses.get(requestId);
+            if (known !== undefined && Date.now() - known.at < START_RESULT_REUSE_MS) {
+                return Promise.resolve(known.result);
+            }
+            startSuccesses.delete(requestId);
+            const running = startsInFlight.get(requestId);
+            if (running !== undefined) {
+                return running;
+            }
+        }
+        const attempt = startUncached(request)
+            .catch((error: unknown): StartClaudeAgentResult => ({
+                type: 'error',
+                code: 'start-failed',
+                errorMessage: `Failed to start background session: ${describeError(error)}`,
+            }));
+        if (requestId === undefined) {
+            return attempt;
+        }
+        // Only a success is kept: it is the answer that left a session on the Mac. Directory
+        // approval and errors are asked again, since the app retries those with the same id.
+        const tracked = attempt
+            .then((result) => {
+                if (result.type === 'success') {
+                    startSuccesses.set(requestId, { at: Date.now(), result });
+                }
+                return result;
+            })
+            .finally(() => {
+                startsInFlight.delete(requestId);
+            });
+        startsInFlight.set(requestId, tracked);
+        return tracked;
+    }
+
+    async function discard(agentId: string): Promise<DiscardClaudeAgentResult> {
+        if (!startedHere.has(agentId)) {
+            return {
+                type: 'error',
+                code: 'not-started-here',
+                errorMessage: `Background session ${agentId} was not started by this daemon, so it is left running.`,
+            };
+        }
+        try {
+            const claudePath = await deps.resolveClaude();
+            if (claudePath === null) {
+                return { type: 'error', code: 'discard-failed', errorMessage: 'claude was not found in the login shell.' };
+            }
+            await stopAndRemove(claudePath, agentId);
+            return { type: 'success' };
+        } catch (error) {
+            return { type: 'error', code: 'discard-failed', errorMessage: `Failed to remove background session ${agentId}: ${describeError(error)}` };
+        }
+    }
+
+    return { list, open, start, discard };
 }

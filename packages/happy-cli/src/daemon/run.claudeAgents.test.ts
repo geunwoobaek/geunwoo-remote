@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
   webhook: null as any,
   persisted: {} as Record<string, any>,
   spawn: vi.fn(),
+  runClaudeBackground: vi.fn(),
+  stopClaudeAgent: vi.fn(async () => undefined),
+  removeClaudeAgent: vi.fn(async () => undefined),
   persistSession: vi.fn(),
   logger: { debug: vi.fn(), debugLargeJson: vi.fn(), warn: vi.fn() },
 }));
@@ -32,6 +35,9 @@ vi.mock('@/claudeAgents/agentsList', () => ({
     id: 'abc12345', sessionId: 'session-abc', name: 'demo-agent', cwd: '/Users/tester/project',
     pid: 1, status: 'idle', state: null, startedAt: 1,
   }],
+  runClaudeBackground: mocks.runClaudeBackground,
+  stopClaudeAgent: mocks.stopClaudeAgent,
+  removeClaudeAgent: mocks.removeClaudeAgent,
 }));
 vi.mock('@/claudeAgents/attachTerminal', () => ({ isTmuxInstalled: async () => true }));
 vi.mock('./happyTerminalBoot', () => ({ startHappyTerminalDaemon: vi.fn() }));
@@ -107,6 +113,43 @@ describe('daemon Claude background agents', () => {
     // The mirror is running: opening again must not start a second one.
     expect(await mocks.handlers.claudeAgents.open('abc12345')).toEqual({ type: 'success', sessionId: 'happy-new' });
     expect(mocks.spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts a background agent in the folder, opens its mirror, and discards only what it started', async () => {
+    const saved = { CLAUDECODE: process.env.CLAUDECODE, CLAUDE_CODE_ENTRYPOINT: process.env.CLAUDE_CODE_ENTRYPOINT };
+    process.env.CLAUDECODE = '1';
+    process.env.CLAUDE_CODE_ENTRYPOINT = 'cli';
+    try {
+      await boot();
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
+    mocks.runClaudeBackground.mockResolvedValue({
+      stdout: 'backgrounded · abc12345 · demo-agent (idle — send a prompt to start)\n', stderr: '', code: 0,
+    });
+    mocks.spawn.mockImplementation(() => {
+      queueMicrotask(() => mocks.webhook('happy-new', { ...mirrorMetadata, hostPid: 12345 }, {
+        encryptionKey: new Uint8Array(32), encryptionVariant: 'dataKey', seq: 0, metadataVersion: 0, agentStateVersion: 0,
+      }));
+      return { pid: 12345, on: vi.fn() };
+    });
+
+    expect(await mocks.handlers.claudeAgents.start({ directory: '/Users/tester/project', name: 'demo-agent', model: 'opus' }))
+      .toEqual({ type: 'success', sessionId: 'happy-new', agentId: 'abc12345' });
+    const [claudePath, cwd, args, env] = mocks.runClaudeBackground.mock.calls[0];
+    expect([claudePath, cwd, args]).toEqual(['/fake/claude', '/Users/tester/project', ['--bg', '--name', 'demo-agent', '--model', 'opus']]);
+    expect(env.CLAUDECODE).toBeUndefined();
+    expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
+    expect(mocks.spawn).toHaveBeenCalledWith(['claude-agent-mirror', 'abc12345'], expect.objectContaining({ cwd: '/Users/tester/project' }));
+    expect((await mocks.handlers.claudeAgents.list()).startSupported).toBe(true);
+
+    expect(await mocks.handlers.claudeAgents.discard('def67890')).toMatchObject({ type: 'error', code: 'not-started-here' });
+    expect(mocks.stopClaudeAgent).not.toHaveBeenCalled();
+    expect(await mocks.handlers.claudeAgents.discard('abc12345')).toEqual({ type: 'success' });
+    expect(mocks.stopClaudeAgent).toHaveBeenCalledWith('/fake/claude', 'abc12345', expect.not.objectContaining({ CLAUDECODE: '1' }));
+    expect(mocks.removeClaudeAgent).toHaveBeenCalledWith('/fake/claude', 'abc12345', expect.any(Object));
   });
 
   it('reconnects a stopped mirror with its stored keys', async () => {
