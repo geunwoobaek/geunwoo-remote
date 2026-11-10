@@ -9,6 +9,7 @@ import com.slopus.happy.model.qualifyRigModelKey
 import com.slopus.happy.model.rigComposerMode
 import com.slopus.happy.model.rigModels
 import com.slopus.happy.model.rigSelectedModel
+import com.slopus.happy.model.runningModel
 import com.slopus.happy.model.settings.AgentDefaultOverrides
 import com.slopus.happy.model.settings.AgentDefaults
 import com.slopus.happy.model.settings.ModeOption
@@ -79,10 +80,15 @@ object ComposerModeResolver {
             },
         )
         val rigModelKey = metadata.rigSelectedModel()?.let { (provider, id) -> qualifyRigModelKey(provider, id) }
-        val model = ModeOptions.resolveCurrentOption(
-            models,
-            listOf(sessionModel, if (rig) rigModelKey else defaults.modelMode, if (rig) null else metadata?.currentModelCode),
-        )
+        // A Mac background session runs the model it was started with: show what it reports, never a pick or default.
+        val model = if (metadata.isClaudeAgentMirror()) {
+            metadata.runningModel()?.let { running -> models.find { it.key == running } ?: ModeOption(running, running) }
+        } else {
+            ModeOptions.resolveCurrentOption(
+                models,
+                listOf(sessionModel, if (rig) rigModelKey else defaults.modelMode, if (rig) null else metadata?.currentModelCode),
+            )
+        }
         val modelKey = model?.key ?: "default"
         val efforts = ModeOptions.effortLevelsForModel(flavor, modelKey, metadata)
         val effort = ModeOptions.resolveCurrentOption(

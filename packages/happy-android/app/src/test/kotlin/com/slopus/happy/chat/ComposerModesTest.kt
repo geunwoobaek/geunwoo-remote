@@ -160,6 +160,20 @@ class ComposerModesTest {
     }
 
     @Test
+    fun aMacBackgroundSessionShowsTheModelItRunsOnNotTheAppDefault() {
+        val haiku = plain("claude") { put("claudeAgentId", "demo-agent"); put("runningModel", "claude-haiku-5-5") }
+        val listed = ComposerModeResolver.resolve(haiku, ComposerMirror(modelMode = "claude-opus-5-5"), null, translate)
+        assertEquals("claude-haiku-5-5" to "Haiku 5.5", listed.modelMode?.let { it.key to it.name })
+        assertFalse(listed.canChangeModel)
+
+        val unlisted = plain("claude") { put("claudeAgentId", "demo-agent"); put("runningModel", "claude-opus-4-7") }
+        assertEquals("claude-opus-4-7" to "claude-opus-4-7", ComposerModeResolver.resolve(unlisted, ComposerMirror(), null, translate).modelMode?.let { it.key to it.name })
+
+        // Not reported yet (a mirror from an older CLI): no model rather than a wrong one.
+        assertNull(ComposerModeResolver.resolve(plain("claude") { put("claudeAgentId", "demo-agent") }, ComposerMirror(), null, translate).modelMode)
+    }
+
+    @Test
     fun aLockedRigSessionCannotChangeItsModel() {
         val locked = rig {
             it["session"] = Json.parseToJsonElement("""{"status":"running","permissionMode":"auto","modelLocked":true,"serviceTier":"fast"}""")
