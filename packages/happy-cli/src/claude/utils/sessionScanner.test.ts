@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createSessionScanner } from './sessionScanner'
 import { RawJSONLines } from '../types'
 import type { ClaudeGoalStatusTranscriptEvent } from '../claudeGoalStatus'
@@ -78,6 +78,34 @@ describe('sessionScanner', () => {
     await new Promise((resolve) => setTimeout(resolve, 200))
     expect(collectedMessages.map((m) => m.type === 'summary' ? null : m.uuid)).toEqual(['moved-1'])
   })
+
+  it('with searchOtherProjects keeps a moved session whose transcript is nowhere yet until it shows up', async () => {
+    const worktree = join(testDir, '.claude', 'worktrees', 'feature')
+    scanner = await createSessionScanner({
+      sessionId: null,
+      workingDirectory: worktree,
+      searchOtherProjects: true,
+      missingFileTimeoutMs: 100,
+      onMessage: (m) => collectedMessages.push(m),
+    })
+    await scanner.onNewSession('late-session')
+    // Longer than a watcher on the worktree's missing project directory takes to give up.
+    await new Promise((resolve) => setTimeout(resolve, 2500))
+    expect(existsSync(getProjectPath(worktree))).toBe(false)
+
+    // The transcript appears where the session started, after the 10 s no-search window.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(Date.now() + 11_000)
+      const line = JSON.stringify({ type: 'user', uuid: 'late-1', message: { role: 'user', content: 'hi' } }) + '\n'
+      await writeFile(join(projectDir, 'late-session.jsonl'), line)
+      // The next periodic sync resolves it again.
+      await new Promise((resolve) => setTimeout(resolve, 3500))
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(collectedMessages.map((m) => m.type === 'summary' ? null : m.uuid)).toEqual(['late-1'])
+  }, 15_000)
 
   it('should process initial session and resumed session correctly', async () => {
     // TEST SCENARIO:

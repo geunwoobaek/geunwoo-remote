@@ -3,6 +3,7 @@ import { RawJSONLines, RawJSONLinesSchema } from "../types";
 import { parseClaudeGoalStatusTranscriptEvent, type ClaudeGoalStatusTranscriptEvent } from "../claudeGoalStatus";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { logger } from "@/ui/logger";
 import { startFileWatcher } from "@/modules/watcher/startFileWatcher";
 import { findSessionProjectDir, getProjectPath } from "./path";
@@ -119,9 +120,17 @@ export async function createSessionScanner(opts: {
             }
         }
 
+        // With searchOtherProjects, a transcript that is nowhere yet resolves to the working
+        // directory's own project, which for a session that moved into a worktree may never exist:
+        // a watcher there would give up and drop the session. Such a session gets no watcher and
+        // stays pending; every sync resolves it again until its file shows up.
+        const unresolved = new Set(opts.searchOtherProjects
+            ? sessions.filter((p) => !existsSync(join(projectDirFor(p), `${p}.jsonl`)))
+            : []);
+
         // Move pending sessions to finished sessions (but keep processing them via watchers)
         for (let p of sessions) {
-            if (pendingSessions.has(p)) {
+            if (pendingSessions.has(p) && !unresolved.has(p)) {
                 pendingSessions.delete(p);
                 finishedSessions.add(p);
             }
@@ -129,7 +138,7 @@ export async function createSessionScanner(opts: {
 
         // Update watchers for all sessions
         for (let p of sessions) {
-            if (!watchers.has(p) && !deadSessions.has(p)) {
+            if (!watchers.has(p) && !deadSessions.has(p) && !unresolved.has(p)) {
                 logger.debug(`[SESSION_SCANNER] Starting watcher for session: ${p}`);
                 watchers.set(p, startFileWatcher(
                     join(projectDirFor(p), `${p}.jsonl`),

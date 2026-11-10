@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { findSessionProjectDir, getProjectPath } from './path';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -196,5 +196,30 @@ describe('findSessionProjectDir', () => {
 
     it('falls back to the working directory project when the transcript is nowhere', () => {
         expect(findSessionProjectDir('/Users/tester/project', 'missing')).toBe(getProjectPath('/Users/tester/project'));
+    });
+
+    describe('after a search that found nothing', () => {
+        const worktree = '/Users/tester/project/.claude/worktrees/feature';
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('does not search the other projects again for 10 s', () => {
+            vi.useFakeTimers({ toFake: ['Date'] });
+            vi.setSystemTime(1_000_000);
+            expect(findSessionProjectDir(worktree, 'sess-late')).toBe(getProjectPath(worktree));
+
+            const started = getProjectPath('/Users/tester/project');
+            mkdirSync(started, { recursive: true });
+            writeFileSync(join(started, 'sess-late.jsonl'), '');
+            vi.setSystemTime(1_009_999);
+            expect(findSessionProjectDir(worktree, 'sess-late')).toBe(getProjectPath(worktree));
+
+            vi.setSystemTime(1_010_000);
+            expect(findSessionProjectDir(worktree, 'sess-late')).toBe(started);
+            // Found: later calls keep finding it without waiting.
+            expect(findSessionProjectDir(worktree, 'sess-late')).toBe(started);
+        });
     });
 });
