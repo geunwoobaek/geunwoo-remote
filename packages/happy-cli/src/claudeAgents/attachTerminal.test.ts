@@ -193,7 +193,8 @@ describe.skipIf(!hasTmux)('attachTerminal (tmux)', () => {
                 await terminal.close();
             }
         }
-    });
+        // Ten tmux sessions in a row: about 4 s on an idle machine, past 5 s under a full suite.
+    }, 30_000);
 
     it('typeText and pasteText ignore empty text', async () => {
         const terminal = await open(rawShell, { isReady: sawReady });
