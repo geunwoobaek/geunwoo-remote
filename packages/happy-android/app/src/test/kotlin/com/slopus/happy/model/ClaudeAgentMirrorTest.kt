@@ -72,6 +72,38 @@ class ClaudeAgentMirrorTest {
         assertTrue(mirrorMetadata().isClaudeAgentMirror())
     }
 
+    // the title
+
+    @Test fun `a mirror is titled with the agent name before its summary`() {
+        val named = metadata(path = "/Users/tester/project") {
+            put("claudeAgentId", "demo-agent")
+            put("name", "demo-agent")
+            putJsonObject("summary") {
+                put("text", "Fix the list")
+                put("updatedAt", 1)
+            }
+        }
+        assertEquals("demo-agent", session("s", metadata = named).displayName())
+        // No name, or a blank one: the summary, else null ("New chat").
+        val unnamed = metadata(path = "/Users/tester/project") {
+            put("claudeAgentId", "demo-agent")
+            put("name", " ")
+        }
+        assertNull(session("s", metadata = unnamed).displayName())
+    }
+
+    @Test fun `other sessions keep their title rules`() {
+        val normal = metadata(path = "/Users/tester/project") {
+            put("name", "demo-agent")
+            putJsonObject("summary") {
+                put("text", "Fix the list")
+                put("updatedAt", 1)
+            }
+        }
+        assertEquals("Fix the list", session("s", metadata = normal).displayName())
+        assertNull(session("s", metadata = metadata { put("name", "demo-agent") }).displayName())
+    }
+
     // what is turned off
 
     @Test fun `forkSource is null for a mirror`() {

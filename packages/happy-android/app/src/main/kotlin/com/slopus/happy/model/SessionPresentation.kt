@@ -12,9 +12,14 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * getSessionName: the bot's name, else a task's, else the summary, else
- * null, which the screens show as "New chat" (`session.newChat`).
+ * null, which the screens show as "New chat" (`session.newChat`). A mirror
+ * of a Mac `claude agents` session is named by the agent's name before its
+ * summary: that is the name the Mac shows for it.
  */
-fun Session.displayName(): String? = metadata?.bot?.name ?: taskOrNull()?.name ?: metadata?.summary?.text
+fun Session.displayName(): String? = metadata?.bot?.name ?: taskOrNull()?.name ?: mirroredAgentName() ?: metadata?.summary?.text
+
+private fun Session.mirroredAgentName(): String? =
+    metadata?.takeIf { it.isClaudeAgentMirror() }?.name?.takeIf { it.isNotBlank() }
 
 /**
  * A task's membership (happy-ios 36b11c5bf): it lives like a bot (one
