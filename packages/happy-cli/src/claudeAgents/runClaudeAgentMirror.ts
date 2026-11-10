@@ -6,7 +6,8 @@
  *   local mode uses). Lines the phone itself typed are skipped (echo filter), and after a restart
  *   only what comes after the last uploaded uuid goes up (`<happyHomeDir>/claude-agent-mirrors/<id>.json`).
  * - Phone messages are typed into the session through the Mac user's own cmux pane running
- *   `claude attach <id>` when there is one, else through a hidden `claude attach` terminal
+ *   `claude attach <id>` when there is one and its screen names this session, else through a
+ *   hidden `claude attach` terminal opened at the pane's size
  *   (`inputDelivery`); the phone's stop button presses Esc there; dialogs (permission, question,
  *   plan) are bridged both ways by `permissionBridge`.
  * - `claude agents --json` is polled to follow `/clear` (same agent id, new sessionId) and to end
@@ -41,7 +42,8 @@ import { projectPath } from '../projectPath';
 import packageJson from '../../package.json';
 import { fetchClaudeAgents, resolveClaudeBinary } from './agentsList';
 import { isTmuxInstalled, openAttachTerminal, type AttachTerminal } from './attachTerminal';
-import { findAgentSurface, openCmuxTerminal } from './cmuxTerminal';
+import { findAgentSurface, guardUserPane, openCmuxTerminal, paneShowsAgent, userPaneSize } from './cmuxTerminal';
+import { screenSessionName } from './dialogs';
 import { createEchoFilter, createInputDelivery, type DeliveryResult } from './inputDelivery';
 import { createPermissionBridge } from './permissionBridge';
 import { findToolUseOutcome, readSessionStatus, readTranscriptEntries } from './transcript';
@@ -399,6 +401,8 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         process.exit(EXIT_AGENT_NOT_FOUND);
     }
     let agent: ClaudeAgent = found;
+    /** The latest `claude agents` listing: the cmux pane check compares the session names in it. */
+    let latestAgents: ClaudeAgent[] = initialAgents;
     let currentSessionId = agent.sessionId;
 
     const { credentials } = await authAndSetupMachineIfNeeded();
@@ -468,12 +472,25 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     // (a queued send then fails and the phone is told).
     // The user's own cmux pane running `claude attach <agentId>` shares that lock; it is looked up
     // anew each time (panes come and go) and only ever read from and typed into, never closed.
+    // The pane is used only while its screen names this agent's session and no other listed
+    // agent's (the user can open another agent inside the same attach); else tmux is used.
+    // A private tmux attach is opened at the pane's size so Claude Code does not redraw the pane.
     let userSurface: string | null = null;
+    let refusedPaneName: string | null = null;
+    const showsThisAgent = (screen: string): boolean => {
+        const shows = paneShowsAgent(screen, agentId, latestAgents);
+        const name = shows ? null : (screenSessionName(screen) ?? '(none)');
+        if (name !== null && name !== refusedPaneName) {
+            logger.debug(`[claude-agent] cmux ${userSurface ?? ''} shows session "${name}", not this agent's: using tmux`);
+        }
+        refusedPaneName = name;
+        return shows;
+    };
     const lockedOpen = serializeTerminalOpens(
-        () => openAttachTerminal([claudePath, 'attach', agentId]),
+        async () => openAttachTerminal([claudePath, 'attach', agentId], (await userPaneSize(agentId)) ?? {}),
         async () => {
             userSurface = await findAgentSurface(agentId);
-            return userSurface === null ? null : openCmuxTerminal(userSurface);
+            return userSurface === null ? null : guardUserPane(openCmuxTerminal(userSurface), showsThisAgent);
         },
     );
     const openTerminal = async (): Promise<AttachTerminal> => {
@@ -607,6 +624,7 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
             return;
         }
         agent = agents.find((candidate) => candidate.id === agentId) ?? agent;
+        latestAgents = agents;
         if (change !== 'same') {
             logger.debug(`[MIRROR] Session changed ${currentSessionId} -> ${change.switchTo}`);
             currentSessionId = change.switchTo;

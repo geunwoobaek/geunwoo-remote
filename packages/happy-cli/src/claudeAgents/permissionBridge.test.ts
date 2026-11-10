@@ -4,9 +4,10 @@ import { describe, expect, it } from 'vitest';
 import type { AgentState } from '@/api/types';
 import type { PermissionResponse } from '@/claude/utils/permissionHandler';
 import type { AttachKey, AttachTerminal } from './attachTerminal';
+import { guardUserPane, paneShowsAgent } from './cmuxTerminal';
 import { DIALOG_KEY_GAP_MS, dialogFingerprint } from './dialogs';
 import { createPermissionBridge } from './permissionBridge';
-import type { ClaudeAgentStatus } from './types';
+import type { ClaudeAgent, ClaudeAgentStatus } from './types';
 
 const screen = (name: string): string => readFileSync(join(__dirname, '__fixtures__', 'screens', `${name}.txt`), 'utf8');
 
@@ -84,13 +85,19 @@ type Harness = {
     failUserScreen?: boolean;
     /** Make the user pane's `press` throw on this call number (1-based). */
     failUserPressAt?: number;
+    /** What happens on the Mac after the Nth key pressed on the user's pane (1-based). */
+    userAfter?: Record<number, () => void>;
 };
 
 function keyName(key: AttachKey): string {
     return typeof key === 'string' ? key : String(key.digit);
 }
 
-function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]; screen: string; cwd?: string; userScreen?: string }) {
+/**
+ * `guardAgents`: hand out the user's pane the way the mirror does for agent `a1`, usable only
+ * while its screen names that agent's session among these listed agents.
+ */
+function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]; screen: string; cwd?: string; userScreen?: string; guardAgents?: ClaudeAgent[] }) {
     const h: Harness = {
         status: initial.status === undefined ? 'waiting' : initial.status,
         entries: initial.entries ?? [userText('start')],
@@ -123,6 +130,7 @@ function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]
                 throw new Error('cmux went away');
             }
             h.userLog.push(`press:${keys.map(keyName).join(',')}`);
+            h.userAfter?.[userPresses]?.();
         },
         async close() {
             h.userLog.push('close');
@@ -180,7 +188,8 @@ function setup(initial: { status?: ClaudeAgentStatus | null; entries?: unknown[]
                       }
                       h.userOpened += 1;
                       h.userLog.push('open');
-                      return userTerminal;
+                      const agents = initial.guardAgents;
+                      return agents === undefined ? userTerminal : guardUserPane(userTerminal, (shown) => paneShowsAgent(shown, 'a1', agents));
                   },
               }),
         updateAgentState: (update) => {
@@ -966,5 +975,92 @@ describe('createPermissionBridge with a user terminal', () => {
 
         expect(onlyRequestKey(h.state)).toBe('toolu_write');
         expect(h.opened).toBe(1);
+    });
+
+    it('does not open tmux for an answer once the session is no longer waiting', async () => {
+        const { h, bridge } = setup({ screen: screen('permission-write'), userScreen: screen('permission-write'), entries: writeEntries });
+        await bridge.tick();
+        h.status = 'idle';
+
+        expect(await bridge.answer(response('toolu_write', true))).toBe('refused');
+
+        expect(h.opened).toBe(0);
+        expect(h.userLog.filter((line) => line.startsWith('press'))).toEqual([]);
+        expect(h.state.completedRequests?.toolu_write).toMatchObject({ status: 'canceled', reason: 'answer-on-mac' });
+    });
+});
+
+describe('createPermissionBridge with the user pane guarded by the session name', () => {
+    const agents: ClaudeAgent[] = ['demo-agent', 'other-agent'].map((name, index) => ({
+        id: `a${index + 1}`,
+        sessionId: `session-${index + 1}`,
+        name,
+        cwd: '/Users/tester/project',
+        pid: 1,
+        status: 'waiting',
+        state: null,
+        startedAt: 0,
+    }));
+    const writeEntries = [userText('write it'), toolUse('toolu_write', 'Write', writeInput)];
+    const pizzaEntries = [userText('ask me'), toolUse('toolu_pizza', 'AskUserQuestion', pizzaQuestions)];
+    const pizzaAnswers = { 'Which toppings should the demo pizza have?': 'Cheese, Basil', 'Which size should the demo pizza be?': 'Medium' };
+    /** The same dialog drawn for another agent: only the name in the closing rule differs. */
+    const asOtherAgent = (name: string): string => screen(name).replace(' demo-agent ─', ' other-agent ─');
+    const pressesOnPane = (h: Harness): string[] => h.userLog.filter((line) => line.startsWith('press') || line.startsWith('type'));
+
+    it("tick reads tmux, not a pane that shows another agent's dialog", async () => {
+        const { h, bridge } = setup({ screen: screen('permission-write'), userScreen: asOtherAgent('permission-bash-short'), entries: writeEntries, guardAgents: agents });
+
+        await bridge.tick();
+
+        expect(onlyRequestKey(h.state)).toBe('toolu_write');
+        expect(h.opened).toBe(1);
+        expect(pressesOnPane(h)).toEqual([]);
+    });
+
+    it("answers through tmux and presses nothing on a pane that shows another agent's identical dialog", async () => {
+        const { h, bridge } = setup({ screen: screen('permission-write'), userScreen: asOtherAgent('permission-write'), entries: writeEntries, guardAgents: agents });
+        await bridge.tick();
+
+        expect(await bridge.answer(response('toolu_write', true))).toBe('typed');
+
+        expect(pressesOnPane(h)).toEqual([]);
+        expect(h.log.slice(-3)).toEqual(['open', 'press:1', 'close']);
+        expect(h.state.completedRequests?.toolu_write).toMatchObject({ status: 'approved' });
+    });
+
+    it('answers on the pane when it shows the target session, also under a cut-short name', async () => {
+        for (const userScreen of [screen('permission-write'), screen('permission-write').replace(' demo-agent ─', ' demo-ag… ─')]) {
+            const { h, bridge } = setup({ screen: screen('permission-write'), userScreen, entries: writeEntries, guardAgents: agents });
+            await bridge.tick();
+
+            expect(await bridge.answer(response('toolu_write', true))).toBe('typed');
+
+            expect(pressesOnPane(h)).toEqual(['press:1']);
+            expect(h.opened).toBe(0);
+        }
+    });
+
+    it('stops without another key when the pane switches to another agent mid-answer', async () => {
+        const { h, bridge } = setup({ screen: screen('question-multi'), userScreen: screen('question-multi'), entries: pizzaEntries, guardAgents: agents });
+        await bridge.tick();
+        h.userAfter = { 1: () => { h.userScreen = asOtherAgent('question-multi'); } };
+
+        expect(await bridge.answer(response('toolu_pizza', true, { updatedInput: { answers: pizzaAnswers } }))).toBe('typed');
+
+        expect(pressesOnPane(h)).toEqual(['press:1']);
+        expect(h.opened).toBe(0);
+        expect(h.state.completedRequests?.toolu_pizza).toMatchObject({ status: 'canceled', reason: 'typing-failed' });
+    });
+
+    it('uses tmux when another listed agent has the same name', async () => {
+        const twins = [...agents, { ...agents[0], id: 'a3' }];
+        const { h, bridge } = setup({ screen: screen('permission-write'), userScreen: screen('permission-write'), entries: writeEntries, guardAgents: twins });
+        await bridge.tick();
+
+        expect(await bridge.answer(response('toolu_write', true))).toBe('typed');
+
+        expect(pressesOnPane(h)).toEqual([]);
+        expect(h.log.slice(-3)).toEqual(['open', 'press:1', 'close']);
     });
 });

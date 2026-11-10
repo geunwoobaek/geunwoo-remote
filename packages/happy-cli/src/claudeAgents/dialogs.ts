@@ -46,6 +46,13 @@ const SGR_OR_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 const OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g;
 const RULE = /^─{20,}$/;
 const NAMED_RULE = /^─{3,} .+ ─$/;
+/** `NAMED_RULE` with the session name captured. */
+const RULE_NAME = /^─{3,} (.+) ─$/;
+/** Hangul, CJK and full-width forms: two terminal cells each. */
+const WIDE_CHAR = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
+/** A terminal size read off a screen outside these bounds is not trusted. */
+const SCREEN_COLS = { min: 40, max: 500 };
+const SCREEN_ROWS = { min: 10, max: 300 };
 const OPTION = /^(❯\s*)?(\d)\.\s+(.*)$/;
 /** The dashed line above and below a dialog's preview or command block. */
 const SEPARATOR = /^╌{10,}$/;
@@ -229,6 +236,45 @@ function analyse(parsed: ParsedScreen): Dialog {
 /** Which dialog the attach screen shows. `none` only when the empty or typed input box is visible. */
 export function classifyScreen(screen: string): DialogKind {
     return analyse(parseScreen(screen)).kind;
+}
+
+/**
+ * The session name in the rule Claude Code draws for the attached session: the rule right above
+ * the `❯` input box, or the closing rule of an open dialog (`─── demo-agent ─`). Only those two
+ * places count, so a look-alike line in the conversation is never read. Null when neither is drawn
+ * or the rule carries no name (an unnamed session, the agents list, a screen this does not know).
+ * A long name may be cut short with a trailing `…`.
+ */
+export function screenSessionName(screen: string): string | null {
+    const { lines, input } = parseScreen(screen);
+    const rule = input !== null ? lines[input.first - 1] : lines[lines.length - 1];
+    const name = (rule === undefined ? null : RULE_NAME.exec(rule.trim()))?.[1].trim() ?? '';
+    return name.length > 0 ? name : null;
+}
+
+/**
+ * The terminal size a screen was drawn at: rows = its line count, columns = the widest drawn rule
+ * (a rule spans the whole width; East Asian wide characters in a session name count two). Null
+ * when no rule is drawn or the size is outside sane bounds.
+ */
+export function screenSize(screen: string): { cols: number; rows: number } | null {
+    const lines = stripAnsi(screen).split('\n');
+    if (lines.length > 0 && lines[lines.length - 1] === '') {
+        lines.pop();
+    }
+    const cols = Math.max(0, ...lines.map((line) => line.trimEnd()).filter(isRule).map(cellWidth));
+    const rows = lines.length;
+    const sane = cols >= SCREEN_COLS.min && cols <= SCREEN_COLS.max && rows >= SCREEN_ROWS.min && rows <= SCREEN_ROWS.max;
+    return sane ? { cols, rows } : null;
+}
+
+/** Terminal cells taken by `text`: two for an East Asian wide character, one otherwise. */
+function cellWidth(text: string): number {
+    let width = 0;
+    for (const char of text) {
+        width += WIDE_CHAR.test(char) ? 2 : 1;
+    }
+    return width;
 }
 
 function withoutWhitespace(text: string): string {

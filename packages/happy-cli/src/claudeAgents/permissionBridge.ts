@@ -33,7 +33,11 @@
  * and keys there first. If the pane fails the checks, cannot type a step, or fails before the first
  * key, the hidden terminal repeats the checks from scratch; a failure after a key was pressed is
  * final (`typing-failed`), never retried elsewhere. The pane and the hidden terminal may be
- * different widths, which is why the fingerprint ignores line breaks.
+ * different widths, which is why the fingerprint ignores line breaks. The mirror hands out a pane
+ * whose `screen` throws unless it names this session (and whose keys are refused until such a
+ * read), so a pane showing another session is read as "no pane" at the first read and stops the
+ * answer at any later re-read. The hidden terminal is not opened for an answer once the session is
+ * no longer `waiting` (gate ① reads the same status file for both).
  *
  * `tick` and `answer` run one at a time. Each opens its own terminal and closes it in `finally`
  * (close errors swallowed), so a caller may serialise terminal use around them.
@@ -571,6 +575,11 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
                 deps.onRoute?.('answer', 'cmux');
                 return result;
             }
+        }
+        if (deps.readStatus() !== 'waiting') {
+            // Gate ① reads the same status file for both terminals: opening tmux could only refuse,
+            // and attaching it may redraw the user's pane.
+            return refuse(request);
         }
         deps.onRoute?.('answer', 'tmux');
         let terminal: AttachTerminal;

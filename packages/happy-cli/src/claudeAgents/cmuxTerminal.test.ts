@@ -1,5 +1,37 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { attachPidsNewestFirst, cmuxTypable, openCmuxTerminal, surfaceForPid, userPaneSurface } from './cmuxTerminal';
+import type { AttachTerminal } from './attachTerminal';
+import {
+    attachPidsNewestFirst,
+    cmuxTypable,
+    findAgentSurface,
+    guardUserPane,
+    openCmuxTerminal,
+    paneShowsAgent,
+    sessionNamesMatch,
+    surfaceForPid,
+    userPaneSize,
+    userPaneSurface,
+    type SurfaceLookupRunners,
+} from './cmuxTerminal';
+import type { ClaudeAgent } from './types';
+
+const fixture = (name: string): string => readFileSync(join(__dirname, '__fixtures__', 'screens', `${name}.txt`), 'utf8');
+
+const agent = (id: string, name: string | null): ClaudeAgent => ({
+    id,
+    sessionId: `session-${id}`,
+    name,
+    cwd: '/Users/tester/project',
+    pid: 1,
+    status: 'idle',
+    state: null,
+    startedAt: 0,
+});
+
+/** `input-empty` with the session name in the rule above the box replaced. */
+const showing = (name: string): string => fixture('input-empty').replace(' demo-agent ─', ` ${name} ─`);
 
 const SETTINGS = '{"permissions":{"ask":["Bash", "Write"]}}';
 
@@ -151,6 +183,179 @@ describe('openCmuxTerminal', () => {
         const { calls, run } = recorder();
         await openCmuxTerminal('surface:8', run).close();
         expect(calls).toEqual([]);
+    });
+});
+
+describe('findAgentSurface', () => {
+    /** Runners answering `ps` and `cmux top` with the given text; every cmux call is recorded. */
+    function runners(ps: string | Error, top: string | Error = TOP) {
+        const cmuxCalls: string[][] = [];
+        const run: SurfaceLookupRunners = {
+            ps: async () => {
+                if (ps instanceof Error) {
+                    throw ps;
+                }
+                return ps;
+            },
+            cmux: async (args) => {
+                cmuxCalls.push(args);
+                if (args[0] === 'read-screen') {
+                    return fixture('write-perm-99');
+                }
+                if (top instanceof Error) {
+                    throw top;
+                }
+                return top;
+            },
+        };
+        return { run, cmuxCalls };
+    }
+
+    it('returns the surface of the newest attach whose parents reach the cmux app', async () => {
+        const { run, cmuxCalls } = runners(PS);
+        expect(await findAgentSurface('19f0c660', run)).toBe('surface:8');
+        expect(cmuxCalls).toEqual([['top', '--all', '--processes', '--format', 'tsv']]);
+    });
+
+    it('does not ask cmux when no process attaches to the agent', async () => {
+        const { run, cmuxCalls } = runners(PS);
+        expect(await findAgentSurface('nobody00', run)).toBeNull();
+        expect(cmuxCalls).toEqual([]);
+    });
+
+    it('is null when only a daemonized tmux attach exists', async () => {
+        const ps = PS.split('\n').filter((line) => !line.startsWith('69804')).join('\n');
+        expect(await findAgentSurface('19f0c660', runners(ps).run)).toBeNull();
+    });
+
+    it('is null when cmux lists no app process, or ps or cmux fails', async () => {
+        const noApp = TOP.split('\n').filter((line) => !line.includes('\t62303\t')).join('\n');
+        expect(await findAgentSurface('19f0c660', runners(PS, noApp).run)).toBeNull();
+        expect(await findAgentSurface('19f0c660', runners(new Error('ps failed')).run)).toBeNull();
+        expect(await findAgentSurface('19f0c660', runners(PS, new Error('cmux socket refused')).run)).toBeNull();
+    });
+
+    it('userPaneSize reads the found pane and is null without one', async () => {
+        const { run, cmuxCalls } = runners(PS);
+        expect(await userPaneSize('19f0c660', run)).toEqual({ cols: 99, rows: 35 });
+        expect(cmuxCalls[1]).toEqual(['read-screen', '--surface', 'surface:8']);
+        expect(await userPaneSize('nobody00', runners(PS).run)).toBeNull();
+    });
+});
+
+describe('sessionNamesMatch', () => {
+    it('matches equal names only when neither is cut short', () => {
+        expect(sessionNamesMatch('demo-agent', 'demo-agent')).toBe(true);
+        expect(sessionNamesMatch(' demo-agent ', 'demo-agent')).toBe(true);
+        expect(sessionNamesMatch('demo-agent', 'demo-agent-2')).toBe(false);
+        expect(sessionNamesMatch('demo', 'demo-agent')).toBe(false);
+    });
+
+    it('matches a name cut short with … by prefix, on either side', () => {
+        expect(sessionNamesMatch('demo-agent-continue-cooperative-…', 'demo-agent-continue-cooperative-chat')).toBe(true);
+        expect(sessionNamesMatch('demo-agent-continue-cooperative-chat', 'demo-agent-continue-c…')).toBe(true);
+        expect(sessionNamesMatch('demo-agent-continue-cooperative-…', 'demo-agent-continue-c…')).toBe(true);
+        expect(sessionNamesMatch('demo-agent-…', 'other-agent')).toBe(false);
+        expect(sessionNamesMatch('demo-agent-…', 'demo-agent')).toBe(false);
+    });
+
+    it('never matches an empty name or a bare ellipsis', () => {
+        expect(sessionNamesMatch('', '')).toBe(false);
+        expect(sessionNamesMatch('…', 'demo-agent')).toBe(false);
+        expect(sessionNamesMatch('demo-agent', '…')).toBe(false);
+    });
+});
+
+describe('paneShowsAgent', () => {
+    const agents = [agent('a1', 'demo-agent'), agent('b2', 'other-agent'), agent('c3', null)];
+
+    it('accepts the screen of the target agent', () => {
+        expect(paneShowsAgent(fixture('input-empty'), 'a1', agents)).toBe(true);
+        expect(paneShowsAgent(fixture('permission-write'), 'a1', agents)).toBe(true);
+    });
+
+    it("rejects another agent's screen", () => {
+        expect(paneShowsAgent(showing('other-agent'), 'a1', agents)).toBe(false);
+        expect(paneShowsAgent(fixture('permission-write').replace(' demo-agent ─', ' other-agent ─'), 'a1', agents)).toBe(false);
+    });
+
+    it('rejects an unnamed target, an unlisted target and a rule without a name', () => {
+        expect(paneShowsAgent(fixture('input-empty'), 'c3', agents)).toBe(false);
+        expect(paneShowsAgent(fixture('input-empty'), 'zz', agents)).toBe(false);
+        expect(paneShowsAgent(fixture('input-empty').replace(' demo-agent ─', '─────────────'), 'a1', agents)).toBe(false);
+    });
+
+    it('accepts a cut-short name on the screen or in the listing', () => {
+        expect(paneShowsAgent(showing('demo-ag…'), 'a1', agents)).toBe(true);
+        expect(paneShowsAgent(fixture('input-empty'), 'a1', [agent('a1', 'demo-ag…'), agent('b2', 'other-agent')])).toBe(true);
+    });
+
+    it('rejects a name another listed agent also matches', () => {
+        expect(paneShowsAgent(fixture('input-empty'), 'a1', [...agents, agent('d4', 'demo-agent')])).toBe(false);
+        expect(paneShowsAgent(showing('demo-ag…'), 'a1', [...agents, agent('d4', 'demo-agent-2')])).toBe(false);
+        expect(paneShowsAgent(fixture('input-empty'), 'a1', [agent('a1', 'demo-agent'), agent('d4', 'demo-…')])).toBe(false);
+    });
+});
+
+describe('guardUserPane', () => {
+    function pane(screen: string) {
+        const sent: string[] = [];
+        const terminal: AttachTerminal = {
+            screen: async () => screen,
+            typeText: async (text) => {
+                sent.push(`type:${text}`);
+            },
+            pasteText: async (text) => {
+                sent.push(`paste:${text}`);
+            },
+            press: async (keys) => {
+                sent.push(`press:${keys.length}`);
+            },
+            close: async () => {
+                sent.push('close');
+            },
+        };
+        return { terminal, sent };
+    }
+    const agents = [agent('a1', 'demo-agent'), agent('b2', 'other-agent')];
+    const guard = (terminal: AttachTerminal): AttachTerminal => guardUserPane(terminal, (screen) => paneShowsAgent(screen, 'a1', agents));
+
+    it('passes keys and text on after a read that shows the target session', async () => {
+        const { terminal, sent } = pane(fixture('input-empty'));
+        const guarded = guard(terminal);
+        expect(await guarded.screen()).toBe(fixture('input-empty'));
+        await guarded.typeText('hi');
+        await guarded.press(['enter']);
+        await guarded.close();
+        expect(sent).toEqual(['type:hi', 'press:1', 'close']);
+    });
+
+    it("throws on another session's screen and sends nothing after it", async () => {
+        const { terminal, sent } = pane(showing('other-agent'));
+        const guarded = guard(terminal);
+        await expect(guarded.screen()).rejects.toThrow();
+        await expect(guarded.typeText('hi')).rejects.toThrow();
+        await expect(guarded.press(['escape'])).rejects.toThrow();
+        await expect(guarded.pasteText('hi')).rejects.toThrow();
+        expect(sent).toEqual([]);
+    });
+
+    it('refuses keys before any read', async () => {
+        const { terminal, sent } = pane(fixture('input-empty'));
+        await expect(guard(terminal).press(['escape'])).rejects.toThrow();
+        expect(sent).toEqual([]);
+    });
+
+    it('refuses keys again once a later read shows another session', async () => {
+        let current = fixture('input-empty');
+        const { terminal, sent } = pane('');
+        const guarded = guard({ ...terminal, screen: async () => current });
+        await guarded.screen();
+        await guarded.press([{ digit: 1 }]);
+        current = showing('other-agent');
+        await expect(guarded.screen()).rejects.toThrow();
+        await expect(guarded.press([{ digit: 2 }])).rejects.toThrow();
+        expect(sent).toEqual(['press:1']);
     });
 });
 

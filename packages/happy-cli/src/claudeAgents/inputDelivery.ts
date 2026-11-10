@@ -10,8 +10,10 @@
  * one-line text goes into that pane instead, provided its input box is empty right now; it is
  * typed and sent without waiting. A multi-line or backslash text, a busy input box, or a cmux
  * failure before anything was typed falls back to the hidden terminal. A failure after typing
- * started is final: retrying through tmux could type the text twice. Interrupts press Escape in
- * the user's pane first. Accepted gap: a Mac user who starts typing between the empty-box read and
+ * started is final: retrying through tmux could type the text twice. Interrupts read the user's
+ * pane and press Escape there first. Every use of the pane starts with a screen read: the mirror
+ * hands out a pane whose `screen` throws (and whose keys are refused) unless the screen names
+ * this session, which sends the text or the Escape through the hidden terminal. Accepted gap: a Mac user who starts typing between the empty-box read and
  * `cmux send` can get their text mixed with the phone text.
  *
  * Rules the delivery keeps:
@@ -256,6 +258,9 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
                 const user = await openUser();
                 if (user !== null) {
                     try {
+                        // Read first: the pane may refuse keys until its screen was checked
+                        // (it must show this session), and a failed read goes to the hidden terminal.
+                        await user.screen();
                         await user.press(['escape']);
                         deps.onRoute?.('interrupt', 'cmux');
                         return;

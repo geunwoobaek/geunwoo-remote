@@ -12,6 +12,8 @@ import {
     readDialogFromScreen,
     readDialogProgress,
     screenMatchesPending,
+    screenSessionName,
+    screenSize,
 } from './dialogs';
 
 const screen = (name: string): string => readFileSync(join(__dirname, '__fixtures__', 'screens', `${name}.txt`), 'utf8');
@@ -797,5 +799,64 @@ describe('readDialogProgress', () => {
     it('has no tabs, review or feedback for other screens', () => {
         expect(readDialogProgress(screen('permission-write'))).toEqual({ kind: 'permission', tabs: null, review: false, planFeedback: null });
         expect(readDialogProgress(screen('input-empty'))).toEqual({ kind: 'none', tabs: null, review: false, planFeedback: null });
+    });
+});
+
+describe('screenSessionName', () => {
+    it('reads the name from the rule above the input box', () => {
+        for (const name of ['input-empty', 'input-typed', 'input-empty-live', 'input-suggestion-ansi']) {
+            expect(screenSessionName(screen(name))).toBe('demo-agent');
+        }
+    });
+
+    it("reads the name from a dialog's closing rule", () => {
+        for (const name of ['permission-write', 'question-single', 'plan', 'question-lone-multi-plan-mode', 'write-perm-99']) {
+            expect(screenSessionName(screen(name))).toBe('demo-agent');
+        }
+    });
+
+    it('keeps a name cut short with an ellipsis as drawn', () => {
+        expect(screenSessionName(screen('input-empty').replace(' demo-agent ─', ' demo-ag… ─'))).toBe('demo-ag…');
+    });
+
+    it('is null for a rule without a name or a screen without a box or dialog', () => {
+        const unnamed = screen('input-empty').replace(' demo-agent ─', '─────────────');
+        expect(isInputBoxEmpty(unnamed)).toBe(true);
+        expect(screenSessionName(unnamed)).toBeNull();
+        expect(screenSessionName('just some output\n')).toBeNull();
+        expect(screenSessionName('')).toBeNull();
+    });
+
+    it('ignores a look-alike named rule in the conversation', () => {
+        const lookAlike = screen('input-empty')
+            .replace('✻', '─── other-agent ─\n✻')
+            .replace(' demo-agent ─', '─────────────');
+        expect(lookAlike).toContain('─── other-agent ─');
+        expect(screenSessionName(lookAlike)).toBeNull();
+    });
+});
+
+describe('screenSize', () => {
+    it('reads columns from the widest rule and rows from the line count', () => {
+        expect(screenSize(screen('write-perm-99'))).toEqual({ cols: 99, rows: 35 });
+        expect(screenSize(screen('question-long-99'))).toEqual({ cols: 99, rows: 35 });
+        expect(screenSize(screen('input-empty'))).toEqual({ cols: 120, rows: 40 });
+        expect(screenSize(screen('input-suggestion-ansi'))).toEqual({ cols: 120, rows: 40 });
+    });
+
+    it('counts a wide character in a session name as two columns', () => {
+        // 13 characters in place of 14, drawing 14 columns: the rule is still 99 columns wide.
+        const korean = screen('write-perm-99')
+            .replace('─ demo-agent ─', '─── 데모에이 ─')
+            .split('\n')
+            .filter((line) => !/^─+$/.test(line))
+            .join('\n');
+        expect(screenSize(korean)?.cols).toBe(99);
+    });
+
+    it('is null without a rule or outside sane bounds', () => {
+        expect(screenSize('no rules here\n'.repeat(30))).toBeNull();
+        expect(screenSize(`${'─'.repeat(30)}\n`.repeat(30))).toBeNull();
+        expect(screenSize(`${'─'.repeat(80)}\n`.repeat(3))).toBeNull();
     });
 });

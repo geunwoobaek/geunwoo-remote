@@ -10,11 +10,20 @@
  * `close()` never touches it, and everything that cannot be done safely through `cmux send`
  * (pasting, newlines, tabs, backslashes) is refused so the caller can use the tmux terminal.
  * Nothing here is cached: panes come and go, so every lookup asks `ps` and `cmux` again.
+ *
+ * The process arguments say which agent the pane attached to, not what it shows: inside
+ * `claude attach` the user can open another agent from the agents list (`←`). `guardUserPane`
+ * therefore lets the pane be typed or keyed into only right after a screen read that names the
+ * target session (`paneShowsAgent`); any other screen counts as "no pane", so the caller uses
+ * tmux, which always attaches the exact id.
  */
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { logger } from '@/ui/logger';
 import type { AttachKey, AttachTerminal } from './attachTerminal';
+import { screenSessionName, screenSize } from './dialogs';
+import type { ClaudeAgent } from './types';
 
 const execFileAsync = promisify(execFile);
 
@@ -32,6 +41,19 @@ const NAMED_KEYS: ReadonlySet<string> = new Set(['enter', 'escape', 'up', 'down'
 /** Runs `cmux <args>` and resolves its stdout. Injectable so tests never start a process. */
 type RunCmux = (args: string[]) => Promise<string>;
 
+/** The commands `findAgentSurface` and `userPaneSize` run. Injectable so tests never start a process. */
+export type SurfaceLookupRunners = {
+    /** `ps -axo pid=,ppid=,etime=,args=` output. */
+    ps: () => Promise<string>;
+    cmux: RunCmux;
+};
+
+/** A trailing `…` marks a session name cut short (by Claude Code's rule or by `claude agents`). */
+const ELLIPSIS = '…';
+
+/** Set once the "cmux answered but lists no app process" case was logged. */
+let loggedNoAppPid = false;
+
 /** Runs `cmux` from the PATH, or from the app bundle when the PATH has none. */
 const runCmuxCommand: RunCmux = async (args) => {
     const options = { timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_BUFFER };
@@ -43,6 +65,11 @@ const runCmuxCommand: RunCmux = async (args) => {
         }
         return (await execFileAsync(CMUX_APP_BINARY, args, options)).stdout;
     }
+};
+
+const defaultRunners: SurfaceLookupRunners = {
+    ps: async () => (await execFileAsync('ps', ['-axo', 'pid=,ppid=,etime=,args='], { timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_BUFFER })).stdout,
+    cmux: runCmuxCommand,
 };
 
 /** Seconds in a `ps` `etime` (`[[dd-]hh:]mm:ss`), or null when it is not one. */
@@ -112,13 +139,7 @@ export function surfaceForPid(topTsv: string, pid: number): string | null {
  * so a private tmux attach is never taken for the user's pane. Null otherwise.
  */
 export function userPaneSurface(psOutput: string, topTsv: string, pid: number): string | null {
-    const appPids = new Set<number>();
-    for (const line of topTsv.split('\n')) {
-        const columns = line.split('\t');
-        if (columns.length >= 6 && columns[3] === 'process' && columns[5].startsWith('window:')) {
-            appPids.add(Number(columns[4]));
-        }
-    }
+    const appPids = cmuxAppPids(topTsv);
     const parentOf = new Map<number, number>();
     for (const line of psOutput.split('\n')) {
         const match = /^\s*(\d+)\s+(\d+)\s/.exec(line);
@@ -136,18 +157,36 @@ export function userPaneSurface(psOutput: string, topTsv: string, pid: number): 
     return null;
 }
 
+/** The cmux app processes in `cmux top` output: `process` rows whose parent is a `window:N`. */
+function cmuxAppPids(topTsv: string): Set<number> {
+    const appPids = new Set<number>();
+    for (const line of topTsv.split('\n')) {
+        const columns = line.split('\t');
+        if (columns.length >= 6 && columns[3] === 'process' && columns[5].startsWith('window:')) {
+            appPids.add(Number(columns[4]));
+        }
+    }
+    return appPids;
+}
+
 /**
  * The cmux surface running `claude attach <agentId>`, newest process first, or null when there is
  * none or anything goes wrong (no cmux, no permission, odd output): the caller then uses tmux.
+ * `run` is only for tests; by default the real `ps` and `cmux` run.
  */
-export async function findAgentSurface(agentId: string): Promise<string | null> {
+export async function findAgentSurface(agentId: string, run: SurfaceLookupRunners = defaultRunners): Promise<string | null> {
     try {
-        const { stdout: ps } = await execFileAsync('ps', ['-axo', 'pid=,ppid=,etime=,args='], { timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_BUFFER });
+        const ps = await run.ps();
         const pids = attachPidsNewestFirst(ps, agentId);
         if (pids.length === 0) {
             return null;
         }
-        const top = await runCmuxCommand(['top', '--all', '--processes', '--format', 'tsv']);
+        const top = await run.cmux(['top', '--all', '--processes', '--format', 'tsv']);
+        if (!loggedNoAppPid && cmuxAppPids(top).size === 0) {
+            // Every lookup now falls back to tmux; make that visible once (cmux may have changed `top`).
+            loggedNoAppPid = true;
+            logger.debug('[claude-agent] cmux top lists no cmux app process, so no cmux pane is used');
+        }
         for (const pid of pids) {
             const surface = userPaneSurface(ps, top, pid);
             if (surface !== null) {
@@ -158,6 +197,89 @@ export async function findAgentSurface(agentId: string): Promise<string | null> 
     } catch {
         return null;
     }
+}
+
+/**
+ * The size of the user's cmux pane for `agentId` (`screenSize` of its screen), or null when there
+ * is no pane or it cannot be read. A private tmux attach opened at this size keeps Claude Code
+ * from redrawing the user's pane at another size. This only reads the pane.
+ */
+export async function userPaneSize(agentId: string, run: SurfaceLookupRunners = defaultRunners): Promise<{ cols: number; rows: number } | null> {
+    const surface = await findAgentSurface(agentId, run);
+    if (surface === null) {
+        return null;
+    }
+    try {
+        return screenSize(await run.cmux(['read-screen', '--surface', surface]));
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * True when two session names may name the same session. Equal names match; when one ends in `…`
+ * (cut short), its stem must be a prefix of the other name (of the other's stem when both are
+ * cut). An empty name or stem never matches.
+ */
+export function sessionNamesMatch(first: string, second: string): boolean {
+    const [a, b] = [first.trim(), second.trim()].map((name) =>
+        name.endsWith(ELLIPSIS) ? { stem: name.slice(0, -ELLIPSIS.length), cut: true } : { stem: name, cut: false },
+    );
+    if (a.stem.length === 0 || b.stem.length === 0) {
+        return false;
+    }
+    if (!a.cut && !b.cut) {
+        return a.stem === b.stem;
+    }
+    const [shorter, longer] = a.stem.length <= b.stem.length ? [a, b] : [b, a];
+    // Only a cut name may stand for a longer one.
+    return shorter.cut && longer.stem.startsWith(shorter.stem);
+}
+
+/**
+ * True when `screen` names agent `agentId`'s session: the session name in its rule
+ * (`screenSessionName`) matches that agent's name in `agents` (the latest `claude agents`
+ * listing) and no other listed agent's name. False when the agent has no name or is not listed,
+ * or the rule shows no name.
+ */
+export function paneShowsAgent(screen: string, agentId: string, agents: readonly ClaudeAgent[]): boolean {
+    const shown = screenSessionName(screen);
+    const target = agents.find((agent) => agent.id === agentId)?.name ?? null;
+    if (shown === null || target === null || !sessionNamesMatch(target, shown)) {
+        return false;
+    }
+    return !agents.some((agent) => agent.id !== agentId && agent.name !== null && sessionNamesMatch(agent.name, shown));
+}
+
+/**
+ * Wraps the user's pane so it is typed or keyed into only right after a screen read that
+ * `showsTarget` accepted. `screen` throws when the screen it read is not the target session (the
+ * callers then use tmux, or stop when a key was already pressed); `typeText`, `pasteText` and
+ * `press` throw without sending anything unless the latest read was accepted.
+ */
+export function guardUserPane(terminal: AttachTerminal, showsTarget: (screen: string) => boolean): AttachTerminal {
+    let verified = false;
+    const checked = async (send: () => Promise<void>): Promise<void> => {
+        if (!verified) {
+            throw new Error('The pane was not checked to show the target session');
+        }
+        await send();
+    };
+    return {
+        screen: async () => {
+            verified = false;
+            const screen = await terminal.screen();
+            if (!showsTarget(screen)) {
+                throw new Error('The pane shows another session');
+            }
+            verified = true;
+            return screen;
+        },
+        typeText: (text) => checked(() => terminal.typeText(text)),
+        pasteText: (text) => checked(() => terminal.pasteText(text)),
+        press: (keys) => checked(() => terminal.press(keys)),
+        close: () => terminal.close(),
+    };
 }
 
 /** True when `typeText` accepts `text`: no newline, carriage return, tab or backslash. */

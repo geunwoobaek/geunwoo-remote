@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { AttachKey, AttachTerminal } from './attachTerminal';
+import { guardUserPane, paneShowsAgent } from './cmuxTerminal';
 import { createEchoFilter, createInputDelivery, hasSessionSurvey } from './inputDelivery';
+import type { ClaudeAgent } from './types';
 
 const fixture = (name: string): string => readFileSync(join(__dirname, '__fixtures__', 'screens', `${name}.txt`), 'utf8');
 
@@ -523,5 +525,78 @@ describe('createInputDelivery with a user terminal', () => {
         });
         await delivery.send('hi');
         expect(events).toEqual(['open:user', 'close:user', 'open:tmux', 'close:tmux']);
+    });
+});
+
+describe('createInputDelivery with the user pane guarded by the session name', () => {
+    const agents: ClaudeAgent[] = ['demo-agent', 'other-agent'].map((name, index) => ({
+        id: `a${index + 1}`,
+        sessionId: `session-${index + 1}`,
+        name,
+        cwd: '/Users/tester/project',
+        pid: 1,
+        status: 'idle',
+        state: null,
+        startedAt: 0,
+    }));
+    /** The pane as the mirror hands it out for agent a1 (`demo-agent`). */
+    function guardedPane(screenText: string, listing: ClaudeAgent[] = agents) {
+        const pane = createUserPane(screenText);
+        const openUserTerminal = async (): Promise<AttachTerminal> =>
+            guardUserPane(await pane.openUserTerminal(), (screen) => paneShowsAgent(screen, 'a1', listing));
+        return { log: pane.log, openUserTerminal };
+    }
+    const otherAgentEmpty = EMPTY.replace(' demo-agent ─', ' other-agent ─');
+
+    it("types nothing into a pane that shows another agent's session and sends through tmux", async () => {
+        const pane = guardedPane(otherAgentEmpty);
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, openUserTerminal: pane.openUserTerminal, echo, ...fast });
+
+        expect(await delivery.send('hello there')).toBe('sent');
+
+        expect(typedOrPressed(pane.log)).toEqual([]);
+        expect(log).toEqual(['open#1', 'type#1:hello there', 'press#1:enter', 'close#1']);
+        expect(echo.shouldSkip('hello there')).toBe(true);
+    });
+
+    it('types into the pane when it shows the target session, also under a cut-short name', async () => {
+        for (const screenText of [EMPTY, EMPTY.replace(' demo-agent ─', ' demo-ag… ─')]) {
+            const pane = guardedPane(screenText);
+            const { log, openTerminal } = createHarness([EMPTY]);
+            const delivery = createInputDelivery({ openTerminal, openUserTerminal: pane.openUserTerminal, echo: createEchoFilter(), ...fast });
+
+            expect(await delivery.send('hello there')).toBe('sent');
+
+            expect(typedOrPressed(pane.log)).toEqual(['type:hello there', 'press:enter']);
+            expect(log).toEqual([]);
+        }
+    });
+
+    it('sends through tmux when a cut-short name on the pane also fits another agent', async () => {
+        const listing = [...agents, { ...agents[0], id: 'a3', name: 'demo-agent-2' }];
+        const pane = guardedPane(EMPTY.replace(' demo-agent ─', ' demo-ag… ─'), listing);
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const delivery = createInputDelivery({ openTerminal, openUserTerminal: pane.openUserTerminal, echo: createEchoFilter(), ...fast });
+
+        expect(await delivery.send('hi')).toBe('sent');
+
+        expect(typedOrPressed(pane.log)).toEqual([]);
+        expect(log).toContain('type#1:hi');
+    });
+
+    it("interrupt reads the pane first and presses Escape only on the target session's screen", async () => {
+        const target = guardedPane(EMPTY);
+        const first = createHarness([EMPTY]);
+        await createInputDelivery({ openTerminal: first.openTerminal, openUserTerminal: target.openUserTerminal, echo: createEchoFilter(), ...fast }).interrupt();
+        expect(target.log).toEqual(['open', 'press:escape', 'close']);
+        expect(first.log).toEqual([]);
+
+        const other = guardedPane(otherAgentEmpty);
+        const second = createHarness([EMPTY]);
+        await createInputDelivery({ openTerminal: second.openTerminal, openUserTerminal: other.openUserTerminal, echo: createEchoFilter(), ...fast }).interrupt();
+        expect(typedOrPressed(other.log)).toEqual([]);
+        expect(second.log).toEqual(['open#1', 'press#1:escape', 'close#1']);
     });
 });
