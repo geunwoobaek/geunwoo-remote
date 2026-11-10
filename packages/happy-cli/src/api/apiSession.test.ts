@@ -979,6 +979,78 @@ describe('ApiSessionClient v3 messages API migration', () => {
             expect(onUserMessage).not.toHaveBeenCalled();
             expect((client as any).lastReceivedSeq).toBe(3);
         });
+
+        const agentMessage = (seq: number, hasMore: boolean) => ({
+            data: {
+                messages: [{
+                    id: `msg-${seq}`,
+                    seq,
+                    content: { t: 'encrypted', c: encryptContent(session, { role: 'agent', content: { type: 'event', data: { type: 'message', message: 'hi' } } }) },
+                    localId: null,
+                    createdAt: seq * 1000,
+                    updatedAt: seq * 1000,
+                }],
+                hasMore,
+            },
+        });
+
+        it('hands the phone messages at the end of the skipped log to the callback once, across a failed request', async () => {
+            const client = new ApiSessionClient('fake-token', session);
+            const onUserMessage = vi.fn();
+            const onSkipped = vi.fn();
+            client.onUserMessage(onUserMessage);
+            client.skipExistingMessages(onSkipped);
+
+            mockAxiosGet
+                .mockResolvedValueOnce(phoneMessage(1, 'answered', true))
+                .mockResolvedValueOnce(agentMessage(2, true))
+                .mockResolvedValueOnce(phoneMessage(3, 'lost 1', true))
+                .mockRejectedValueOnce(new Error('503'))
+                .mockResolvedValueOnce(phoneMessage(4, 'lost 2', false));
+
+            await expect((client as any).fetchMessages()).rejects.toThrow('503');
+            expect(onSkipped).not.toHaveBeenCalled();
+            await (client as any).fetchMessages();
+
+            expect(onSkipped).toHaveBeenCalledTimes(1);
+            expect(onSkipped).toHaveBeenCalledWith(['lost 1', 'lost 2']);
+            expect(onUserMessage).not.toHaveBeenCalled();
+
+            // Later messages are routed as usual and never reported.
+            mockAxiosGet.mockResolvedValueOnce(phoneMessage(5, 'new', false));
+            await (client as any).fetchMessages();
+            expect(onUserMessage).toHaveBeenCalledTimes(1);
+            expect(onSkipped).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not call the callback when the skipped log ends with another message', async () => {
+            const client = new ApiSessionClient('fake-token', session);
+            const onSkipped = vi.fn();
+            client.skipExistingMessages(onSkipped);
+
+            mockAxiosGet
+                .mockResolvedValueOnce(phoneMessage(1, 'answered', true))
+                .mockResolvedValueOnce(agentMessage(2, false));
+            await (client as any).fetchMessages();
+
+            expect(onSkipped).not.toHaveBeenCalled();
+            expect((client as any).lastReceivedSeq).toBe(2);
+        });
+
+        it('keeps skipping when the callback throws', async () => {
+            const client = new ApiSessionClient('fake-token', session);
+            const onUserMessage = vi.fn();
+            client.onUserMessage(onUserMessage);
+            client.skipExistingMessages(() => {
+                throw new Error('boom');
+            });
+
+            mockAxiosGet.mockResolvedValueOnce(phoneMessage(1, 'lost', false));
+            await (client as any).fetchMessages();
+
+            expect(onUserMessage).not.toHaveBeenCalled();
+            expect((client as any).lastReceivedSeq).toBe(1);
+        });
     });
 
     it('fetchMessages stops pagination when hasMore is true but seq cursor does not advance', async () => {

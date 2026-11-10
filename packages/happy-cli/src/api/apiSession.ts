@@ -219,6 +219,9 @@ export class ApiSessionClient extends EventEmitter {
     private closed = false;
     private ignoreArchiveSignal = false;
     private skipInitialMessages = false;
+    /** The trailing run of user message texts seen by the skip pass so far (see `skipExistingMessages`). */
+    private skippedUserTexts: string[] = [];
+    private onSkippedUserMessages: ((texts: string[]) => void) | null = null;
     private claudeSessionProtocolState: ClaudeSessionProtocolState = {
         currentTurnId: null,
         uuidToProviderSubagent: new Map<string, string>(),
@@ -632,7 +635,7 @@ export class ApiSessionClient extends EventEmitter {
                     maxSeq = message.seq;
                 }
 
-                if (skipRouting) continue;
+                if (skipRouting && this.onSkippedUserMessages === null) continue;
 
                 if (message.content?.t !== 'encrypted') {
                     continue;
@@ -640,6 +643,11 @@ export class ApiSessionClient extends EventEmitter {
 
                 try {
                     const body = decrypt(this.encryptionKey, this.encryptionVariant, decodeBase64(message.content.c));
+                    if (skipRouting) {
+                        const user = UserMessageSchema.safeParse(body);
+                        this.skippedUserTexts = user.success ? [...this.skippedUserTexts, user.data.content.text] : [];
+                        continue;
+                    }
                     this.routeIncomingMessage(body);
                 } catch (error) {
                     logger.debug('[API] Failed to decrypt fetched message', {
@@ -666,6 +674,18 @@ export class ApiSessionClient extends EventEmitter {
         }
         if (skipRouting) {
             this.skipInitialMessages = false;
+            const report = this.onSkippedUserMessages;
+            const texts = this.skippedUserTexts;
+            this.onSkippedUserMessages = null;
+            this.skippedUserTexts = [];
+            if (report !== null && texts.length > 0) {
+                // A throw here must not fail this fetch: its retry would no longer skip.
+                try {
+                    report(texts);
+                } catch (error) {
+                    logger.debug('[API] Skipped user messages callback failed', { error });
+                }
+            }
         }
     }
 
@@ -944,8 +964,16 @@ export class ApiSessionClient extends EventEmitter {
         this.ignoreArchiveSignal = true;
     }
 
-    skipExistingMessages() {
+    /**
+     * Passes over every message already in the session's log instead of routing it. With
+     * `onSkippedUserMessages`, the texts of the app's user messages at the end of that log (after
+     * the last message of any other kind) are handed to it once the catch-up finished, when there
+     * are any: messages sent while no process listened, which nothing answered.
+     */
+    skipExistingMessages(onSkippedUserMessages?: (texts: string[]) => void) {
         this.skipInitialMessages = true;
+        this.skippedUserTexts = [];
+        this.onSkippedUserMessages = onSkippedUserMessages ?? null;
     }
 
     updateMetadata(handler: (metadata: Metadata) => Metadata) {

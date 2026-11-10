@@ -30,7 +30,7 @@ import { createAgentCwdTracker } from '@/claude/utils/agentCwd';
 import { registerKillSessionHandler } from '@/claude/registerKillSessionHandler';
 import type { PermissionResponse } from '@/claude/utils/permissionHandler';
 import { createSessionScanner } from '@/claude/utils/sessionScanner';
-import type { RawJSONLines } from '@/claude/types';
+import { RawJSONLinesSchema, type RawJSONLines } from '@/claude/types';
 import { configuration } from '@/configuration';
 import { notifyDaemonSessionStarted } from '@/daemon/controlClient';
 import { ensureDaemonRunning } from '@/daemon/ensureDaemonRunning';
@@ -273,6 +273,22 @@ function typedUserText(message: RawJSONLines): string | null {
     return content.map((block) => (block as { text: string }).text).join('\n');
 }
 
+/**
+ * Whether any of `skippedTexts` (the phone's messages left at the end of the session's log, sent
+ * while no mirror ran) was never typed on the Mac: it is not among the transcript's typed user
+ * lines. Whitespace runs are collapsed on both sides. A message typed by a previous mirror whose
+ * reply had not been uploaded yet is in the transcript, so it is not reported.
+ */
+export function anyUndelivered(skippedTexts: string[], entries: unknown[]): boolean {
+    const normalize = (text: string): string => text.replace(/\s+/g, ' ').trim();
+    const typed = new Set(entries.flatMap((entry) => {
+        const parsed = RawJSONLinesSchema.safeParse(entry);
+        const text = parsed.success ? typedUserText(parsed.data) : null;
+        return text === null ? [] : [normalize(text)];
+    }));
+    return skippedTexts.some((text) => !typed.has(normalize(text)));
+}
+
 const mirrorStateSchema = z.object({ happySessionId: z.string(), lastUuid: z.string().nullable() });
 
 type MirrorState = z.infer<typeof mirrorStateSchema>;
@@ -455,8 +471,16 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
 
     const priorLifecycle = reconnected ? null : response.metadata?.lifecycleState;
     const session: ApiSessionClient = api.sessionSyncClient(response);
+    const notice = (message: string): void => session.sendSessionEvent({ type: 'message', message });
+
     // Whatever the phone sent before this process started must never be typed into the Mac session.
-    session.skipExistingMessages();
+    // The phone showed it as sent, so say once that it did not reach the Mac.
+    session.skipExistingMessages((texts) => {
+        if (anyUndelivered(texts, readTranscriptEntries(agent.cwd, currentSessionId))) {
+            logger.debug(`[claude-agent] ${texts.length} phone message(s) sent while no mirror ran were not typed on the Mac`);
+            notice(NOTICE_FAILED);
+        }
+    });
     if (reconnected || priorLifecycle === 'archived' || priorLifecycle === 'archiveRequested') {
         session.suppressNextArchiveSignal();
     }
@@ -464,8 +488,6 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     // Cards left open by a previous mirror process can never be answered (the bridge starts empty).
     const entriesAtStart = readTranscriptEntries(agent.cwd, currentSessionId);
     session.updateAgentState((state) => ({ ...settleStaleRequests(state, entriesAtStart, Date.now()), controlledByUser: false }));
-
-    const notice = (message: string): void => session.sendSessionEvent({ type: 'message', message });
 
     let stopping = false;
     // One terminal at a time across delivery and bridge; once stopping, no new one is opened

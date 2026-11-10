@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AttachTerminal } from './attachTerminal';
 import type { Metadata } from '@/api/types';
-import { buildMirrorMetadata, decideAgentChange, entriesAfter, mirrorTag, resetMirrorMetadata, serializeTerminalOpens, settleStaleRequests, shouldAbortReuse } from './runClaudeAgentMirror';
+import { anyUndelivered, buildMirrorMetadata, decideAgentChange, entriesAfter, mirrorTag, resetMirrorMetadata, serializeTerminalOpens, settleStaleRequests, shouldAbortReuse } from './runClaudeAgentMirror';
 import type { ClaudeAgent } from './types';
 
 const agent = (overrides: Partial<ClaudeAgent> = {}): ClaudeAgent => ({
@@ -350,5 +350,30 @@ describe('settleStaleRequests', () => {
 
         expect(settled.completedRequests).toEqual(state.completedRequests);
         expect(settled.requests).toEqual({});
+    });
+});
+
+describe('anyUndelivered', () => {
+    const typed = (uuid: string, content: unknown, extra: Record<string, unknown> = {}) => ({ type: 'user', uuid, message: { role: 'user', content }, ...extra });
+
+    it('is false when every skipped phone message is a typed line of the transcript', () => {
+        const entries = [typed('u1', 'run the tests'), typed('u2', [{ type: 'text', text: 'then  fix\nthe build' }])];
+        expect(anyUndelivered(['run the tests', 'then fix the build '], entries)).toBe(false);
+    });
+
+    it('is true when a skipped phone message never reached the transcript', () => {
+        const entries = [typed('u1', 'run the tests')];
+        expect(anyUndelivered(['run the tests', 'and deploy'], entries)).toBe(true);
+        expect(anyUndelivered(['and deploy'], [])).toBe(true);
+    });
+
+    it('does not count tool results, side-chain or meta lines as typed', () => {
+        const entries = [
+            typed('u1', [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'and deploy' }]),
+            typed('u2', 'and deploy', { isSidechain: true }),
+            typed('u3', 'and deploy', { isMeta: true }),
+            { type: 'assistant', uuid: 'a1', message: { content: [{ type: 'text', text: 'and deploy' }] } },
+        ];
+        expect(anyUndelivered(['and deploy'], entries)).toBe(true);
     });
 });
