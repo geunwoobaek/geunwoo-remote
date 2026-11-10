@@ -107,6 +107,10 @@
     <string name="home_start_configuration_unavailable">The selected agent configuration is unavailable</string>
     <string name="home_start_still_syncing">The session was created, but it is still syncing. It should appear shortly.</string>
     <string name="home_start_failed">Failed to start session</string>
+    <string name="home_start_untrusted_folder_title">Folder not trusted on the Mac</string>
+    <string name="home_start_untrusted_folder_body">Claude on the Mac doesn\'t trust %1$s yet. Open a terminal there, run `claude` once and accept the prompt, then try again.</string>
+    <string name="home_start_open_as_regular">Open as regular session</string>
+    <string name="home_start_modes_apply_at_start">Model, mode and effort apply when the chat starts.</string>
     <string name="home_first_message_failed">Failed to send the first message</string>
     <string name="home_not_signed_in">Not signed in</string>
     <!-- botName.ts describeBotNameProblem. -->

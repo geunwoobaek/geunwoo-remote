@@ -78,12 +78,23 @@ fun buildPathProjectGroups(
     toRow: (Session) -> SessionRowData,
     isActive: (Session) -> Boolean,
     idPrefix: String,
-): List<ProjectGroupData> {
+): List<ProjectGroupData> = pathGroups(
+    sessions.map { PathPlaced(it.metadata?.machineId, it.metadata?.path, it.metadata?.homeDir, toRow(it), isActive(it)) },
+    idPrefix,
+)
+
+/** [buildPathProjectGroups] over rows already built, placed by their own machine, folder and home. */
+fun buildPathRowGroups(rows: List<SessionRowData>, idPrefix: String): List<ProjectGroupData> =
+    pathGroups(rows.map { PathPlaced(it.machineId, it.path, it.homeDir, it, it.active) }, idPrefix)
+
+private class PathPlaced(val machineId: String?, val path: String?, val homeDir: String?, val row: SessionRowData, val active: Boolean)
+
+private fun pathGroups(placed: List<PathPlaced>, idPrefix: String): List<ProjectGroupData> {
     val projects = LinkedHashMap<String, GroupBuilder>()
     val workspaces = HashMap<String, WorkspaceBuilder>()
-    for (session in sessions) {
-        val machineId = session.metadata?.machineId
-        val sessionPath = session.metadata?.path?.trim().orEmpty()
+    for (item in placed) {
+        val machineId = item.machineId
+        val sessionPath = item.path?.trim().orEmpty()
         val worktree = WorktreePaths.isWorktree(sessionPath)
         val projectPath = if (worktree) WorktreePaths.repoPath(sessionPath) else sessionPath
         val workspaceId = if (worktree) sessionPath else ""
@@ -91,14 +102,14 @@ fun buildPathProjectGroups(
         // JSON.stringify([machineId, projectPath])
         val key = JsonArray(listOf(machineId?.let(::JsonPrimitive) ?: JsonNull, JsonPrimitive(projectPath))).toString()
         val group = projects.getOrPut(key) {
-            GroupBuilder("$idPrefix:$key", pathProjectName(projectPath, session.metadata?.homeDir), machineId)
+            GroupBuilder("$idPrefix:$key", pathProjectName(projectPath, item.homeDir), machineId)
         }
         val workspace = workspaces.getOrPut("$key\u0000$workspaceId") {
             WorkspaceBuilder(workspaceId, workspaceName).also { group.workspaces.add(it) }
         }
-        workspace.sessions.add(toRow(session))
+        workspace.sessions.add(item.row)
         group.sessionCount += 1
-        if (isActive(session)) group.activeCount += 1
+        if (item.active) group.activeCount += 1
     }
     return projects.values.map { it.build() }
 }

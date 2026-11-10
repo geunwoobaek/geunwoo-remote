@@ -161,7 +161,7 @@ fun LegacyHome(
             accounts = rememberAccountMenu(graph),
             listState = host.listState,
             syncing = host.syncing,
-            claudeAgents = host.claudeAgents,
+            agentsNotice = host.agentsNotice,
             onRefresh = host.onRefresh,
             link = rememberShownLinkState(
                 accountLinkState(host.connectionStatus == ConnectionStatus.CONNECTED, catchingUp = host.syncing || host.state == null, network = rememberNetworkPath()),

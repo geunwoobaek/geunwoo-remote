@@ -98,6 +98,10 @@
     <string name="home_start_configuration_unavailable">所選的代理設定無法使用</string>
     <string name="home_start_still_syncing">工作階段已建立，但仍在同步，很快就會出現。</string>
     <string name="home_start_failed">無法開始工作階段</string>
+    <string name="home_start_untrusted_folder_title">Mac 上未信任此資料夾</string>
+    <string name="home_start_untrusted_folder_body">Mac 上的 Claude 尚未信任 %1$s。請在那裡開啟終端機，執行一次 `claude` 並接受提示，然後再試一次。</string>
+    <string name="home_start_open_as_regular">以一般工作階段開啟</string>
+    <string name="home_start_modes_apply_at_start">模型、模式和投入程度會在聊天開始時套用。</string>
     <string name="home_first_message_failed">無法傳送第一則訊息</string>
     <string name="home_not_signed_in">未登入</string>
     <string name="home_bot_name_empty">請為機器人取個名字</string>

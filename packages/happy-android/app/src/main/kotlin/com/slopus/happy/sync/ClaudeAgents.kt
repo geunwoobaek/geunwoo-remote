@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 
 // The Mac's `claude agents` background sessions, as the daemon's
@@ -27,8 +28,10 @@ data class ClaudeAgentEntry(
  * What a machine listed. [unavailable] says why it could not: `tmux-missing`,
  * `claude-missing`, `agents-command-failed`, or `unsupported` (a daemon from
  * before the feature, which this app, not the daemon, puts there).
+ * [startSupported]: the daemon has `start-claude-agent`, so a new Claude chat
+ * can start there as a background session.
  */
-data class ClaudeAgentsListing(val agents: List<ClaudeAgentEntry>, val unavailable: String?)
+data class ClaudeAgentsListing(val agents: List<ClaudeAgentEntry>, val unavailable: String?, val startSupported: Boolean = false)
 
 /** What `open-claude-agent` came to. */
 sealed interface OpenClaudeAgentResult {
@@ -73,5 +76,9 @@ fun parseClaudeAgentsListing(json: JsonElement?): ClaudeAgentsListing {
             mirrorSessionId = row.string("mirrorSessionId")?.takeIf { it.isNotEmpty() },
         )
     }
-    return ClaudeAgentsListing(agents, answer.string("unavailable")?.takeIf { it.isNotEmpty() })
+    return ClaudeAgentsListing(
+        agents,
+        answer.string("unavailable")?.takeIf { it.isNotEmpty() },
+        startSupported = (answer["startSupported"] as? JsonPrimitive)?.booleanOrNull == true,
+    )
 }

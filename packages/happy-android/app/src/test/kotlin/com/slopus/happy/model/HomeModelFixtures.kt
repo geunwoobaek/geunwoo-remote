@@ -1,5 +1,7 @@
 package com.slopus.happy.model
 
+import com.slopus.happy.sync.ClaudeAgentEntry
+import com.slopus.happy.sync.ClaudeAgentsListing
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
@@ -81,6 +83,44 @@ object HomeModelFixtures {
         }
         extra()
     }
+
+    /**
+     * A Happy session mirroring Mac background session [agentId] on [machineId]
+     * ([isClaudeAgentMirror]); [archived] as its machine archives it.
+     */
+    fun mirror(
+        id: String,
+        agentId: String,
+        machineId: String = "m1",
+        path: String = "/Users/tester/project",
+        name: String? = null,
+        active: Boolean = true,
+        archived: Boolean = false,
+        lastMessageSentAt: Long? = null,
+    ) = session(
+        id,
+        metadata = metadata(path = path) {
+            put("machineId", machineId)
+            put("claudeAgentId", agentId)
+            name?.let { put("name", it) }
+            if (archived) put("lifecycleState", "archived")
+        },
+        active = active,
+        lastMessageSentAt = lastMessageSentAt,
+    )
+
+    /** One Mac background session as `list-claude-agents` lists it. */
+    fun claudeAgent(
+        id: String,
+        cwd: String = "/Users/tester/project",
+        status: String = "idle",
+        name: String? = null,
+        startedAt: Long = 0,
+        mirrorSessionId: String? = null,
+    ) = ClaudeAgentEntry(id, "claude-$id", name, cwd, status, startedAt, mirrorSessionId)
+
+    /** A machine's listing of [agents]. */
+    fun listing(vararg agents: ClaudeAgentEntry, unavailable: String? = null) = ClaudeAgentsListing(agents.toList(), unavailable)
 
     fun machineMetadata(host: String = "laptop.local", extra: JsonObjectBuilder.() -> Unit = {}): MachineMetadata {
         val json = buildJsonObject {

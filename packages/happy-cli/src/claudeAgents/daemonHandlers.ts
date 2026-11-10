@@ -245,11 +245,6 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
         }
         await deps.removeAgent(claudePath, agentId);
         startedHere.delete(agentId);
-        for (const [requestId, known] of startSuccesses) {
-            if (known.result.agentId === agentId) {
-                startSuccesses.delete(requestId);
-            }
-        }
     }
 
     async function failAfterStart(claudePath: string, agentId: string, errorMessage: string): Promise<StartClaudeAgentResult> {
@@ -362,7 +357,12 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
         const tracked = attempt
             .then((result) => {
                 if (result.type === 'success') {
-                    startSuccesses.set(requestId, { at: Date.now(), result });
+                    // Expired answers go as a new one comes in, so a long-lived daemon does not keep them all.
+                    const now = Date.now();
+                    for (const [id, known] of startSuccesses) {
+                        if (now - known.at >= START_RESULT_REUSE_MS) startSuccesses.delete(id);
+                    }
+                    startSuccesses.set(requestId, { at: now, result });
                 }
                 return result;
             })
@@ -380,6 +380,13 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
                 code: 'not-started-here',
                 errorMessage: `Background session ${agentId} was not started by this daemon, so it is left running.`,
             };
+        }
+        // Forgotten before anything is tried, and whatever happens next: a retry of the start that made it
+        // must never be handed a session being torn down.
+        for (const [requestId, known] of startSuccesses) {
+            if (known.result.agentId === agentId) {
+                startSuccesses.delete(requestId);
+            }
         }
         try {
             const claudePath = await deps.resolveClaude();

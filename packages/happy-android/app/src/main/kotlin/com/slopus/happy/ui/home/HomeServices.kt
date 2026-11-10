@@ -136,6 +136,9 @@ class HomeServices private constructor(private val graph: AppGraph) {
     /** Unread chats and the chat on screen ([SessionViewingEffect]); per account, in memory. */
     val reads = SessionReadState()
 
+    /** The Mac's background Claude sessions, listed while home is on screen ([HomeListHost]) and folded into [list]. */
+    val claudeAgents = ClaudeAgentsModel { machineOps }
+
     val list = HomeListModel(
         snapshots = snapshots,
         settings = graph.settings.settings,
@@ -143,6 +146,8 @@ class HomeServices private constructor(private val graph: AppGraph) {
         unreadSessionIds = reads.unreadSessionIds,
         archivingSessionIds = archiver.archiving,
         scope = scope,
+        agentListings = claudeAgents.listings,
+        openingAgents = claudeAgents.opening,
     )
 
     private val update = MutableStateFlow<String?>(null)

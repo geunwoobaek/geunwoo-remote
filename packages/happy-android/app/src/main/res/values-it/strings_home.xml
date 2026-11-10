@@ -98,6 +98,10 @@
     <string name="home_start_configuration_unavailable">La configurazione dell\'agente selezionata non è disponibile</string>
     <string name="home_start_still_syncing">La sessione è stata creata, ma è ancora in sincronizzazione. Dovrebbe comparire a breve.</string>
     <string name="home_start_failed">Impossibile avviare la sessione</string>
+    <string name="home_start_untrusted_folder_title">Cartella non attendibile sul Mac</string>
+    <string name="home_start_untrusted_folder_body">Claude sul Mac non considera ancora attendibile %1$s. Apri un terminale lì, esegui `claude` una volta e accetta la richiesta, poi riprova.</string>
+    <string name="home_start_open_as_regular">Apri come sessione normale</string>
+    <string name="home_start_modes_apply_at_start">Modello, modalità e impegno si applicano all\'avvio della chat.</string>
     <string name="home_first_message_failed">Impossibile inviare il primo messaggio</string>
     <string name="home_not_signed_in">Accesso non effettuato</string>
     <string name="home_bot_name_empty">Dai un nome al bot</string>

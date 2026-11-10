@@ -16,6 +16,10 @@ import com.slopus.happy.sync.SendException
 import com.slopus.happy.sync.OpResult
 import com.slopus.happy.sync.SpawnSessionOptions
 import com.slopus.happy.sync.SpawnSessionResult
+import com.slopus.happy.sync.DiscardClaudeAgentResult
+import com.slopus.happy.sync.StartClaudeAgentRequest
+import com.slopus.happy.sync.StartClaudeAgentResult
+import com.slopus.happy.text.words
 import com.slopus.happy.model.HomeModelFixtures.cliAvailability
 import com.slopus.happy.model.HomeModelFixtures.machine
 import com.slopus.happy.model.HomeModelFixtures.machineMetadata
@@ -129,7 +133,34 @@ class SessionStarterTest {
 
         override suspend fun stopSession(machineId: String, sessionId: String): OpResult {
             stopped += machineId to sessionId
+            order += "stop $sessionId"
             return OpResult(true)
+        }
+
+        /** Whether the daemon says it can start background sessions; false, as an older one does, unless a test says so. */
+        var backgroundSupported = false
+        val supportAsked = mutableListOf<String>()
+        val starts = mutableListOf<StartClaudeAgentRequest>()
+        var startAnswers = ArrayDeque<suspend () -> StartClaudeAgentResult>()
+        val discarded = mutableListOf<Pair<String, String>>()
+        /** Stops and discards, in the order they were asked for. */
+        val order = mutableListOf<String>()
+
+        override suspend fun startClaudeAgent(machineId: String, request: StartClaudeAgentRequest): StartClaudeAgentResult {
+            phases += phase()
+            starts += request
+            return startAnswers.removeFirstOrNull()?.invoke() ?: StartClaudeAgentResult.Success("s1", "35d81094")
+        }
+
+        override suspend fun discardClaudeAgent(machineId: String, agentId: String): DiscardClaudeAgentResult {
+            discarded += machineId to agentId
+            order += "discard $agentId"
+            return DiscardClaudeAgentResult.Success
+        }
+
+        override suspend fun backgroundStartSupported(machineId: String): Boolean {
+            supportAsked += machineId
+            return backgroundSupported
         }
     }
 
@@ -172,13 +203,16 @@ class SessionStarterTest {
         machines: List<Machine> = listOf(cli),
         draft: NewSessionDraft,
         faces: BotFaceWearer = BotFaceWearer { _, _ -> null },
+        background: Boolean = false,
+        requestId: () -> String = { "request-1" },
+        awaitSession: suspend () -> Boolean = { true },
         send: suspend (NewSessionDraftStore) -> Boolean = { true },
     ): Harness {
         val prefs = context.getSharedPreferences(NewSessionDraftStore.PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
         val drafts = NewSessionDraftStore(prefs) { 7 }
         drafts.change { draft }
-        val fakeMachines = FakeMachines()
+        val fakeMachines = FakeMachines().apply { backgroundSupported = background }
         val fakeSessions = FakeSessions()
         val sender = FakeSender { send(drafts) }
         val starter = SessionStarter(
@@ -189,9 +223,9 @@ class SessionStarterTest {
             machineActions = fakeMachines,
             sessionActions = fakeSessions,
             sender = sender,
-            awaitSession = { fakeMachines.phases += fakeMachines.phase(); true },
+            awaitSession = { fakeMachines.phases += fakeMachines.phase(); awaitSession() },
             scope = this,
-            requestId = { "request-1" },
+            requestId = requestId,
             faces = faces,
         )
         fakeMachines.phase = { starter.phase.value }
@@ -490,5 +524,223 @@ class SessionStarterTest {
         assertEquals(HappyAgentSpawnTarget.Bot("Release Bot"), h.machines.spawns.single().happyAgentTarget)
         assertEquals(listOf("s1" to "Own releases"), h.sent)
         assertEquals("", h.drafts.draft.value.input)
+    }
+
+    private val claudeChat = NewSessionDraft(
+        input = " fix the login bug\nand the logout ",
+        selectedMachineId = "m1",
+        selectedPath = "/Users/tester/project",
+        agentType = AgentType.Claude,
+    )
+
+    /**
+     * A new Claude chat where the daemon can start background sessions:
+     * `start-claude-agent` in the folder, named from the first line, then
+     * the same wait and first send as a spawned session. The picks ride the
+     * start; the mirror takes no mode changes, so nothing is pinned.
+     */
+    @Test fun claudeChatsStartAsBackgroundSessions() = runTest {
+        val h = harness(draft = claudeChat, background = true)
+        assertEquals(StartResult.Started("s1"), h.starter.start(confirmDirectory = yes))
+        assertTrue(h.machines.spawns.isEmpty())
+        val request = h.machines.starts.single()
+        assertEquals("/Users/tester/project", request.directory)
+        assertEquals("fix the login bug", request.name)
+        assertEquals("request-1", request.clientRequestId)
+        assertFalse(request.approvedNewDirectoryCreation)
+        assertEquals(listOf("m1"), h.machines.supportAsked)
+        assertEquals(listOf("s1" to "fix the login bug\nand the logout"), h.sent)
+        assertTrue(h.sender.pinned.isEmpty())
+        assertEquals("", h.drafts.draft.value.input)
+        assertEquals(listOf(StartPhase.Spawning, StartPhase.Opening), h.phases)
+
+        // No text: named after its folder.
+        val bare = harness(draft = claudeChat.copy(input = ""), background = true)
+        assertEquals(StartResult.Started("s1"), bare.starter.start(attachments = listOf(image), confirmDirectory = yes))
+        assertEquals("project", bare.machines.starts.single().name)
+    }
+
+    @Test fun codexAndForksKeepTheRegularPath() = runTest {
+        val codex = harness(draft = claudeChat.copy(agentType = AgentType.Codex), background = true)
+        assertEquals(StartResult.Started("s1"), codex.starter.start(confirmDirectory = yes))
+        assertEquals("codex", codex.machines.spawns.single().agent)
+        assertTrue(codex.machines.starts.isEmpty())
+        assertTrue("Codex never asks", codex.machines.supportAsked.isEmpty())
+
+        // A bot and a task are Happy Agent's, whatever harness the draft chose.
+        val bot = harness(listOf(botRig), claudeChat.copy(selectedMachineId = "b1"), background = true)
+        assertEquals(StartResult.Started("s1"), bot.starter.start(bot = BotRequest("Release Bot", "seed"), confirmDirectory = yes))
+        val task = harness(listOf(taskRig), claudeChat.copy(selectedMachineId = "t1"), background = true)
+        assertEquals(StartResult.Started("s1"), task.starter.start(task = true, confirmDirectory = yes))
+        for (h in listOf(bot, task)) {
+            assertEquals("rig", h.machines.spawns.single().agent)
+            assertTrue(h.machines.starts.isEmpty())
+        }
+
+        // Claude picked on a Happy Agent computer is Happy Agent's spawn too.
+        val rigClaude = harness(listOf(rig), NewSessionDraft(input = "go", selectedMachineId = "r1", agentType = AgentType.Claude), background = true)
+        assertEquals(StartResult.Started("s1"), rigClaude.starter.start(confirmDirectory = yes))
+        assertTrue(rigClaude.machines.starts.isEmpty())
+    }
+
+    @Test fun unsupportedMachinesKeepTheRegularPath() = runTest {
+        val h = harness(draft = claudeChat, background = false)
+        assertEquals(StartResult.Started("s1"), h.starter.start(confirmDirectory = yes))
+        assertEquals(listOf("m1"), h.machines.supportAsked)
+        val request = h.machines.spawns.single()
+        assertEquals("claude", request.agent)
+        assertEquals("/Users/tester/project", request.directory)
+        assertTrue(h.machines.starts.isEmpty())
+        assertEquals("the regular session pins its picks", 1, h.sender.pinned.size)
+    }
+
+    /**
+     * Review focus 2: a start whose answer never came back (the call failed)
+     * is asked again under the same request id, so the daemon answers with
+     * the session it already started; one the Mac answered is asked afresh.
+     */
+    @Test fun retriesReuseTheSameRequestIdForBackgroundStarts() = runTest {
+        var next = 0
+        val h = harness(draft = claudeChat, background = true, requestId = { "request-${++next}" })
+        h.machines.startAnswers.add { StartClaudeAgentResult.Failed(StartClaudeAgentResult.CALL_FAILED, "Timed out") }
+        assertEquals(StartResult.Failed(Words.Said("Timed out")), h.starter.start(confirmDirectory = yes))
+        assertEquals(StartResult.Started("s1"), h.starter.start(confirmDirectory = yes))
+        assertEquals(listOf("request-1", "request-1"), h.machines.starts.map { it.clientRequestId })
+        assertEquals(listOf("s1" to "fix the login bug\nand the logout"), h.sent)
+
+        // The Mac said it failed: that answer is kept under its id for a while, so the next Send uses a new one.
+        h.drafts.change { claudeChat }
+        h.machines.startAnswers.add { StartClaudeAgentResult.Failed("start-failed", "The session never appeared.") }
+        assertEquals(StartResult.Failed(Words.Said("The session never appeared.")), h.starter.start(confirmDirectory = yes))
+        assertEquals(StartResult.Started("s1"), h.starter.start(confirmDirectory = yes))
+        assertEquals(listOf("request-1", "request-1", "request-2", "request-3"), h.machines.starts.map { it.clientRequestId })
+    }
+
+    @Test fun untrustedFolderReturnsARefusalThatCanOpenARegularSession() = runTest {
+        val h = harness(draft = claudeChat, background = true)
+        h.machines.startAnswers.add {
+            StartClaudeAgentResult.Untrusted("/Users/tester/project", "Workspace not trusted. Run `claude` in /Users/tester/project once and accept the trust prompt, then retry.")
+        }
+        val refused = h.starter.start(confirmDirectory = yes)
+        assertEquals(StartResult.Refused(StartRefusal.UntrustedFolder("/Users/tester/project")), refused)
+        assertEquals(
+            "Claude on the Mac doesn't trust /Users/tester/project yet. Open a terminal there, run `claude` once and accept the prompt, then try again.",
+            context.resources.words((refused as StartResult.Refused).refusal.words),
+        )
+        assertEquals("the draft stays for the next try", claudeChat.input, h.drafts.draft.value.input)
+        assertTrue(h.sent.isEmpty())
+
+        assertEquals(StartResult.Started("s1"), h.starter.start(forceRegular = true, confirmDirectory = yes))
+        val spawn = h.machines.spawns.single()
+        assertEquals("claude", spawn.agent)
+        assertEquals("/Users/tester/project", spawn.directory)
+        assertEquals("one background start, then the regular session", 1, h.machines.starts.size)
+        assertEquals(listOf("s1" to "fix the login bug\nand the logout"), h.sent)
+    }
+
+    @Test fun backgroundStartsAskBeforeCreatingAMissingFolder() = runTest {
+        val h = harness(draft = claudeChat.copy(selectedPath = "/Users/tester/project/new"), background = true)
+        h.machines.startAnswers.add { StartClaudeAgentResult.NeedsDirectoryApproval("/Users/tester/project/new") }
+        val asked = mutableListOf<String>()
+        assertEquals(StartResult.Started("s1"), h.starter.start { asked += it; true })
+        assertEquals(listOf("/Users/tester/project/new"), asked)
+        assertEquals(listOf(false, true), h.machines.starts.map { it.approvedNewDirectoryCreation })
+        // The approval goes under the same id: the daemon keeps no answer but a started session, so it hears it.
+        assertEquals(listOf("request-1", "request-1"), h.machines.starts.map { it.clientRequestId })
+
+        val declined = harness(draft = claudeChat.copy(selectedPath = "/Users/tester/project/new"), background = true)
+        declined.machines.startAnswers.add { StartClaudeAgentResult.NeedsDirectoryApproval("/Users/tester/project/new") }
+        assertEquals(StartResult.Abandoned, declined.starter.start { false })
+        assertEquals(1, declined.machines.starts.size)
+    }
+
+    /**
+     * Approved, then the answer never came back: the next Send asks under the
+     * same id, so it joins the approved start (running or done) on the Mac
+     * rather than starting a second session in the folder now made.
+     */
+    @Test fun anApprovedStartWhoseAnswerWasLostIsRetriedUnderTheSameId() = runTest {
+        var next = 0
+        val h = harness(draft = claudeChat.copy(selectedPath = "/Users/tester/project/new"), background = true, requestId = { "request-${++next}" })
+        h.machines.startAnswers.add { StartClaudeAgentResult.NeedsDirectoryApproval("/Users/tester/project/new") }
+        h.machines.startAnswers.add { StartClaudeAgentResult.Failed(StartClaudeAgentResult.CALL_FAILED, "Timed out") }
+        assertEquals(StartResult.Failed(Words.Said("Timed out")), h.starter.start(confirmDirectory = yes))
+        assertEquals(StartResult.Started("s1"), h.starter.start(confirmDirectory = yes))
+        assertEquals(listOf("request-1", "request-1", "request-1"), h.machines.starts.map { it.clientRequestId })
+    }
+
+    /** A start stopped after the Mac made it is put down; the next Send is a new start under a new id. */
+    @Test fun aStartStoppedAfterCreationIsAskedAfreshNextTime() = runTest {
+        var next = 0
+        val opened = CompletableDeferred<Boolean>()
+        var waits = 0
+        val h = harness(draft = claudeChat, background = true, requestId = { "request-${++next}" }, awaitSession = { if (waits++ == 0) opened.await() else true })
+        val result = async { h.starter.start(confirmDirectory = yes) }
+        runCurrent()
+        assertEquals(StartPhase.Opening, h.starter.phase.value)
+        h.starter.cancel()
+        advanceUntilIdle()
+        assertEquals(StartResult.Abandoned, result.await())
+        assertEquals(listOf("m1" to "35d81094"), h.machines.discarded)
+
+        assertEquals(StartResult.Started("s1"), h.starter.start(confirmDirectory = yes))
+        assertEquals(listOf("request-1", "request-2"), h.machines.starts.map { it.clientRequestId })
+    }
+
+    /** Stop once the Mac session is made: its mirror is stopped, then the Mac session this start made is discarded. */
+    @Test fun abandoningABackgroundStartDiscardsTheMacSession() = runTest {
+        val opened = CompletableDeferred<Boolean>()
+        val h = harness(draft = claudeChat, background = true, awaitSession = { opened.await() })
+        val result = async { h.starter.start(confirmDirectory = yes) }
+        runCurrent()
+        assertEquals(StartPhase.Opening, h.starter.phase.value)
+        h.starter.cancel()
+        advanceUntilIdle()
+        assertEquals(StartResult.Abandoned, result.await())
+        assertEquals(listOf("stop s1", "discard 35d81094"), h.machines.order)
+        assertEquals(listOf("m1" to "35d81094"), h.machines.discarded)
+        assertTrue(h.sent.isEmpty())
+
+        // Stop while the Mac is still starting it: what arrives afterwards is put down the same way.
+        val late = CompletableDeferred<StartClaudeAgentResult>()
+        val slow = harness(draft = claudeChat, background = true)
+        slow.machines.startAnswers.add { late.await() }
+        val pending = async { slow.starter.start(confirmDirectory = yes) }
+        runCurrent()
+        slow.starter.cancel()
+        runCurrent()
+        assertEquals(StartResult.Abandoned, pending.await())
+        late.complete(StartClaudeAgentResult.Success("late", "0badc0de"))
+        advanceUntilIdle()
+        assertEquals(listOf("stop late", "discard 0badc0de"), slow.machines.order)
+    }
+
+    @Test fun abandoningARegularStartDoesNotDiscard() = runTest {
+        val opened = CompletableDeferred<Boolean>()
+        val h = harness(draft = claudeChat, background = false, awaitSession = { opened.await() })
+        val result = async { h.starter.start(confirmDirectory = yes) }
+        runCurrent()
+        h.starter.cancel()
+        advanceUntilIdle()
+        assertEquals(StartResult.Abandoned, result.await())
+        assertEquals(listOf("m1" to "s1"), h.machines.stopped)
+        assertTrue(h.machines.discarded.isEmpty())
+    }
+
+    @Test fun worktreeChatsStartInsideTheNewWorktree() = runTest {
+        val worktreeChat = claudeChat.copy(sessionType = SessionType.Worktree, worktreeKey = WorktreeSelection.NEW)
+        val h = harness(draft = worktreeChat, background = true)
+        h.machines.worktree = WorktreeOutcome.Created("/Users/tester/project/.dev/worktree/calm-river", "calm-river")
+        assertEquals(StartResult.Started("s1"), h.starter.start(confirmDirectory = yes))
+        assertEquals(listOf("m1" to "/Users/tester/project"), h.machines.worktrees)
+        assertEquals("/Users/tester/project/.dev/worktree/calm-river", h.machines.starts.single().directory)
+        assertEquals("fix the login bug", h.machines.starts.single().name)
+        assertEquals(listOf(StartPhase.Worktree, StartPhase.Spawning, StartPhase.Opening), h.phases)
+
+        // No text: named after the new worktree's folder, which only the worktree step knows.
+        val bare = harness(draft = worktreeChat.copy(input = ""), background = true)
+        bare.machines.worktree = WorktreeOutcome.Created("/Users/tester/project/.dev/worktree/calm-river", "calm-river")
+        bare.starter.start(attachments = listOf(image), confirmDirectory = yes)
+        assertEquals("calm-river", bare.machines.starts.single().name)
     }
 }

@@ -18,7 +18,7 @@ data class ProjectWorktree(
     val workspaceName: String?,
     /** What a tap opens: the chat worked on most recently. */
     val session: SessionRowData,
-    /** Every chat in the checkout, oldest first, so activity never reshuffles the tabs. */
+    /** Every chat in the checkout, oldest first, so activity never reshuffles the tabs; an unopened Mac session has no chat yet and no tab. */
     val tabs: List<SessionRowData>,
     val unread: Boolean,
     val working: Boolean,
@@ -147,7 +147,7 @@ private fun toWorktree(project: ProjectGroupData, workspace: ProjectWorkspaceGro
         workspaceId = workspace.id,
         workspaceName = if (workspace.id == "") null else workspace.name ?: workspace.id,
         session = newest,
-        tabs = tabOrder(workspace.sessions),
+        tabs = tabOrder(workspace.sessions.filterNot { it.isBackgroundAgent }),
         unread = a.unread,
         working = a.working,
         blocked = a.blocked,
@@ -162,7 +162,9 @@ private fun projectRows(project: ProjectGroupData, expanded: Set<String>): List<
     val primary = checkouts.find { it.workspaceId == "" }
     val worktrees = checkouts.filter { it.workspaceId != "" }
     val ownTabs = primary?.tabs.orEmpty()
-    val own = activity(ownTabs)
+    // What the own checkout is doing counts its unopened Mac sessions too, though they are no tabs.
+    val ownRows = project.workspaces.find { it.id == "" }?.sessions.orEmpty()
+    val own = activity(ownRows)
     val rows = mutableListOf<ProjectHomeRow>(
         ProjectHomeRow.ProjectCard(
             ProjectHomeEntry(
@@ -175,7 +177,7 @@ private fun projectRows(project: ProjectGroupData, expanded: Set<String>): List<
                 unread = own.unread,
                 working = own.working,
                 blocked = own.blocked,
-                live = isLive(ownTabs),
+                live = isLive(ownRows),
             ),
         ),
     )
@@ -308,7 +310,7 @@ fun projectWorktreesBySession(items: List<SessionListItem>): Map<String, Project
         if (item !is SessionListItem.ProjectItem) continue
         for (workspace in item.project.workspaces) {
             val worktree = toWorktree(item.project, workspace) ?: continue
-            workspace.sessions.forEach { result[it.id] = worktree }
+            workspace.sessions.forEach { if (!it.isBackgroundAgent) result[it.id] = worktree }
         }
     }
     return result

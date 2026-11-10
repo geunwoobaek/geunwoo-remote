@@ -98,6 +98,10 @@
     <string name="home_start_configuration_unavailable">La configuració d\'agent seleccionada no està disponible</string>
     <string name="home_start_still_syncing">La sessió s\'ha creat, però encara s\'està sincronitzant. Hauria d\'aparèixer aviat.</string>
     <string name="home_start_failed">No s\'ha pogut iniciar la sessió</string>
+    <string name="home_start_untrusted_folder_title">Carpeta no de confiança al Mac</string>
+    <string name="home_start_untrusted_folder_body">Claude al Mac encara no confia en %1$s. Obre-hi un terminal, executa `claude` un cop i accepta l\'avís; després torna-ho a provar.</string>
+    <string name="home_start_open_as_regular">Obre com a sessió normal</string>
+    <string name="home_start_modes_apply_at_start">El model, el mode i l\'esforç s\'apliquen quan comença el xat.</string>
     <string name="home_first_message_failed">No s\'ha pogut enviar el primer missatge</string>
     <string name="home_not_signed_in">No has iniciat la sessió</string>
     <string name="home_bot_name_empty">Posa un nom al bot</string>

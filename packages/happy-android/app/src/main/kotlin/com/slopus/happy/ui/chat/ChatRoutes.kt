@@ -89,6 +89,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import java.util.UUID
 
 /** `/session/{id}`: one chat, or an empty one compose opened (a `compose-chat:` id, [ComposeChat]). */
 @Serializable
@@ -114,7 +115,7 @@ fun NavGraphBuilder.chatRoutes(
             // An empty chat in this one's place, so Back still leads home.
             onCompose = { nav.composeChat(inPlace = true) },
             onToolPress = { sessionId, message -> nav.navigate(toolPressRoute(sessionId, message)) },
-            onToolFilePress = { sessionId, message, file -> nav.navigate(MessageDetailRoute(sessionId, message.id, file = file)) },
+            onToolFilePress = { sessionId, message, file -> nav.navigate(MessageDetailRoute(sessionId, com.slopus.happy.ui.files.detailKey(message), file = file)) },
             // A resume that comes back as another session, or another tab of the checkout, replaces this chat in place.
             onOpenSession = { shown, id -> if (id != shown) nav.navigate(SessionRoute(id)) { popUpTo<SessionRoute> { inclusive = true } } },
             onComposeStarted = { id -> entry.savedStateHandle[COMPOSE_STARTED] = id },
@@ -158,7 +159,9 @@ private fun ChatRoute(
             presence = sync?.let { SyncChatPresenceSource(it.presence) } ?: NoLivePresence,
         )
     }
-    val state by remember(feed, sessionId) { feed.state(sessionId) }.collectAsStateWithLifecycle(ChatState())
+    // This screen's window of the chat's records: kept across a detail screen and a trip to the background, new with each opening.
+    val windowToken = rememberSaveable { UUID.randomUUID().toString() }
+    val state by remember(feed, sessionId) { feed.state(sessionId, windowToken) }.collectAsStateWithLifecycle(ChatState())
     val settings by graph.settings.settings.collectAsStateWithLifecycle()
     // No session yet: the composer is the new-session draft's.
     val drafting = compose?.composing == true
@@ -216,9 +219,11 @@ private fun ChatRoute(
     val latestSettings by rememberUpdatedState(settings)
     // An empty chat takes images for its first message when the harness it starts does (happy-ios 20e20e0a8).
     val composeOptions = compose?.newSession?.options?.collectAsStateWithLifecycle()?.value
+    // A Mac background session's mirror takes no images, so its first message offers none either.
+    val composeBackground = compose?.newSession?.backgroundStart?.collectAsStateWithLifecycle()?.value == true
     val images = rememberComposerImages(
         enabled = when {
-            drafting -> composeOptions?.let { canUseAttachments(starting = it.startAgent) } ?: true
+            drafting -> !composeBackground && (composeOptions?.let { canUseAttachments(starting = it.startAgent) } ?: true)
             composing -> true
             else -> canUseAttachments(state.session?.metadata)
         },
@@ -281,7 +286,7 @@ private fun ChatRoute(
             },
             // AgentInput.tsx: a failed stop shakes the button rather than raising an alert.
             onAbort = { actions.abort(sessionId) },
-            loadOlder = { account?.messages?.loadOlder(sessionId) ?: false },
+            loadOlder = { showOlderInChat(account, sessionId) },
             onPermission = { answer, mode ->
                 actions.answerPermission(sessionId, answer)
                 if (mode != null) actions.setModes(sessionId, mapOf(AgentModeField.PERMISSION_MODE to mode))
@@ -431,3 +436,11 @@ private fun rememberSessionMedia(account: AccountSync?, sessionId: String, sessi
         account?.let { SessionMediaHost(sessionId, sessionPath, SyncSessionFileOps(it), context.cacheDir, cwd) { path -> latestOpen(sessionId, path) } }
     }
 }
+
+/**
+ * The chat's top reach (its pager): the screen's window lowers one batch,
+ * from this device first, the server only once the device runs out
+ * ([com.slopus.happy.sync.MessageSync.showOlder]). Signed out, nothing older.
+ */
+internal suspend fun showOlderInChat(account: AccountSync?, sessionId: String): Boolean =
+    account?.messages?.showOlder(sessionId) ?: false

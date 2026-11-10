@@ -98,6 +98,10 @@
     <string name="home_start_configuration_unavailable">A configuração de agente selecionada não está disponível</string>
     <string name="home_start_still_syncing">A sessão foi criada, mas ainda está sincronizando. Ela deve aparecer em breve.</string>
     <string name="home_start_failed">Falha ao iniciar a sessão</string>
+    <string name="home_start_untrusted_folder_title">Pasta não confiável no Mac</string>
+    <string name="home_start_untrusted_folder_body">O Claude no Mac ainda não confia em %1$s. Abra um terminal lá, execute `claude` uma vez e aceite o aviso; depois tente novamente.</string>
+    <string name="home_start_open_as_regular">Abrir como sessão normal</string>
+    <string name="home_start_modes_apply_at_start">Modelo, modo e esforço se aplicam quando o chat começa.</string>
     <string name="home_first_message_failed">Falha ao enviar a primeira mensagem</string>
     <string name="home_not_signed_in">Você não está conectado</string>
     <string name="home_bot_name_empty">Dê um nome ao bot</string>

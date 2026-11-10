@@ -320,6 +320,21 @@ describe('discard-claude-agent', () => {
         failRemove = false;
         expect(await handlers.discard('35d81094')).toEqual({ type: 'success' });
     });
+
+    it('forgets the cached start even when removal fails', async () => {
+        const { deps, fakes } = makeStartDeps({}, {
+            removeAgent: async (_claudePath, id) => {
+                fakes.calls.push(`rm ${id}`);
+                throw new Error('rm failed');
+            },
+        });
+        const handlers = createClaudeAgentHandlers(deps);
+        await handlers.start({ ...startRequest, clientRequestId: 'r1' });
+        expect(await handlers.discard('35d81094')).toMatchObject({ type: 'error', code: 'discard-failed' });
+        // A retry of the same request is not answered with the session being discarded.
+        await handlers.start({ ...startRequest, clientRequestId: 'r1' });
+        expect(fakes.bgRuns).toHaveLength(2);
+    });
 });
 
 describe('open-claude-agent', () => {

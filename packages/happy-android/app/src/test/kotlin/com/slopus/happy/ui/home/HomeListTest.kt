@@ -4,7 +4,14 @@ import com.slopus.happy.model.DayTitle
 import com.slopus.happy.sync.ForkSource
 import com.slopus.happy.sync.OpResult
 import com.slopus.happy.model.HomeEmptyState
+import com.slopus.happy.model.HomeModelFixtures.claudeAgent
+import com.slopus.happy.model.HomeModelFixtures.listing
 import com.slopus.happy.model.HomeModelFixtures.machine
+import com.slopus.happy.model.HomeModelFixtures.mirror
+import com.slopus.happy.model.HomeRowTarget
+import com.slopus.happy.model.resolveHomeRowTarget
+import com.slopus.happy.sync.ClaudeAgentsListing
+import com.slopus.happy.sync.OpenClaudeAgentResult
 import com.slopus.happy.model.HomeModelFixtures.machineMetadata
 import com.slopus.happy.model.HomeModelFixtures.metadata
 import com.slopus.happy.model.HomeModelFixtures.rigMetadata
@@ -64,7 +71,9 @@ class HomeListTest {
         grouping: SessionListGrouping = SessionListGrouping.Flat,
         archiveHidden: Boolean = true,
         archiving: Set<String> = emptySet(),
-    ) = HomeListInputs(HomeSnapshot(sessions, machines), grouping, archiveHidden, emptySet(), emptySet(), archiving)
+        listings: Map<String, ClaudeAgentsListing> = emptyMap(),
+        opening: Set<String> = emptySet(),
+    ) = HomeListInputs(HomeSnapshot(sessions, machines), grouping, archiveHidden, emptySet(), emptySet(), archiving, listings, opening)
 
     private fun derive(inputs: HomeListInputs) = deriveHomeList(inputs, zone, today)
 
@@ -191,6 +200,150 @@ class HomeListTest {
 
         settings.value = Settings.Defaults.copy(sessionListGrouping = SessionListGrouping.Project)
         assertEquals(SessionListGrouping.Project, model.state.value!!.grouping)
+    }
+
+    @Test fun unopenedAgentsSortWithSessionsByLastActivity() {
+        val listings = mapOf("m1" to listing(claudeAgent("a1", cwd = "/Users/tester/project", startedAt = noon - 2 * 60_000)))
+        val state = derive(inputs(listOf(cli("old", noon - 3 * 60_000), cli("new", noon - 60_000)), listings = listings))
+        assertEquals(listOf("chat:new", "chat:agent:m1:a1", "chat:old:last"), shape(state))
+        val agentRow = (state.rows[1] as HomeRow.Chat).row
+        assertEquals("project", agentRow.projectName)
+        assertEquals("m1:/Users/tester/project", agentRow.session.avatarId)
+        assertFalse((state.rows[1] as HomeRow.Chat).archived)
+    }
+
+    @Test fun anEmptyHomeWithAnUnopenedAgentListsIt() {
+        val state = derive(inputs(emptyList(), listings = mapOf("m1" to listing(claudeAgent("a1")))))
+        assertEquals(HomeEmptyState.List, state.emptyState)
+        assertEquals(listOf("chat:agent:m1:a1:last"), shape(state))
+    }
+
+    @Test fun agentsOfAMachineThatIsOfflineOrUnknownAreNotListed() {
+        val listings = mapOf("m1" to listing(claudeAgent("a1")), "m9" to listing(claudeAgent("a9")))
+        assertEquals(listOf("chat:agent:m1:a1:last"), shape(derive(inputs(emptyList(), listings = listings))))
+        assertEquals(HomeEmptyState.Offline, derive(inputs(emptyList(), machines = listOf(offline), listings = listings)).emptyState)
+    }
+
+    @Test fun projectGroupingPutsAnUnopenedAgentUnderTheProjectOfItsFolder() {
+        val chat = session(
+            "s1",
+            metadata = metadata(path = "/Users/tester/project") { put("machineId", "m1") },
+            lastMessageSentAt = noon - 60_000,
+        )
+        val listings = mapOf("m1" to listing(claudeAgent("a1", cwd = "/Users/tester/project", status = "busy", startedAt = noon)))
+        val state = derive(inputs(listOf(chat), grouping = SessionListGrouping.Project, listings = listings))
+        val cards = state.rows.mapNotNull { ((it as? HomeRow.Project)?.row as? ProjectHomeRow.ProjectCard)?.project }
+        val card = cards.single()
+        assertEquals("project", card.name)
+        // The newest chat is what the card opens; the unopened session is no tab, but its work shows on the card.
+        assertEquals("agent:m1:a1", card.session?.id)
+        assertEquals(listOf("s1"), card.tabs.map { it.id })
+        assertTrue(card.working)
+        assertEquals(setOf("s1"), state.worktrees.keys)
+    }
+
+    @Test fun anArchivedMirrorOfALiveAgentIsOneLiveRow() {
+        val sessions = listOf(mirror("s1", "a1", name = "Demo", active = false, archived = true, lastMessageSentAt = noon))
+        val state = derive(inputs(sessions, archiveHidden = false, listings = mapOf("m1" to listing(claudeAgent("a1", mirrorSessionId = "s1")))))
+        assertEquals(listOf("chat:s1:last"), shape(state))
+        assertFalse(state.hasArchivedSessions)
+        assertEquals("Demo", (state.rows[0] as HomeRow.Chat).row.session.name)
+        // Once the Mac session ends, the mirror is back in the archive.
+        assertEquals(listOf("toggle:hide", "header:Today", "chat:s1:archived:last"), shape(derive(inputs(sessions, archiveHidden = false, listings = mapOf("m1" to listing())))))
+    }
+
+    @Test fun aRowBeingOpenedSaysSo() {
+        val listings = mapOf("m1" to listing(claudeAgent("a1")))
+        val state = derive(inputs(listOf(mirror("s1", "a2", active = false)), listings = listings + ("m1" to listing(claudeAgent("a1"), claudeAgent("a2"))), opening = setOf("a1", "a2")))
+        assertTrue(state.rows.filterIsInstance<HomeRow.Chat>().all { it.row.session.opening })
+        assertFalse((derive(inputs(emptyList(), listings = listings)).rows.single() as HomeRow.Chat).row.session.opening)
+    }
+
+    private class Opens(private val result: OpenClaudeAgentResult?) {
+        val opened = mutableListOf<Pair<String, String>>()
+        val navigated = mutableListOf<String>()
+        val relisted = mutableListOf<String>()
+        val failed = mutableListOf<String>()
+
+        suspend fun tap(target: HomeRowTarget) = openHomeRow(
+            target,
+            open = { machine, agent -> opened += machine to agent; result },
+            navigate = { navigated += it },
+            relist = { relisted += it },
+            fail = { failed += it },
+        )
+    }
+
+    @Test fun tapOnAnUnopenedAgentOpensTheMirror() = runTest {
+        val listings = mapOf("m1" to listing(claudeAgent("a1")))
+        val row = (derive(inputs(emptyList(), listings = listings)).rows.single() as HomeRow.Chat).row.session
+        val target = resolveHomeRowTarget(row.id, emptyList(), listings)
+        assertEquals(HomeRowTarget.Agent("m1", "a1"), target)
+        val opens = Opens(OpenClaudeAgentResult.Success("mirror-1"))
+        opens.tap(target)
+        assertEquals(listOf("m1" to "a1"), opens.opened)
+        assertEquals(listOf("mirror-1"), opens.navigated)
+        assertEquals(listOf("m1"), opens.relisted)
+    }
+
+    @Test fun tapOnADeadMirrorReopensItFirst() = runTest {
+        val sessions = listOf(mirror("s1", "a1", active = false))
+        val listings = mapOf("m1" to listing(claudeAgent("a1", mirrorSessionId = null)))
+        val target = resolveHomeRowTarget("s1", sessions, listings)
+        assertEquals(HomeRowTarget.Agent("m1", "a1"), target)
+        val opens = Opens(OpenClaudeAgentResult.Success("s1-again"))
+        opens.tap(target)
+        assertEquals(listOf("m1" to "a1"), opens.opened)
+        assertEquals(listOf("s1-again"), opens.navigated)
+        // A live mirror opens its chat directly, with no call to the Mac.
+        val direct = Opens(OpenClaudeAgentResult.Success("unused"))
+        direct.tap(resolveHomeRowTarget("s1", listOf(mirror("s1", "a1", active = true)), listings))
+        assertTrue(direct.opened.isEmpty())
+        assertEquals(listOf("s1"), direct.navigated)
+    }
+
+    @Test fun aFailedOpenSaysWhyAndARepeatTapDoesNothing() = runTest {
+        val failed = Opens(OpenClaudeAgentResult.Error("That agent is gone."))
+        failed.tap(HomeRowTarget.Agent("m1", "a1"))
+        assertEquals(listOf("That agent is gone."), failed.failed)
+        assertTrue(failed.navigated.isEmpty())
+        val repeat = Opens(null)
+        repeat.tap(HomeRowTarget.Agent("m1", "a1"))
+        assertTrue(repeat.navigated.isEmpty() && repeat.failed.isEmpty() && repeat.relisted.isEmpty())
+    }
+
+    @Test fun theUnavailableNoticeIsOneLineForTheFirstMachineThatCannotList() {
+        val listings = mapOf(
+            "m1" to listing(),
+            "m2" to listing(unavailable = "claude-missing"),
+            "m3" to listing(unavailable = "tmux-missing"),
+            "m4" to listing(unavailable = "unsupported"),
+        )
+        assertEquals(
+            ClaudeAgentsNoticeLine(ClaudeAgentsNotice.ClaudeMissing, "Laptop"),
+            claudeAgentsNoticeLine(listOf("m1" to "Studio", "m2" to "Laptop", "m3" to "Mini"), listings),
+        )
+        assertEquals(ClaudeAgentsNoticeLine(ClaudeAgentsNotice.TmuxMissing, null), claudeAgentsNoticeLine(listOf("m3" to "Mini"), listings))
+        assertNull(claudeAgentsNoticeLine(listOf("m1" to "Studio", "m4" to "Old"), listings))
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun modelFoldsInTheMacSessionsAsTheyAreListed() = runTest {
+        val listings = MutableStateFlow<Map<String, ClaudeAgentsListing>>(emptyMap())
+        val model = HomeListModel(
+            snapshots = MutableStateFlow(HomeSnapshot(listOf(cli("a", noon)), listOf(online))),
+            settings = MutableStateFlow(Settings.Defaults),
+            localSettings = MutableStateFlow(LocalSettingsValues.Defaults),
+            unreadSessionIds = MutableStateFlow(emptySet()),
+            archivingSessionIds = MutableStateFlow(emptySet()),
+            scope = backgroundScope,
+            dispatcher = UnconfinedTestDispatcher(testScheduler),
+            zone = { zone },
+            agentListings = listings,
+        )
+        assertEquals(1, model.state.value!!.rows.size)
+        listings.value = mapOf("m1" to listing(claudeAgent("a1", startedAt = noon + 1)))
+        assertEquals("agent:m1:a1", (model.state.value!!.rows.first() as HomeRow.Chat).row.session.id)
     }
 
     @Test fun presenceDecidesOnlineAndThinking() {

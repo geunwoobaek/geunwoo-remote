@@ -314,6 +314,39 @@ class MachineOps internal constructor(
         OpenClaudeAgentResult.Error(e.message ?: "Failed to open session")
     }
 
+    /**
+     * Starts a new Claude chat as a Mac background session (`claude --bg` in
+     * the folder) and opens its mirror. A failed call is a `call-failed`; on
+     * success the session list is refreshed first, as [openClaudeAgent] does.
+     */
+    suspend fun startClaudeAgent(machineId: String, request: StartClaudeAgentRequest): StartClaudeAgentResult = try {
+        val result = StartClaudeAgentResult.parse(rpc.machineRpc(machineId, "start-claude-agent", request.toJson()), request.directory)
+        if (result is StartClaudeAgentResult.Success) {
+            try {
+                // Bounded: an offline sync never ends, and the start must not hang on it.
+                awaitSyncBriefly(syncWaitMs, refreshSessions)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Best effort: the broadcast brings the session in shortly anyway.
+            }
+        }
+        result
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        StartClaudeAgentResult.Failed(StartClaudeAgentResult.CALL_FAILED, e.message ?: "Failed to start session")
+    }
+
+    /** Stops and removes a background session this Mac's daemon started; the daemon refuses any other. */
+    suspend fun discardClaudeAgent(machineId: String, agentId: String): DiscardClaudeAgentResult = try {
+        DiscardClaudeAgentResult.parse(rpc.machineRpc(machineId, "discard-claude-agent", buildJsonObject { put("id", agentId) }))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        DiscardClaudeAgentResult.Failed("discard-failed", e.message ?: "Failed to discard session")
+    }
+
     private suspend fun fork(machineId: String, method: String, idField: String, fallback: String, params: JsonObject): ForkResult = try {
         val answer = rpc.machineRpc(machineId, method, params) as? JsonObject
         when (answer?.string("type")) {

@@ -98,6 +98,10 @@
     <string name="home_start_configuration_unavailable">Wybrana konfiguracja agenta jest niedostępna</string>
     <string name="home_start_still_syncing">Sesja została utworzona, ale wciąż się synchronizuje. Wkrótce się pojawi.</string>
     <string name="home_start_failed">Nie udało się rozpocząć sesji</string>
+    <string name="home_start_untrusted_folder_title">Folder niezaufany na Macu</string>
+    <string name="home_start_untrusted_folder_body">Claude na Macu jeszcze nie ufa %1$s. Otwórz tam terminal, uruchom raz `claude` i zaakceptuj monit, a potem spróbuj ponownie.</string>
+    <string name="home_start_open_as_regular">Otwórz jako zwykłą sesję</string>
+    <string name="home_start_modes_apply_at_start">Model, tryb i wysiłek obowiązują od rozpoczęcia czatu.</string>
     <string name="home_first_message_failed">Nie udało się wysłać pierwszej wiadomości</string>
     <string name="home_not_signed_in">Nie zalogowano</string>
     <string name="home_bot_name_empty">Nadaj botowi nazwę</string>

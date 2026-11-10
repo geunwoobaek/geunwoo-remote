@@ -19,6 +19,8 @@ import com.slopus.happy.model.hasArchivedSessions
 import com.slopus.happy.model.resolveHomeEmptyState
 import com.slopus.happy.model.settings.LocalSettingsValues
 import com.slopus.happy.model.isRigMachine
+import com.slopus.happy.model.mergeBackgroundAgents
+import com.slopus.happy.sync.ClaudeAgentsListing
 import com.slopus.happy.model.shouldShowOfflineMachinesBanner
 import com.slopus.happy.model.toFlatSessionRow
 import com.slopus.happy.model.visibleSessionListItems
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.scan
@@ -156,6 +159,10 @@ data class HomeListInputs(
     val expandedProjects: Set<String>,
     val unreadSessionIds: Set<String>,
     val archivingSessionIds: Set<String>,
+    /** What each machine listed of its Mac background sessions ([ClaudeAgentsModel.listings]). */
+    val agentListings: Map<String, ClaudeAgentsListing> = emptyMap(),
+    /** Agent ids whose mirror is being opened ([ClaudeAgentsModel.opening]). */
+    val openingAgents: Set<String> = emptySet(),
 )
 
 /**
@@ -166,8 +173,20 @@ data class HomeListInputs(
 fun deriveHomeList(inputs: HomeListInputs, zone: ZoneId, today: LocalDate): HomeListState {
     val snapshot = inputs.snapshot
     val machines = snapshot.machines.associateBy { it.id }
+    // The Mac background sessions join the chats as rows of their own, from the machines that can be asked (online, not a Happy Agent).
+    val listings = if (inputs.agentListings.isEmpty()) inputs.agentListings else inputs.agentListings.filterKeys { id ->
+        machines[id]?.let { it.isOnline && !it.metadata.isRigMachine() } == true
+    }
     val all = buildSessionListViewData(
-        SessionListInputs(snapshot.sessions, machines, snapshot.projects, inputs.unreadSessionIds, inputs.archivingSessionIds, snapshot.gitStatuses),
+        SessionListInputs(
+            snapshot.sessions,
+            machines,
+            snapshot.projects,
+            inputs.unreadSessionIds,
+            inputs.archivingSessionIds,
+            snapshot.gitStatuses,
+            sources = mergeBackgroundAgents(snapshot.sessions, listings, inputs.openingAgents),
+        ),
         zone,
         today,
     )
@@ -247,6 +266,10 @@ class HomeListModel(
     unreadSessionIds: Flow<Set<String>>,
     archivingSessionIds: Flow<Set<String>>,
     scope: CoroutineScope,
+    /** The Mac's background sessions by machine ([ClaudeAgentsModel.listings]), folded into the rows. */
+    agentListings: Flow<Map<String, ClaudeAgentsListing>> = flowOf(emptyMap()),
+    /** Agent ids being opened ([ClaudeAgentsModel.opening]). */
+    openingAgents: Flow<Set<String>> = flowOf(emptySet()),
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
     zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
@@ -254,10 +277,10 @@ class HomeListModel(
         snapshots.filterNotNull().filter { it.ready },
         settings.map { it.sessionListGrouping to it.hideInactiveSessions }.distinctUntilChanged(),
         localSettings.map { values -> values.expandedProjects.filterValues { it }.keys }.distinctUntilChanged(),
-        unreadSessionIds,
-        archivingSessionIds,
-    ) { snapshot, (grouping, archiveHidden), expanded, unread, archiving ->
-        HomeListInputs(snapshot, grouping, archiveHidden, expanded, unread, archiving)
+        combine(unreadSessionIds, archivingSessionIds, ::Pair),
+        combine(agentListings, openingAgents, ::Pair),
+    ) { snapshot, (grouping, archiveHidden), expanded, (unread, archiving), (listings, opening) ->
+        HomeListInputs(snapshot, grouping, archiveHidden, expanded, unread, archiving, listings, opening)
     }
         .distinctUntilChanged()
         .map { inputs ->

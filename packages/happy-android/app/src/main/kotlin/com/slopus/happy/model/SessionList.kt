@@ -62,6 +62,8 @@ data class SessionRowData(
     val projectAvatarThumbhash: String? = null,
     val avatarUri: String? = null,
     val avatarThumbhash: String? = null,
+    /** Its Mac background session's mirror is being opened ([SessionRowSource]). */
+    val opening: Boolean = false,
 )
 
 /** "Today", "Yesterday" or "N days ago" over an archived day (storage.ts relativeDayTitle). */
@@ -96,6 +98,8 @@ data class SessionListInputs(
     val archivingSessionIds: Set<String> = emptySet(),
     /** storage.ts pathGitStatus: by [gitStatusKey]. */
     val gitStatuses: Map<String, GitStatus> = emptyMap(),
+    /** What the rows are made of: [sessions], with the Mac's background sessions folded in by [mergeBackgroundAgents]. */
+    val sources: List<SessionRowSource> = sessions.map { SessionRowSource.Stored(it) },
 )
 
 /**
@@ -194,6 +198,18 @@ fun buildSessionRowData(session: Session, inputs: SessionListInputs): SessionRow
     )
 }
 
+/** An unopened background session's row with its machine's name, reach and home, as a session's row has them. */
+private fun placeOnMachine(row: SessionRowData, inputs: SessionListInputs): SessionRowData {
+    val machine = row.machineId?.let { inputs.machines[it] } ?: return row
+    val homeDir = machine.metadata?.homeDir?.takeIf { it.isNotEmpty() }
+    return row.copy(
+        subtitle = row.path?.let { formatPathRelativeToHome(it, homeDir) } ?: row.subtitle,
+        homeDir = homeDir,
+        machineName = machine.metadata?.displayName?.takeIf { it.isNotEmpty() } ?: machine.metadata?.host?.takeIf { it.isNotEmpty() },
+        machineOffline = !machine.isOnline,
+    )
+}
+
 /** relativeDayTitle; a DST day is 23 or 25 hours, so whole calendar days are counted. */
 fun relativeDayTitle(timestamp: Long, today: LocalDate, zone: ZoneId): DayTitle {
     val day = Instant.ofEpochMilli(timestamp).atZone(zone).toLocalDate()
@@ -221,24 +237,45 @@ fun buildSessionListViewData(
     val botSessions = mutableListOf<Session>()
     val taskSessions = mutableListOf<Session>()
     val rigPathSessions = mutableListOf<Session>()
-    val happySessions = mutableListOf<Session>()
+    val happyRows = mutableListOf<SessionRowData>()
     val archivedSessions = mutableListOf<Session>()
 
-    for (session in inputs.sessions) {
+    for (source in inputs.sources) {
+        val session = when (source) {
+            is SessionRowSource.Agent -> {
+                happyRows.add(placeOnMachine(source.row, inputs))
+                continue
+            }
+            is SessionRowSource.Stored -> source.session
+        }
         if (session.metadata?.isSideChat == true || session.isRetiredTask(inputs.archivingSessionIds)) continue
+        val liveAgent = source.liveAgent
         when {
-            session.isArchived(inputs.archivingSessionIds) -> archivedSessions.add(session)
+            // A mirror of a session still running on the Mac stays live, archived or not.
+            liveAgent == null && session.isArchived(inputs.archivingSessionIds) -> archivedSessions.add(session)
             session.metadata?.bot != null -> botSessions.add(session)
             session.isTask -> taskSessions.add(session)
             session.metadata.isRig() -> if (session.isProjectSession()) rigProjectSessions.add(session) else rigPathSessions.add(session)
-            else -> happySessions.add(session)
+            liveAgent != null -> happyRows.add(
+                buildSessionRowData(session, inputs).let { row ->
+                    row.copy(
+                        active = true,
+                        archived = false,
+                        activeAt = null,
+                        // A mirror whose process is gone says what the Mac session is doing.
+                        state = if (session.active) row.state else backgroundAgentState(liveAgent.status),
+                        opening = source.opening,
+                    )
+                },
+            )
+            else -> happyRows.add(buildSessionRowData(session, inputs))
         }
     }
 
     val projectOrder = compareByDescending<Session> { it.active }.thenByDescending { it.activityAt() }
     rigProjectSessions.sortWith(projectOrder)
     rigPathSessions.sortWith(projectOrder)
-    happySessions.sortWith(projectOrder)
+    happyRows.sortWith(compareByDescending<SessionRowData> { it.active }.thenByDescending { it.lastActivityAt })
     archivedSessions.sortByDescending { it.activityAt() }
 
     val toRow = { session: Session -> buildSessionRowData(session, inputs) }
@@ -267,7 +304,7 @@ fun buildSessionListViewData(
         rigProjects.forEach { items.add(SessionListItem.ProjectItem(ProjectSource.Rig, it)) }
     }
 
-    val happyProjects = buildPathProjectGroups(happySessions, toRow, isActive, "happy")
+    val happyProjects = buildPathRowGroups(happyRows, "happy")
     if (happyProjects.isNotEmpty()) {
         items.add(SessionListItem.ProjectsHeader(ProjectSource.Happy))
         happyProjects.forEach { items.add(SessionListItem.ProjectItem(ProjectSource.Happy, it)) }

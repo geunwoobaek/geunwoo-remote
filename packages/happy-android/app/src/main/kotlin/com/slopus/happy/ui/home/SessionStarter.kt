@@ -36,6 +36,10 @@ import com.slopus.happy.sync.AgentModeField
 import com.slopus.happy.sync.HappyAgentSpawnTarget
 import com.slopus.happy.sync.SpawnSessionOptions
 import com.slopus.happy.sync.SpawnSessionResult
+import com.slopus.happy.sync.StartClaudeAgentRequest
+import com.slopus.happy.sync.StartClaudeAgentResult
+import com.slopus.happy.sync.claudeAgentName
+import com.slopus.happy.sync.claudeAgentNameFromMessage
 import com.slopus.happy.text.Words
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -52,28 +56,43 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Why a start was refused before anything was asked of a machine
+ * Why a start was refused before a session was made
  * (useStartSessionFromDraft's alerts): [message] in English for logs and
- * tests, [text] what the person reads, in their language.
+ * tests, [text] what the person reads, in their language, and [words] that
+ * text with its arguments.
  */
-enum class StartRefusal(val message: String, @StringRes val text: Int) {
-    NoMachine("Please select a machine", R.string.home_start_no_machine),
-    UnknownMachine(
+sealed class StartRefusal(val message: String, @StringRes val text: Int) {
+    open val words: Words get() = Words.ours(text)
+
+    data object NoMachine : StartRefusal("Please select a machine", R.string.home_start_no_machine)
+    data object UnknownMachine : StartRefusal(
         "This session’s computer is not registered with this account, so nothing can start a session on it. Check that Jarvis is running there and signed in to this account.",
         R.string.home_start_unknown_machine,
-    ),
-    HappyAgentMissing("Happy Agent is not running on this computer", R.string.home_start_happy_agent_missing),
-    HappyCliMissing("Jarvis CLI is not available on your computer. Run `happy daemon start` on your computer, then try again.", R.string.home_start_happy_cli_missing),
-    HappyAgentOffline("Machine is offline", R.string.new_session_machine_offline),
-    HappyCliOffline("Jarvis CLI is offline on your computer. Run `happy daemon start` on your computer, then try again.", R.string.home_start_happy_cli_offline),
-    CannotStartHappyAgent("This machine cannot start Happy Agent sessions", R.string.home_start_cannot_start_happy_agent),
-    ProjectNeedsHappyAgent(
+    )
+    data object HappyAgentMissing : StartRefusal("Happy Agent is not running on this computer", R.string.home_start_happy_agent_missing)
+    data object HappyCliMissing : StartRefusal("Jarvis CLI is not available on your computer. Run `happy daemon start` on your computer, then try again.", R.string.home_start_happy_cli_missing)
+    data object HappyAgentOffline : StartRefusal("Machine is offline", R.string.new_session_machine_offline)
+    data object HappyCliOffline : StartRefusal("Jarvis CLI is offline on your computer. Run `happy daemon start` on your computer, then try again.", R.string.home_start_happy_cli_offline)
+    data object CannotStartHappyAgent : StartRefusal("This machine cannot start Happy Agent sessions", R.string.home_start_cannot_start_happy_agent)
+    data object ProjectNeedsHappyAgent : StartRefusal(
         "Only Happy Agent knows where this project is, so no other harness can open it. Switch the harness back to Happy Agent, or pick the project’s folder.",
         R.string.home_start_project_needs_happy_agent,
-    ),
-    WorkspaceUnavailable("The selected Happy Agent workspace is no longer available.", R.string.home_start_workspace_unavailable),
-    BotsUnsupported("Happy Agent on this computer cannot create bots yet. Update it and try again.", R.string.home_start_bots_unsupported),
-    TasksUnsupported("Happy Agent on this computer cannot create tasks yet. Update it and try again.", R.string.compose_tasks_unsupported),
+    )
+    data object WorkspaceUnavailable : StartRefusal("The selected Happy Agent workspace is no longer available.", R.string.home_start_workspace_unavailable)
+    data object BotsUnsupported : StartRefusal("Happy Agent on this computer cannot create bots yet. Update it and try again.", R.string.home_start_bots_unsupported)
+    data object TasksUnsupported : StartRefusal("Happy Agent on this computer cannot create tasks yet. Update it and try again.", R.string.compose_tasks_unsupported)
+
+    /**
+     * Claude on the Mac has not been trusted in [directory] yet, so no
+     * background session can start there; the Mac said so. Starting again
+     * with `forceRegular` opens the chat as a regular session instead.
+     */
+    data class UntrustedFolder(val directory: String) : StartRefusal(
+        "Claude on the Mac doesn't trust $directory yet. Open a terminal there, run `claude` once and accept the prompt, then try again.",
+        R.string.home_start_untrusted_folder_body,
+    ) {
+        override val words: Words get() = Words.ours(text, directory)
+    }
 }
 
 sealed interface StartResult {
@@ -127,10 +146,11 @@ class SessionStarter(
     val phase: StateFlow<StartPhase?> = phaseState.asStateFlow()
 
     private var run: Job? = null
+    private var preparing = false
     private val requestIds = HashMap<String, String>()
 
     /** Sessions made for a start whose message did not go out: pressing Send again reuses them. */
-    private val createdSessions = HashMap<String, String>()
+    private val createdSessions = HashMap<String, Created>()
 
     fun cancel() {
         val current = run ?: return
@@ -149,6 +169,11 @@ class SessionStarter(
      * as its first message (a compose chat's; the dock's bot takes none).
      * [task] makes an unnamed task there, the text its first message.
      * [confirmDirectory] asks whether to create a missing directory.
+     *
+     * A Claude chat (not a bot's, not a task's) starts as a Mac background
+     * session when its computer's daemon can start one
+     * ([MachineActions.backgroundStartSupported]); [forceRegular] starts it as
+     * a regular session anyway (the untrusted folder's alternative).
      */
     suspend fun start(
         draft: NewSessionDraft = drafts.draft.value,
@@ -157,14 +182,22 @@ class SessionStarter(
         bot: BotRequest? = null,
         botMessage: Boolean = false,
         task: Boolean = false,
+        forceRegular: Boolean = false,
         confirmDirectory: suspend (String) -> Boolean,
     ): StartResult {
-        if (run != null) return StartResult.Abandoned
+        if (run != null || preparing) return StartResult.Abandoned
         bot?.let { request -> describeBotNameProblem(request.name)?.let { return StartResult.Failed(it) } }
-        val prepared = when (val result = prepare(draft, target, bot, task = task && bot == null, botMessage = botMessage)) {
-            is Prepared.Refused -> return StartResult.Refused(result.refusal)
-            is Prepared.Unavailable -> return StartResult.Failed(result.message)
-            is Prepared.Ready -> result
+        // The path is settled before anything starts; asking the computer may take a moment, and a second Send meanwhile is not a second start.
+        preparing = true
+        val ready = try {
+            prepare(draft, target, bot, task = task && bot == null, botMessage = botMessage, forceRegular = forceRegular)
+        } finally {
+            preparing = false
+        }
+        val prepared = when (ready) {
+            is Prepared.Refused -> return StartResult.Refused(ready.refusal)
+            is Prepared.Unavailable -> return StartResult.Failed(ready.message)
+            is Prepared.Ready -> ready
         }
         val outcome = CompletableDeferred<StartResult>()
         val job = scope.launch {
@@ -207,19 +240,37 @@ class SessionStarter(
             val bot: BotRequest? = null,
             /** The draft's text goes as the first message (a session's, a task's, a compose chat's bot). */
             val sendsMessage: Boolean = true,
+            /** A Claude chat started as a Mac background session (`start-claude-agent`), not spawned. */
+            val background: Boolean = false,
+            /** The background session's name from the first message; null names it after its folder, known once any worktree is made. */
+            val agentName: String? = null,
         ) : Prepared
+    }
+
+    /** A session the start made; [agentId] is the Mac background session it mirrors, when it is one. */
+    private data class Created(val sessionId: String, val agentId: String? = null)
+
+    /** How asking the machine for the session went. */
+    private sealed interface Creation {
+        data class Made(val created: Created) : Creation
+        data class Refused(val refusal: StartRefusal) : Creation
+        /** [unanswered]: the call failed before the machine's answer came back; the start may still be running there. */
+        data class Failed(val message: Words, val unanswered: Boolean = false) : Creation
+        /** A missing directory the person chose not to create. */
+        data object Declined : Creation
     }
 
     /** One pick with its fallbacks, as the hook's resolveOption: the first known key, else the first option. */
     private fun <T> resolveOption(options: List<T>, key: (T) -> String, preferred: List<String?>): T? =
         preferred.firstNotNullOfOrNull { wanted -> wanted?.let { options.find { option -> key(option) == wanted } } } ?: options.firstOrNull()
 
-    private fun prepare(
+    private suspend fun prepare(
         draft: NewSessionDraft,
         targetOverride: SpawnTargetOverride?,
         bot: BotRequest? = null,
         task: Boolean = false,
         botMessage: Boolean = false,
+        forceRegular: Boolean = false,
     ): Prepared {
         val machines = machines()
         val choice = findMachineChoice(collectMachineChoices(machines), draft.selectedMachineId)
@@ -315,12 +366,20 @@ class SessionStarter(
                 effortLevel = effort,
             )
         }
+        // A new Claude chat is a Mac background session where the daemon can start one. Bots and
+        // tasks are Happy Agent's; fork, duplicate and side chat never come through here.
+        val background = agent == AgentType.Claude && bot == null && !task && !forceRegular &&
+            machineActions.backgroundStartSupported(machine.id)
+        // The mirror takes no mode changes: the picks ride the start and are not pinned.
+        if (background) modes = null
         val signature = listOf(
             // A task has no place but its computer.
             machine.id, agent.wire, if (task) "task" else draftProjectId?.let { "project:$it" } ?: selectedPath, worktree,
             options.modelMode ?: options.modelId, options.permissionMode, options.effortLevel ?: options.effort,
             bot?.let { "bot:${it.name}:${it.faceSeed}" },
+            if (background) "background" else null,
         ).joinToString("\u0000")
+        val sendsMessage = bot == null || botMessage
         return Prepared.Ready(
             machine = machine,
             agent = agent,
@@ -331,7 +390,9 @@ class SessionStarter(
             signature = signature,
             modes = modes,
             bot = bot,
-            sendsMessage = bot == null || botMessage,
+            sendsMessage = sendsMessage,
+            background = background,
+            agentName = if (background && sendsMessage) claudeAgentNameFromMessage(draft.input.trim()) else null,
         )
     }
 
@@ -341,12 +402,13 @@ class SessionStarter(
         attachments: List<AttachmentPreview>,
         confirmDirectory: suspend (String) -> Boolean,
     ): StartResult {
-        val sessionId = createdSessions[prepared.signature] ?: when (val spawned = create(prepared, confirmDirectory)) {
-            is SpawnSessionResult.Success -> spawned.sessionId
-            is SpawnSessionResult.Error -> return StartResult.Failed(Words.Said(spawned.errorMessage))
-            is SpawnSessionResult.Pending -> return StartResult.Failed(Words.ours(R.string.home_start_still_syncing))
-            is SpawnSessionResult.RequestToApproveDirectoryCreation -> return StartResult.Abandoned
+        val created = createdSessions[prepared.signature] ?: when (val made = create(prepared, confirmDirectory)) {
+            is Creation.Made -> made.created
+            is Creation.Refused -> return StartResult.Refused(made.refusal)
+            is Creation.Failed -> return StartResult.Failed(made.message)
+            Creation.Declined -> return StartResult.Abandoned
         }
+        val sessionId = created.sessionId
         phaseState.value = StartPhase.Opening
         val job = currentCoroutineContext()[Job]
         var notices = emptyList<AttachmentNotice>()
@@ -372,17 +434,19 @@ class SessionStarter(
                 throw e
             } catch (e: Exception) {
                 // The session is kept for the next Send rather than spawned again.
-                createdSessions[prepared.signature] = sessionId
+                createdSessions[prepared.signature] = created
                 throw e
             }
             if (!sent.sent) {
-                createdSessions[prepared.signature] = sessionId
+                createdSessions[prepared.signature] = created
                 return if (sent.notices.isEmpty()) StartResult.Abandoned else StartResult.NotSent(sent.notices)
             }
             notices = sent.notices
         } catch (e: CancellationException) {
             createdSessions.remove(prepared.signature)
-            scope.launch { stopAbandoned(prepared, sessionId) }
+            // The session is put down: the next Send is a new start, never this one's answer again.
+            requestIds.remove(prepared.signature)
+            scope.launch { stopAbandoned(prepared, created) }
             throw e
         }
         createdSessions.remove(prepared.signature)
@@ -392,9 +456,9 @@ class SessionStarter(
         return StartResult.Started(sessionId, notices, faceFailure)
     }
 
-    /** The worktree, if one is asked for, then the spawn. */
+    /** The worktree, if one is asked for, then the spawn, or the background session's start. */
     @OptIn(ExperimentalCoroutinesApi::class)
-    private suspend fun create(prepared: Prepared.Ready, confirmDirectory: suspend (String) -> Boolean): SpawnSessionResult {
+    private suspend fun create(prepared: Prepared.Ready, confirmDirectory: suspend (String) -> Boolean): Creation {
         var options = prepared.options
         if (prepared.worktreeNew) {
             phaseState.value = StartPhase.Worktree
@@ -405,19 +469,67 @@ class SessionStarter(
         }
         phaseState.value = StartPhase.Spawning
         // The spawn outlives a Stop: whatever it hands back afterwards is put down.
-        val spawning = scope.async { spawn(options, prepared.publishedRetryAfterMs, confirmDirectory) }
-        val spawned = try {
+        val spawning = scope.async {
+            if (prepared.background) startInBackground(prepared, options, confirmDirectory) else spawnRegular(options, prepared.publishedRetryAfterMs, confirmDirectory)
+        }
+        val made = try {
             spawning.await()
         } catch (e: CancellationException) {
             requestIds.remove(prepared.signature)
             spawning.invokeOnCompletion { error ->
                 if (error == null) {
-                    (spawning.getCompleted() as? SpawnSessionResult.Success)?.let { scope.launch { stopAbandoned(prepared, it.sessionId) } }
+                    (spawning.getCompleted() as? Creation.Made)?.let { scope.launch { stopAbandoned(prepared, it.created) } }
                 }
             }
             throw e
         }
-        return spawned
+        // A start the Mac answered is finished there, and the daemon would hand the same answer back to the same
+        // request id for minutes: the next Send asks afresh. A call that never got its answer keeps the id, so a
+        // retry joins the start that may still be running rather than making a second one.
+        if (made is Creation.Refused || (made is Creation.Failed && prepared.background && !made.unanswered)) {
+            requestIds.remove(prepared.signature)
+        }
+        return made
+    }
+
+    private suspend fun spawnRegular(options: SpawnSessionOptions, publishedRetryAfterMs: Long?, confirmDirectory: suspend (String) -> Boolean): Creation =
+        when (val spawned = spawn(options, publishedRetryAfterMs, confirmDirectory)) {
+            is SpawnSessionResult.Success -> Creation.Made(Created(spawned.sessionId))
+            is SpawnSessionResult.Error -> Creation.Failed(Words.Said(spawned.errorMessage))
+            is SpawnSessionResult.Pending -> Creation.Failed(Words.ours(R.string.home_start_still_syncing))
+            is SpawnSessionResult.RequestToApproveDirectoryCreation -> Creation.Declined
+        }
+
+    /**
+     * `start-claude-agent` in [options]' directory (the new worktree's, when
+     * one was made), named from the first message or else after the folder.
+     * A missing folder is offered to be created, as a spawn's is; the
+     * approved ask goes under the same request id. The daemon keeps only an
+     * answer that left a session on the Mac, never "needs approval", so it
+     * hears the approval; and a retry after the approved answer was lost
+     * joins that start instead of making a second session.
+     */
+    private suspend fun startInBackground(prepared: Prepared.Ready, options: SpawnSessionOptions, confirmDirectory: suspend (String) -> Boolean): Creation {
+        var request = StartClaudeAgentRequest(
+            directory = options.directory,
+            name = prepared.agentName ?: claudeAgentName("", options.directory),
+            model = options.modelMode,
+            permissionMode = options.permissionMode,
+            effort = options.effortLevel,
+            clientRequestId = options.clientRequestId,
+        )
+        while (true) {
+            when (val result = machineActions.startClaudeAgent(prepared.machine.id, request)) {
+                is StartClaudeAgentResult.Success -> return Creation.Made(Created(result.sessionId, result.agentId))
+                is StartClaudeAgentResult.Untrusted -> return Creation.Refused(StartRefusal.UntrustedFolder(result.directory.ifEmpty { request.directory }))
+                is StartClaudeAgentResult.Failed ->
+                    return Creation.Failed(Words.Said(result.message), unanswered = result.code == StartClaudeAgentResult.CALL_FAILED)
+                is StartClaudeAgentResult.NeedsDirectoryApproval -> {
+                    if (request.approvedNewDirectoryCreation || !confirmDirectory(result.directory)) return Creation.Declined
+                    request = request.copy(approvedNewDirectoryCreation = true)
+                }
+            }
+        }
     }
 
     private suspend fun spawn(options: SpawnSessionOptions, publishedRetryAfterMs: Long?, confirmDirectory: suspend (String) -> Boolean): SpawnSessionResult {
@@ -441,13 +553,21 @@ class SessionStarter(
     /**
      * A session nobody is waiting for. Happy Agent's is killed; Happy CLI's
      * daemon is asked first, then the session, then the server retires it.
+     * A Mac background session this start made goes too, once its mirror
+     * is stopped: the daemon discards only the ones it started.
      */
-    private suspend fun stopAbandoned(prepared: Prepared.Ready, sessionId: String) {
+    private suspend fun stopAbandoned(prepared: Prepared.Ready, created: Created) {
+        val sessionId = created.sessionId
         if (prepared.agent == AgentType.Rig) {
             sessionActions.kill(sessionId)
             return
         }
-        if (machineActions.stopSession(prepared.machine.id, sessionId).success) return
+        stopSession(prepared.machine.id, sessionId)
+        created.agentId?.let { machineActions.discardClaudeAgent(prepared.machine.id, it) }
+    }
+
+    private suspend fun stopSession(machineId: String, sessionId: String) {
+        if (machineActions.stopSession(machineId, sessionId).success) return
         if (sessionActions.kill(sessionId).success) return
         sessionActions.archiveOnServer(sessionId)
     }

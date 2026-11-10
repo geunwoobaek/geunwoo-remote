@@ -19,6 +19,7 @@ import com.slopus.happy.model.collectMachineChoices
 import com.slopus.happy.model.collectSessionPlaces
 import com.slopus.happy.model.findMachineChoice
 import com.slopus.happy.model.formatPathRelativeToHome
+import com.slopus.happy.model.resolveAgentMachine
 import com.slopus.happy.model.resolveNewSessionOptions
 import com.slopus.happy.model.selectingAgent
 import com.slopus.happy.model.selectingProject
@@ -35,7 +36,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 
 /**
@@ -110,6 +113,24 @@ class NewSessionServices(
     val options: StateFlow<NewSessionOptions?> = resolved
         .map { it?.options }
         .stateIn(scope, SharingStarted.Eagerly, null)
+
+    /**
+     * Whether Send starts a Mac background session: a Claude chat (not a bot
+     * or a task) on a computer whose daemon can start one, as the starter
+     * decides it. The composers then offer no images and say the picks hold
+     * from the start.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val backgroundStart: StateFlow<Boolean> = options
+        .map { current ->
+            current?.takeIf { it.startAgent == AgentType.Claude }
+                ?.let { resolveAgentMachine(it.choice, AgentType.Claude) }
+                ?.takeIf { it.isOnline }
+                ?.id
+        }
+        .distinctUntilChanged()
+        .mapLatest { machineId -> machineId != null && machineActions.backgroundStartSupported(machineId) }
+        .stateIn(scope, SharingStarted.Eagerly, false)
 
     init {
         // HomeDock.tsx's effects: the draft follows the computer it names. Only

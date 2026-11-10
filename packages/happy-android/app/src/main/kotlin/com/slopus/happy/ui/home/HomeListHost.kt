@@ -8,7 +8,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.slopus.happy.model.displayName
 import com.slopus.happy.model.isRigMachine
-import com.slopus.happy.sync.OpenClaudeAgentResult
+import com.slopus.happy.model.HomeRowTarget
+import com.slopus.happy.model.isBackgroundAgentRowId
+import com.slopus.happy.model.resolveHomeRowTarget
 import com.slopus.happy.sync.awaitSyncBriefly
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -61,8 +63,8 @@ class HomeListScope(
     val syncing: Boolean = false,
     /** The migration card over the list, if it shows. */
     val migration: MigrationPath? = null,
-    /** The Mac's background Claude sessions, over the chats. */
-    val claudeAgents: ClaudeAgentsUi? = null,
+    /** Why a Mac lists no background sessions, in one line over the chats. */
+    val agentsNotice: ClaudeAgentsNoticeLine? = null,
     /** Pull to refresh: syncs, and lists the Mac's background sessions again. */
     val onRefresh: (suspend () -> Unit)? = null,
 )
@@ -144,11 +146,34 @@ fun HomeListHost(graph: AppGraph, navigation: HomeNavigation, phone: Boolean = f
     val createWorkspaceLabel = stringResource(R.string.home_create_workspace)
     val cancelLabel = stringResource(R.string.common_cancel)
 
-    val callbacks = remember(services, menus, navigation) {
+    // The Mac's background Claude sessions: listed while home is on screen (again every 10 s) and on pull to refresh.
+    val agentsModel = services.claudeAgents
+    val openScope = rememberCoroutineScope()
+    val errorTitle = stringResource(R.string.common_error)
+    val okLabel = stringResource(R.string.common_ok)
+    // A tap opens the chat, or first opens (or reopens) the mirror of a Mac background session.
+    val openRow = remember(services, onOpenSession, errorTitle, okLabel) {
+        { id: String ->
+            when (val target = resolveHomeRowTarget(id, services.snapshots.value?.sessions.orEmpty(), agentsModel.listings.value)) {
+                is HomeRowTarget.Chat -> onOpenSession(target.sessionId)
+                is HomeRowTarget.Agent -> {
+                    openScope.launch {
+                        openHomeRow(target, agentsModel::open, onOpenSession, agentsModel::refreshMachine) { message ->
+                            showAlert(Alert(errorTitle, message.ifEmpty { errorTitle }, listOf(AlertButton(okLabel))))
+                        }
+                    }
+                    Unit
+                }
+            }
+        }
+    }
+
+    val callbacks = remember(services, menus, navigation, openRow) {
         HomeListCallbacks(
-            onOpen = onOpenSession,
-            onMenu = menus::open,
-            onArchive = menus::swipe,
+            onOpen = openRow,
+            // An unopened Mac session has no chat yet: nothing to show a menu of, archive or preload.
+            onMenu = { id -> if (!isBackgroundAgentRowId(id)) menus.open(id) },
+            onArchive = { id -> if (!isBackgroundAgentRowId(id)) menus.swipe(id) },
             onSetArchiveHidden = { hidden -> graph.settings.change { it.copy(hideInactiveSessions = hidden) } },
             onToggleProject = { id ->
                 graph.localSettings.change { it.copy(expandedProjects = it.expandedProjects + (id to it.expandedProjects[id].let { open -> open != true })) }
@@ -158,7 +183,7 @@ fun HomeListHost(graph: AppGraph, navigation: HomeNavigation, phone: Boolean = f
             onProjectMenu = { name, origin ->
                 alert = Alert(name, null, listOf(AlertButton(cancelLabel), AlertButton(createWorkspaceLabel) { onCreateWorkspace(origin) }))
             },
-            onPressDown = { id -> graph.account.value?.messages?.preload(id) },
+            onPressDown = { id -> if (!isBackgroundAgentRowId(id)) graph.account.value?.messages?.preload(id) },
         )
     }
     // Linking from the empty home approves the code with this account, as Settings' scan does (not
@@ -197,11 +222,8 @@ fun HomeListHost(graph: AppGraph, navigation: HomeNavigation, phone: Boolean = f
             .collect { services.homeListOffsets[accountKey] = it }
     }
 
-    // The Mac's background Claude sessions: listed while home is on screen (again every 10 s) and on pull to refresh.
     val snapshot by services.snapshots.collectAsStateWithLifecycle()
-    val agentsModel = remember(services) { ClaudeAgentsModel { services.machineOps } }
     val agentListings by agentsModel.listings.collectAsStateWithLifecycle()
-    val agentsOpening by agentsModel.opening.collectAsStateWithLifecycle()
     // Happy Agent machines (rig) have no such daemon.
     val agentMachines = remember(snapshot?.machines) { snapshot?.machines.orEmpty().filter { it.isOnline && !it.metadata.isRigMachine() } }
     val agentMachineIds = remember(agentMachines) { agentMachines.map { it.id } }
@@ -209,29 +231,8 @@ fun HomeListHost(graph: AppGraph, navigation: HomeNavigation, phone: Boolean = f
     LaunchedEffect(agentsModel, agentMachineIds, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { agentsModel.keepListed(agentMachineIds) }
     }
-    // A mirror that is live in the list has its own row; one whose row sits in the archive is still opened from here.
-    val liveSessionIds = remember(snapshot?.sessions) { snapshot?.sessions.orEmpty().filter { it.active }.mapTo(HashSet()) { it.id } }
-    val agentBlocks = remember(agentMachines, agentListings, liveSessionIds) {
-        claudeAgentBlocks(agentMachineIds, agentMachines.associate { it.id to it.displayName() }, agentListings, liveSessionIds)
-    }
-    val openScope = rememberCoroutineScope()
-    val errorTitle = stringResource(R.string.common_error)
-    val okLabel = stringResource(R.string.common_ok)
-    val claudeAgents = remember(agentBlocks, agentsOpening, agentsModel, onOpenSession, errorTitle, okLabel) {
-        ClaudeAgentsUi(agentBlocks, agentsOpening) { machineId, agentId ->
-            openScope.launch {
-                when (val result = agentsModel.open(machineId, agentId)) {
-                    null -> Unit
-                    is OpenClaudeAgentResult.Success -> {
-                        onOpenSession(result.sessionId)
-                        // Its mirror session exists now: the list drops it once that shows on the home.
-                        agentsModel.refreshMachine(machineId)
-                    }
-                    is OpenClaudeAgentResult.Error ->
-                        showAlert(Alert(errorTitle, result.message.ifEmpty { errorTitle }, listOf(AlertButton(okLabel))))
-                }
-            }
-        }
+    val agentsNotice = remember(agentMachines, agentListings) {
+        claudeAgentsNoticeLine(agentMachines.map { it.id to it.displayName() }, agentListings)
     }
     // The indicator stops after CLAUDE_AGENTS_SYNC_WAIT_MS even offline, where the sync never ends (it goes on after).
     val refresh = remember(agentsModel, agentMachineIds, graph) {
@@ -246,7 +247,7 @@ fun HomeListHost(graph: AppGraph, navigation: HomeNavigation, phone: Boolean = f
     }
 
     ProvideAvatarSettings(settings) {
-        content(HomeListScope(state, connection, settings.sessionListGrouping, callbacks, actions, update, navigation, listState, syncing, migration, claudeAgents, refresh))
+        content(HomeListScope(state, connection, settings.sessionListGrouping, callbacks, actions, update, navigation, listState, syncing, migration, agentsNotice, refresh))
     }
     duplicating?.let { session ->
         DuplicateSheet(

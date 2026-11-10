@@ -90,6 +90,22 @@ fun newSessionLabels(resources: Resources, now: () -> Long = System::currentTime
     lastSeen = { resources.getString(R.string.status_last_seen, formatLastSeen(resources, it, now())) },
 )
 
+/**
+ * A refused start as an alert. An untrusted folder says what to do on the
+ * Mac and offers [openRegular], the same chat started as a regular session.
+ */
+fun startRefusalAlert(resources: Resources, refusal: StartRefusal, openRegular: () -> Unit): Alert = when (refusal) {
+    is StartRefusal.UntrustedFolder -> Alert(
+        resources.getString(R.string.home_start_untrusted_folder_title),
+        resources.words(refusal.words),
+        listOf(
+            AlertButton(resources.getString(R.string.common_cancel)),
+            AlertButton(resources.getString(R.string.home_start_open_as_regular), onClick = openRegular),
+        ),
+    )
+    else -> Alert(resources.getString(R.string.common_error), resources.words(refusal.words), listOf(AlertButton(resources.getString(R.string.common_ok))))
+}
+
 /** A bot that was made without its face, and how to open it once the person has answered. */
 private data class FaceRetry(val sessionId: String, val bot: BotDraft, val failure: BotFaceFailure, val open: () -> Unit)
 
@@ -126,6 +142,8 @@ fun rememberNewSessionDock(
     // A bot is Happy Agent's to make, and only a daemon new enough to say so offers it.
     val supportsBots = options?.supportsBots == true
     val creatingBot = botDraft.creating && supportsBots
+    // A new Claude chat that starts as a Mac background session: no images, and its picks hold from the start.
+    val background by newSession.backgroundStart.collectAsStateWithLifecycle()
     val facePictures by produceState(List<BotFacePicture?>(botDraft.seeds.size) { null }, botFaces, botDraft.seeds) {
         value = botDraft.seeds.map { seed -> runCatching { botFaces.picture(seed) }.getOrNull() }
     }
@@ -159,14 +177,16 @@ fun rememberNewSessionDock(
                 if (newSession.starter.phase.value != null) return@submit
                 val bot = newSession.bot.value.takeIf { it.creating && newSession.options.value?.supportsBots == true }
                 val text = prompt.trim()
-                val images = if (bot != null) emptyList() else picker.images.toList()
+                // A Mac background session takes no images: none are offered, and none picked before go.
+                val images = if (bot != null || newSession.backgroundStart.value) emptyList() else picker.images.toList()
                 // A bot is made from its name; the prompt typed for a session is left as it was.
                 if (bot == null && text.isEmpty() && images.isEmpty()) return@submit
                 if (bot != null && !isValidBotName(bot.name)) return@submit
                 if (bot == null) newSession.setInput(text)
-                scope.launch {
+                // forceRegular: the untrusted folder's "Open as regular session" starts it again, not in the background.
+                fun launchStart(forceRegular: Boolean) { scope.launch {
                     val request = bot?.let { BotRequest(it.name.trim(), it.faceSeed) }
-                    val result = newSession.starter.start(attachments = images, bot = request) { directory ->
+                    val result = newSession.starter.start(attachments = images, bot = request, forceRegular = forceRegular) { directory ->
                         CompletableDeferred<Boolean>().also { confirming = directory to it }.await()
                     }
                     when (result) {
@@ -192,11 +212,12 @@ fun rememberNewSessionDock(
                             }
                         }
                         is StartResult.NotSent -> notices = result.notices.map { attachmentNoticeAlert(it, resources) }
-                        is StartResult.Refused -> alert = Alert(strings.error, resources.getString(result.refusal.text), listOf(AlertButton(strings.ok)))
+                        is StartResult.Refused -> alert = startRefusalAlert(resources, result.refusal) { launchStart(forceRegular = true) }
                         is StartResult.Failed -> alert = Alert(strings.error, resources.words(result.message), listOf(AlertButton(strings.ok)))
                         StartResult.Abandoned -> Unit
                     }
-                }
+                } }
+                launchStart(forceRegular = false)
             },
             onCancel = { newSession.starter.cancel() },
             onSelect = { page, key ->
@@ -232,8 +253,9 @@ fun rememberNewSessionDock(
     val state = HomeDockState(
         prompt, options, labels, phase, focused, showScrim,
         images = picker.images.toList(),
-        canAttachImages = !creatingBot,
+        canAttachImages = !creatingBot && !background,
         bot = bot,
+        startOnlyModes = background && !creatingBot,
     )
     return NewSessionDock(state, actions) {
         alert?.let { HappyAlert(it, onDismiss = { alert = null }) }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +46,7 @@ import com.slopus.happy.model.SessionRowData
 import com.slopus.happy.model.SessionState
 import com.slopus.happy.model.VisibleGitChanges
 import com.slopus.happy.model.compactCount
+import com.slopus.happy.model.isBackgroundAgent
 import com.slopus.happy.model.resolveFlatRowPresentation
 import com.slopus.happy.model.visibleGitChanges
 import com.slopus.happy.ui.components.Avatar
@@ -73,6 +75,7 @@ object FlatRowTags {
     const val GIT = "flatRow.git"
     const val DIVIDER = "flatRow.divider"
     const val ARCHIVE_ACTION = "flatRow.archiveAction"
+    const val OPENING = "flatRow.opening"
 }
 
 /** FlatSessionRow.tsx */
@@ -187,7 +190,8 @@ fun FlatSessionRow(
 
     // A task's swipe leaves it, where its machine takes that; it never archives.
     SwipeToArchive(
-        enabled = !archiving && (!session.task || session.leavesTask),
+        // An unopened Mac background session has no chat yet to archive.
+        enabled = !archiving && !session.isBackgroundAgent && (!session.task || session.leavesTask),
         onArchive = { callbacks.onArchive(session.id) },
         leave = session.task,
         modifier = if (carded) modifier.fillMaxHeight() else modifier,
@@ -255,7 +259,12 @@ fun FlatSessionRow(
                             modifier = Modifier.wrapContentHeight(unbounded = carded),
                         )
                     }
-                    TopRight(presentation.topRight, session.state, if (carded) HomeCardSpec.dot else FlatRowSpec.topRightDot)
+                    if (session.opening) {
+                        // Its Mac background session's mirror is being opened.
+                        OpeningProgress(if (carded) HomeCardSpec.dot else FlatRowSpec.topRightDot)
+                    } else {
+                        TopRight(presentation.topRight, session.state, if (carded) HomeCardSpec.dot else FlatRowSpec.topRightDot)
+                    }
                 }
                 Text(
                     text = row.projectName,
@@ -311,6 +320,21 @@ fun FlatSessionRow(
                     .background(colors.divider),
             )
         }
+    }
+}
+
+/** A small spinner in the corner's slot while the row's Mac background session is being opened. */
+@Composable
+private fun OpeningProgress(size: Dp) {
+    Box(
+        modifier = Modifier
+            .padding(start = FlatRowSpec.topRightGap)
+            .testTag(FlatRowTags.OPENING)
+            .width(size)
+            .height(FlatRowSpec.topRightHeight),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(size), color = HappyTheme.colors.textSecondary, strokeWidth = 2.dp)
     }
 }
 

@@ -31,6 +31,7 @@ object HomeDockTags {
     const val INPUT = "homeDock.input"
     const val ACTION_ROW = "homeDock.actionRow"
     const val PERMISSION = "homeDock.permission"
+    const val START_ONLY_HINT = "homeDock.startOnlyHint"
     const val MODEL = "homeDock.model"
     const val EFFORT = "homeDock.effort"
     const val PRIMARY = "homeDock.primary"
@@ -142,6 +143,8 @@ class HomeDockState(
     val canAttachImages: Boolean = true,
     /** Session | Bot, while the computer's Happy Agent makes bots; null otherwise. */
     val bot: HomeDockBot? = null,
+    /** The chat starts as a Mac background session: its model, mode and effort can't change once started, which a line under the chips says. */
+    val startOnlyModes: Boolean = false,
 ) {
     val creatingBot: Boolean get() = bot?.creating == true
 }

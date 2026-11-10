@@ -163,8 +163,8 @@ fun HomeScreen(
     syncing: Boolean = false,
     /** What the title shows of the link, debounced ([com.slopus.happy.ui.chat.rememberShownLinkState]) by [LegacyHome]; as the socket stands by default. */
     link: LinkState = accountLinkState(connectionStatus == ConnectionStatus.CONNECTED, catchingUp = syncing || state == null, network = true),
-    /** The Mac's background Claude sessions, over the list; null shows none. */
-    claudeAgents: ClaudeAgentsUi? = null,
+    /** Why a Mac lists no background sessions, one line over the list; null says nothing. */
+    agentsNotice: ClaudeAgentsNoticeLine? = null,
     /** Pull to refresh over the list; null leaves the list as it is. */
     onRefresh: (suspend () -> Unit)? = null,
 ) {
@@ -208,10 +208,9 @@ fun HomeScreen(
                 }
                 state.emptyState == HomeEmptyState.NoSessions -> Box(below) {
                     val onShowArchived = if (state.hasArchivedSessions) showArchived else null
-                    // A Mac's background Claude sessions are the way in on a first, empty home, and a
-                    // session started on the Mac later is found by pulling, so it pulls with or without them.
-                    if (claudeAgents != null || onRefresh != null) {
-                        NoSessionsWithAgents(claudeAgents, onRefresh, actions.onCompose, onShowArchived)
+                    // A session started on the Mac later is found by pulling, so the empty home pulls too.
+                    if (agentsNotice != null || onRefresh != null) {
+                        NoSessionsWithAgents(agentsNotice, onRefresh, actions.onCompose, onShowArchived)
                     } else {
                         NoSessionsState(onNewSession = actions.onCompose, onShowArchived = onShowArchived)
                     }
@@ -232,7 +231,7 @@ fun HomeScreen(
                         },
                         carded = true,
                         selectedSessionId = MainPanelKey.sessionId(sidebar?.selected),
-                        claudeAgents = claudeAgents,
+                        agentsNotice = agentsNotice,
                     )
                 }
             }
@@ -297,8 +296,8 @@ fun HomeList(
     listState: LazyListState = rememberLazyListState(),
     carded: Boolean = false,
     migration: MigrationPath? = null,
-    /** The Mac's background Claude sessions, ahead of the chats. */
-    claudeAgents: ClaudeAgentsUi? = null,
+    /** Why a Mac lists no background sessions, one line ahead of the chats. */
+    agentsNotice: ClaudeAgentsNoticeLine? = null,
 ) {
     val colors = HappyTheme.colors
     val flat = state.grouping == SessionListGrouping.Flat
@@ -321,11 +320,9 @@ fun HomeList(
                 HomeBanners(state.offlineBanner, update, actions, migration)
             }
         }
-        // A slot that is always there, empty until blocks arrive: a section inserted above a list sitting at
+        // A slot that is always there, empty until a notice arrives: a line inserted above a list sitting at
         // the top would be kept off-screen by the list's key anchoring, and only a standing item grows in place.
-        if (claudeAgents != null) {
-            item(key = "claude-agents", contentType = "claude-agents") { ClaudeAgentsSection(claudeAgents) }
-        }
+        item(key = "claude-agents-notice", contentType = "claude-agents-notice") { agentsNotice?.let { ClaudeAgentsNoticeText(it) } }
         if (carded) {
             items(state.cards, key = { it.key }, contentType = { (it.row as? HomeRow.Project)?.row?.let { row -> row::class } ?: it.row::class }) { entry ->
                 HomeCardItem(entry, callbacks, selectedSessionId)

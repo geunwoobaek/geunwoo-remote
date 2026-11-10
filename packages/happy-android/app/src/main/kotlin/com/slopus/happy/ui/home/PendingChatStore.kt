@@ -174,7 +174,7 @@ class PendingChatStarter(
                         handover.retire(chat.id)
                     }
                     is StartResult.Refused -> {
-                        failed(Words.ours(result.refusal.text))
+                        failed(result.refusal.words)
                         handover.retire(chat.id)
                     }
                     is StartResult.NotSent, StartResult.Abandoned -> handover.retire(chat.id)

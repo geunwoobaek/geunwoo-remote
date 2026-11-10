@@ -249,6 +249,18 @@ internal fun FocusedComposer(
             }
             PrimaryButton(button, refusal, creatingBot = state.creatingBot, onClick = if (button == StartButton.Stop) onStop else actions.onSubmit)
         }
+        if (state.startOnlyModes) {
+            Text(
+                stringResource(R.string.home_start_modes_apply_at_start),
+                style = HomeDockSpec.chip,
+                color = colors.textSecondary,
+                modifier = Modifier
+                    .testTag(HomeDockTags.START_ONLY_HINT)
+                    .fillMaxWidth()
+                    .padding(horizontal = HomeDockSpec.inputPaddingHorizontal)
+                    .graphicsLayer { alpha = actionsShown },
+            )
+        }
     }
 }
 

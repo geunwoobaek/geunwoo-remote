@@ -98,6 +98,10 @@
     <string name="home_start_configuration_unavailable">Выбранная конфигурация агента недоступна</string>
     <string name="home_start_still_syncing">Сессия создана, но ещё синхронизируется. Скоро она появится.</string>
     <string name="home_start_failed">Не удалось начать сессию</string>
+    <string name="home_start_untrusted_folder_title">Папка не доверена на Mac</string>
+    <string name="home_start_untrusted_folder_body">Claude на Mac ещё не доверяет %1$s. Откройте там терминал, один раз запустите `claude` и примите запрос, затем попробуйте снова.</string>
+    <string name="home_start_open_as_regular">Открыть как обычную сессию</string>
+    <string name="home_start_modes_apply_at_start">Модель, режим и усилие применяются при запуске чата.</string>
     <string name="home_first_message_failed">Не удалось отправить первое сообщение</string>
     <string name="home_not_signed_in">Вход не выполнен</string>
     <string name="home_bot_name_empty">Дайте боту имя</string>

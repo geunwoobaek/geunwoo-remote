@@ -81,6 +81,9 @@ import com.slopus.happy.ui.components.PromptModal
 import com.slopus.happy.ui.home.HomeServices
 import com.slopus.happy.ui.home.NewSessionServices
 import com.slopus.happy.ui.home.StartResult
+import com.slopus.happy.ui.home.startRefusalAlert
+import com.slopus.happy.attachments.AttachmentPreview
+import com.slopus.happy.model.BotDraft
 import com.slopus.happy.ui.home.pageTitle
 import com.slopus.happy.ui.home.startProgressText
 import java.util.UUID
@@ -216,7 +219,8 @@ class ComposeChat internal constructor(
     fun send(text: String, images: ImagePicker?, keepDraft: suspend (sessionId: String, text: String) -> Unit) {
         if (!composing || starting) return
         val prompt = text.trim()
-        val picked = images?.images?.toList().orEmpty()
+        // A Mac background session takes no images: none are offered, and none picked before go.
+        val picked = if (newSession.backgroundStart.value) emptyList() else images?.images?.toList().orEmpty()
         if (prompt.isEmpty() && picked.isEmpty()) return
         newSession.setInput(prompt)
         // The folder the chat shows is where it starts, even if the computer's chats came in a moment ago.
@@ -232,11 +236,24 @@ class ComposeChat internal constructor(
             alert = error(resources.getString(warning))
             return
         }
+        launchStart(kind, bot, picked, images, keepDraft, forceRegular = false)
+    }
+
+    /** [forceRegular]: the untrusted folder's "Open as regular session" starts it again, not in the background. */
+    private fun launchStart(
+        kind: ComposeKind,
+        bot: BotDraft,
+        picked: List<AttachmentPreview>,
+        images: ImagePicker?,
+        keepDraft: suspend (sessionId: String, text: String) -> Unit,
+        forceRegular: Boolean,
+    ) {
+        if (!composing || starting) return
         starting = true
         scope.launch {
             try {
                 val request = if (kind == ComposeKind.Bot) BotRequest(bot.name.trim(), bot.faceSeed) else null
-                val result = newSession.starter.start(attachments = picked, bot = request, botMessage = true, task = kind == ComposeKind.Task) { directory ->
+                val result = newSession.starter.start(attachments = picked, bot = request, botMessage = true, task = kind == ComposeKind.Task, forceRegular = forceRegular) { directory ->
                     CompletableDeferred<Boolean>().also { confirming = directory to it }.await()
                 }
                 when (result) {
@@ -255,7 +272,9 @@ class ComposeChat internal constructor(
                         if (rest.isNotBlank()) newSession.setInput("")
                     }
                     is StartResult.NotSent -> notices = result.notices.map { attachmentNoticeAlert(it, resources) }
-                    is StartResult.Refused -> alert = error(resources.getString(result.refusal.text))
+                    is StartResult.Refused -> alert = startRefusalAlert(resources, result.refusal) {
+                        launchStart(kind, bot, picked, images, keepDraft, forceRegular = true)
+                    }
                     is StartResult.Failed -> alert = error(resources.words(result.message))
                     StartResult.Abandoned -> Unit
                 }
@@ -432,6 +451,7 @@ fun ComposeTarget(compose: ComposeChat, onReturn: () -> Unit = {}) {
     val draft by newSession.draft.collectAsStateWithLifecycle()
     val kind by newSession.kind.collectAsStateWithLifecycle()
     val bot by newSession.bot.collectAsStateWithLifecycle()
+    val background by newSession.backgroundStart.collectAsStateWithLifecycle()
     // The folders follow the computer, while nothing has started.
     // Its chats may arrive after it: the most recent folder is looked for again as its places come in.
     LaunchedEffect(draft.selectedMachineId, draft.selectedPath, draft.selectedProjectId, options?.projects?.size) {
@@ -508,18 +528,31 @@ fun ComposeTarget(compose: ComposeChat, onReturn: () -> Unit = {}) {
             )
         },
         rows = rows,
-        note = if (kind == ComposeKind.Bot) {
-            {
-                Text(
-                    stringResource(R.string.home_dock_bot_lede),
-                    style = NewWorkSpec.note,
-                    color = HappyTheme.colors.textSecondary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().testTag(NewWorkTags.NOTE),
-                )
+        note = when {
+            kind == ComposeKind.Bot -> {
+                {
+                    Text(
+                        stringResource(R.string.home_dock_bot_lede),
+                        style = NewWorkSpec.note,
+                        color = HappyTheme.colors.textSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().testTag(NewWorkTags.NOTE),
+                    )
+                }
             }
-        } else {
-            null
+            // A Mac background session's model, mode and effort can't change once it runs.
+            kind == ComposeKind.Session && background -> {
+                {
+                    Text(
+                        stringResource(R.string.home_start_modes_apply_at_start),
+                        style = NewWorkSpec.note,
+                        color = HappyTheme.colors.textSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().testTag(NewWorkTags.NOTE),
+                    )
+                }
+            }
+            else -> null
         },
         modifier = Modifier.testTag(ComposeChatTags.TARGET),
     )

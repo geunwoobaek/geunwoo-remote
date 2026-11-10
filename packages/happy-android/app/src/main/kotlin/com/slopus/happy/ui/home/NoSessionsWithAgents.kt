@@ -11,15 +11,15 @@ import androidx.compose.ui.unit.dp
 import com.slopus.happy.ui.components.HomeCardSpec
 
 /**
- * The home with no chats yet: the Mac's background Claude sessions (when it
- * has any to open), the "No sessions yet" state under them, and pull to
- * refresh over both. It pulls with no sessions listed too, so one started on
+ * The home with no chats yet: the line saying why a Mac lists no background
+ * sessions (when one cannot), the "No sessions yet" state under it, and pull
+ * to refresh over both. It pulls with no sessions listed too, so one started on
  * the Mac after home opened can be found without leaving. A list, not a bare
  * page, so the pull has something to ride on.
  */
 @Composable
 fun NoSessionsWithAgents(
-    claudeAgents: ClaudeAgentsUi?,
+    agentsNotice: ClaudeAgentsNoticeLine?,
     onRefresh: (suspend () -> Unit)?,
     onNewSession: () -> Unit,
     onShowArchived: (() -> Unit)?,
@@ -27,8 +27,8 @@ fun NoSessionsWithAgents(
 ) {
     HomeRefreshBox(onRefresh, indicatorTop = 0.dp, modifier = modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize().testTag(HomeTags.LIST), contentPadding = PaddingValues(top = HomeCardSpec.contentTop)) {
-            if (claudeAgents != null) {
-                item(key = "claude-agents", contentType = "claude-agents") { ClaudeAgentsSection(claudeAgents) }
+            if (agentsNotice != null) {
+                item(key = "claude-agents-notice", contentType = "claude-agents-notice") { ClaudeAgentsNoticeText(agentsNotice) }
             }
             item(key = "no-sessions", contentType = "no-sessions") {
                 Box(Modifier.fillParentMaxHeight()) { NoSessionsState(onNewSession = onNewSession, onShowArchived = onShowArchived) }
