@@ -8,7 +8,10 @@
  * transcript holds an unanswered call that matches the screen, else
  * `screen:<dialogFingerprint>:<unique>`, where the suffix is new for every occurrence so that an
  * identical dialog asked again is a new card (Claude Code 2.1.319 often writes AskUserQuestion
- * and some Write/Edit calls only after they are answered). When the dialog goes away, the request is completed from the transcript's
+ * and some Write/Edit calls only after they are answered). When the call does reach the
+ * transcript while its `screen:` request is open, the request moves to the `tool_use` id (same
+ * `createdAt`) and the old key is completed as `canceled` / `moved-to-tool-call`, which the app
+ * hides, so one dialog stays one card. When the dialog goes away, the request is completed from the transcript's
  * `tool_result`, so an answer given on the Mac shows on the phone as approved or denied.
  *
  * `answer` types the phone's answer only when it is provably the same dialog:
@@ -135,6 +138,8 @@ type Step = ({ key: AttachKey } | { text: string }) & { expect?: (progress: Dial
 const MAX_MISSES = 5;
 const ANSWER_ON_MAC = 'answer-on-mac';
 const TYPING_FAILED = 'typing-failed';
+/** A `screen:` request whose call reached the transcript while its dialog was open: it now lives under the `tool_use` id. */
+const MOVED_TO_TOOL_CALL = 'moved-to-tool-call';
 const ANSWERABLE: readonly DialogKind[] = ['permission', 'question', 'plan'];
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -214,6 +219,8 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
     const completedScreens = new Map<string, { key: string; transcriptLength: number }>();
     /** Distinguishes two `screen:` requests made in the same millisecond. */
     let screenRequests = 0;
+    /** Old `screen:` key → transcript key, for a phone answer sent to a card before it moved. */
+    const movedKeys = new Map<string, string>();
     /** The last screen read while waiting: skipped while the same request is open and the transcript is unchanged. */
     let lastSeen: { key: string; transcriptLength: number } | null = null;
     let queue: Promise<unknown> = Promise.resolve();
@@ -334,7 +341,8 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
         const existing = [...open.values()].find((request) => request.fingerprint === fingerprint || (matched && request.toolUseId === pending.id));
         if (existing !== undefined) {
             existing.misses = 0;
-            return existing.key;
+            const movable = matched && existing.toolUseId === null && !existing.refused && !open.has(pending.id) && !completedAt.has(pending.id);
+            return movable ? moveToToolUse(existing, pending) : existing.key;
         }
         const completedScreen = matched ? undefined : completedScreens.get(fingerprint);
         if (completedScreen !== undefined && entries.length <= completedScreen.transcriptLength) {
@@ -376,6 +384,42 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
         });
         deps.notifyPermission(request.tool);
         return key;
+    }
+
+    /**
+     * The open `screen:` request's call was written to the transcript while its dialog is still
+     * drawn: re-key it to the `tool_use` id (keeping `createdAt`, so the card keeps its place) and
+     * complete the old key as `canceled` with `MOVED_TO_TOOL_CALL`. Otherwise the app shows two
+     * cards for one dialog, the `screen:` card and the transcript row with no request on it. The
+     * old key carries no `toolUseId`, so the app does not fold it into the transcript row. No new
+     * notification: it is the same dialog.
+     */
+    function moveToToolUse(request: OpenRequest, pending: PendingToolUse): string {
+        const oldKey = request.key;
+        const moved: OpenRequest = { ...request, key: pending.id, tool: pending.name, input: pending.input, toolUseId: pending.id };
+        open.delete(oldKey);
+        open.set(moved.key, moved);
+        movedKeys.set(oldKey, moved.key);
+        deps.updateAgentState((state) => {
+            const requests = { ...state.requests };
+            delete requests[oldKey];
+            return {
+                ...state,
+                requests: { ...requests, [moved.key]: { tool: moved.tool, arguments: moved.input, createdAt: moved.createdAt } },
+                completedRequests: {
+                    ...state.completedRequests,
+                    [oldKey]: {
+                        tool: request.tool,
+                        arguments: request.input,
+                        createdAt: request.createdAt,
+                        completedAt: deps.now(),
+                        status: 'canceled',
+                        reason: MOVED_TO_TOOL_CALL,
+                    },
+                },
+            };
+        });
+        return moved.key;
     }
 
     /** The user's pane, or null when there is none or it cannot be opened. */
@@ -564,7 +608,7 @@ export function createPermissionBridge(deps: PermissionBridgeDeps): PermissionBr
     }
 
     async function answer(response: PermissionResponse): Promise<'typed' | 'refused'> {
-        const request = open.get(response.id);
+        const request = open.get(response.id) ?? open.get(movedKeys.get(response.id) ?? '');
         if (request === undefined || request.refused) {
             return 'refused';
         }

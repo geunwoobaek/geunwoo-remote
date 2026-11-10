@@ -259,6 +259,49 @@ class ClaudeAgentMirrorTest {
         assertEquals(listOf("toolu_1"), state.rows().map { it.tool.callId })
     }
 
+    @Test fun `a screen card moved to its tool call leaves one card that can be answered`() {
+        // The CLI raised the card before the call reached the transcript; once the call was written
+        // while the dialog was still open, it moved the request to the tool_use id.
+        val state = ReducerState(now = { 999_999 })
+        state.reduce(emptyList(), agentState(screenPending), mirrorOptions)
+        val moved = agentState(
+            """{"requests":{"toolu_1":{"tool":"Bash","arguments":{"command":"ls"},"createdAt":1000}},""" +
+                """"completedRequests":{"screen:abc":{"tool":"Bash","arguments":{"command":"ls"},"createdAt":1000,"completedAt":1200,""" +
+                """"status":"canceled","reason":"moved-to-tool-call"}}}""",
+        )
+
+        val result = state.reduce(
+            listOf(agentMsg("a1", 2000, toolUse("toolu_1", "Bash", """{"command":"ls"}"""))),
+            moved,
+            mirrorOptions,
+        )
+
+        assertEquals(1, result.hiddenMessageIds.size)
+        val rows = state.rows()
+        assertEquals(listOf("toolu_1"), rows.map { it.tool.callId })
+        assertEquals(PermissionStatus.Pending, rows.single().tool.permission?.status)
+        assertEquals("toolu_1", rows.single().tool.permission?.id)
+
+        // Applying the state again keeps it hidden.
+        state.reduce(emptyList(), moved, mirrorOptions)
+        assertEquals(listOf("toolu_1"), state.rows().map { it.tool.callId })
+    }
+
+    @Test fun `a moved screen card leaves even before its row arrives`() {
+        val state = ReducerState(now = { 999_999 })
+        val result = state.reduce(
+            emptyList(),
+            agentState(
+                """{"requests":{"toolu_1":{"tool":"Bash","arguments":{"command":"ls"},"createdAt":1000}},""" +
+                    """"completedRequests":{"screen:abc":{"tool":"Bash","arguments":{"command":"ls"},"createdAt":1000,"completedAt":1200,""" +
+                    """"status":"canceled","reason":"moved-to-tool-call"}}}""",
+            ),
+            mirrorOptions,
+        )
+        assertTrue(result.messages.none { it.tool.callId == "screen:abc" })
+        assertEquals(listOf("toolu_1"), state.rows().map { it.tool.callId })
+    }
+
     @Test fun `a completed screen card is hidden when both arrive in one batch`() {
         val state = ReducerState(now = { 999_999 })
         val result = state.reduce(

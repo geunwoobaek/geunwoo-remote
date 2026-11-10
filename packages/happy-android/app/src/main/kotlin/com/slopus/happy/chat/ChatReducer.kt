@@ -659,13 +659,24 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
      * state request alone. Claims are recomputed each call and a hidden card
      * keeps its claim, so a card never reappears. Returns the ids hidden by
      * this call.
+     *
+     * A card the CLI retired as `moved-to-tool-call` leaves at once: its
+     * call reached the transcript while the dialog was open, and the request
+     * now stands on that call's row under the `tool_use` id.
      */
     private fun hideAnsweredScreenCards(): Set<String> {
         fun ReducerMessage.isScreenCard() = tool?.callId?.startsWith(SCREEN_REQUEST_PREFIX) == true
+        val newlyHidden = LinkedHashSet<String>()
+        for (card in messages.values) {
+            if (!card.hidden && card.isScreenCard() && card.tool?.permission?.reason == SCREEN_REQUEST_MOVED) {
+                card.hidden = true
+                newlyHidden.add(card.id)
+            }
+        }
         val cards = messages.values
             .filter { it.isScreenCard() && it.tool?.permission?.status == PermissionStatus.Approved }
             .sortedWith(compareBy<ReducerMessage> { it.createdAt }.thenBy { it.id.removePrefix("m").toLongOrNull() ?: Long.MAX_VALUE })
-        if (cards.none { !it.hidden }) return emptySet()
+        if (cards.none { !it.hidden }) return newlyHidden
         val nested = sidechainToolIdToMessageId.values.toSet()
         // Earliest first, so a card claims the earliest row it can.
         val rowsByTool = messages.values
@@ -673,7 +684,6 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
             .sortedBy { it.createdAt }
             .groupBy { it.tool!!.name }
         val claimed = HashSet<String>()
-        val newlyHidden = LinkedHashSet<String>()
         for (card in cards) {
             val from = card.createdAt - SCREEN_CARD_CLOCK_SKEW_MS
             val to = (permissions[card.tool?.callId]?.completedAt ?: card.createdAt) + SCREEN_CARD_ROW_WINDOW_MS
@@ -808,6 +818,9 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
 
 /** The CLI's request key for a dialog it read off the Mac's screen before its tool call reached the transcript. */
 private const val SCREEN_REQUEST_PREFIX = "screen:"
+
+/** The reason the CLI completes a `screen:` request with when it moved to its call's `tool_use` id. */
+private const val SCREEN_REQUEST_MOVED = "moved-to-tool-call"
 
 /** A card's time is the Mac CLI's clock and a row's is the server's record time, so a row may look a few seconds older than its card. */
 private const val SCREEN_CARD_CLOCK_SKEW_MS = 5_000L

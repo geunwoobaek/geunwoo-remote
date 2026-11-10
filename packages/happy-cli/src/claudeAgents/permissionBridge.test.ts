@@ -411,6 +411,74 @@ describe('createPermissionBridge tick', () => {
         expect(h.state.completedRequests?.[key]).toMatchObject({ tool: 'Unknown', status: 'canceled', reason: 'answer-on-mac' });
     });
 
+    it('a screen: request moves to the tool_use id when the call is written while the dialog is open', async () => {
+        const { h, bridge } = setup({ screen: screen('question-multi'), entries: [userText('ask me')] });
+        await bridge.tick();
+        const oldKey = onlyRequestKey(h.state);
+        expect(oldKey.startsWith('screen:')).toBe(true);
+
+        h.entries = [...h.entries, toolUse('toolu_pizza', 'AskUserQuestion', pizzaQuestions)];
+        await bridge.tick();
+
+        // One dialog, one card: the request now stands on the transcript row, the old card is retired.
+        expect(h.state.requests).toEqual({ toolu_pizza: { tool: 'AskUserQuestion', arguments: pizzaQuestions, createdAt: NOW } });
+        expect(h.state.completedRequests?.[oldKey]).toEqual({
+            tool: 'Unknown',
+            arguments: {},
+            createdAt: NOW,
+            completedAt: NOW,
+            status: 'canceled',
+            reason: 'moved-to-tool-call',
+        });
+        expect(h.notified).toEqual(['Unknown']);
+
+        // Ticking again keeps the moved request as it is.
+        h.entries = [...h.entries];
+        await bridge.tick();
+        expect(Object.keys(h.state.requests ?? {})).toEqual(['toolu_pizza']);
+
+        h.after = {
+            2: () => { h.screen = screen('question-multi-toggled'); },
+            3: () => { h.screen = screen('question-multi-second'); },
+            4: () => { h.screen = screen('question-review'); },
+        };
+        const answers = { 'Which toppings should the demo pizza have?': 'Cheese, Basil', 'Which size should the demo pizza be?': 'Medium' };
+        expect(await bridge.answer(response('toolu_pizza', true, { updatedInput: { answers } }))).toBe('typed');
+        expect(h.state.completedRequests?.toolu_pizza).toMatchObject({ status: 'approved', toolUseId: 'toolu_pizza' });
+        expect(h.state.completedRequests?.[oldKey]).toMatchObject({ reason: 'moved-to-tool-call' });
+    });
+
+    it('an answer sent to the old screen: key of a moved request answers the moved request', async () => {
+        const { h, bridge } = setup({ screen: screen('question-multi'), entries: [userText('ask me')] });
+        await bridge.tick();
+        const oldKey = onlyRequestKey(h.state);
+        h.entries = [...h.entries, toolUse('toolu_pizza', 'AskUserQuestion', pizzaQuestions)];
+        await bridge.tick();
+        h.after = {
+            2: () => { h.screen = screen('question-multi-toggled'); },
+            3: () => { h.screen = screen('question-multi-second'); },
+            4: () => { h.screen = screen('question-review'); },
+        };
+
+        const answers = { 'Which toppings should the demo pizza have?': 'Cheese, Basil', 'Which size should the demo pizza be?': 'Medium' };
+        expect(await bridge.answer(response(oldKey, true, { updatedInput: { answers } }))).toBe('typed');
+
+        expect(typing(h.log).filter((line) => line.startsWith('press:'))).toEqual(['press:1', 'press:3', 'press:tab', 'press:2', 'press:1']);
+        expect(h.state.completedRequests?.toolu_pizza).toMatchObject({ status: 'approved' });
+        expect(h.state.completedRequests?.[oldKey]).toMatchObject({ reason: 'moved-to-tool-call' });
+    });
+
+    it('a screen: request whose dialog does not match the written call is not moved', async () => {
+        const { h, bridge } = setup({ screen: screen('question-single'), entries: [userText('ask me')] });
+        await bridge.tick();
+        const key = onlyRequestKey(h.state);
+        h.entries = [...h.entries, toolUse('toolu_pizza', 'AskUserQuestion', pizzaQuestions)];
+        await bridge.tick();
+
+        expect(Object.keys(h.state.requests ?? {})).toEqual([key]);
+        expect(h.state.completedRequests?.[key]).toBeUndefined();
+    });
+
     it('does not publish a completed screen: dialog again until the transcript moves on', async () => {
         const { h, bridge } = setup({ screen: screen('question-single'), entries: [userText('ask me')] });
         await bridge.tick();
