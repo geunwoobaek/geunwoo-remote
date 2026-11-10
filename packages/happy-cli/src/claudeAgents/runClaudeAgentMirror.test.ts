@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AttachTerminal } from './attachTerminal';
 import type { Metadata } from '@/api/types';
-import { anyUndelivered, buildMirrorMetadata, decideAgentChange, entriesAfter, mirrorTag, resetMirrorMetadata, serializeTerminalOpens, settleStaleRequests, shouldAbortReuse } from './runClaudeAgentMirror';
+import { anyUndelivered, buildMirrorMetadata, decideAgentChange, entriesAfter, isInterruptMarker, mirrorTag, resetMirrorMetadata, serializeTerminalOpens, settleStaleRequests, shouldAbortReuse, transcriptLineModel } from './runClaudeAgentMirror';
 import type { ClaudeAgent } from './types';
 
 const agent = (overrides: Partial<ClaudeAgent> = {}): ClaudeAgent => ({
@@ -375,5 +375,34 @@ describe('anyUndelivered', () => {
             { type: 'assistant', uuid: 'a1', message: { content: [{ type: 'text', text: 'and deploy' }] } },
         ];
         expect(anyUndelivered(['and deploy'], entries)).toBe(true);
+    });
+});
+
+describe('isInterruptMarker', () => {
+    it('matches the two markers Claude Code writes for a stopped turn', () => {
+        expect(isInterruptMarker('[Request interrupted by user]')).toBe(true);
+        expect(isInterruptMarker('[Request interrupted by user for tool use]')).toBe(true);
+        expect(isInterruptMarker('  [Request interrupted by user for tool use]\n')).toBe(true);
+    });
+
+    it('leaves text that only mentions the marker alone', () => {
+        expect(isInterruptMarker('why did you write [Request interrupted by user]?')).toBe(false);
+        expect(isInterruptMarker('[Request interrupted]')).toBe(false);
+        expect(isInterruptMarker('')).toBe(false);
+    });
+});
+
+describe('transcriptLineModel', () => {
+    it('reads the model of a main-agent assistant line', () => {
+        expect(transcriptLineModel({ type: 'assistant', message: { model: 'claude-haiku-5-5', content: [] } })).toBe('claude-haiku-5-5');
+    });
+
+    it('ignores synthetic, side-chain, model-less and non-assistant lines', () => {
+        expect(transcriptLineModel({ type: 'assistant', message: { model: '<synthetic>', content: [] } })).toBeNull();
+        expect(transcriptLineModel({ type: 'assistant', isSidechain: true, message: { model: 'claude-haiku-5-5', content: [] } })).toBeNull();
+        expect(transcriptLineModel({ type: 'assistant', message: { content: [] } })).toBeNull();
+        expect(transcriptLineModel({ type: 'assistant', message: { model: '  ', content: [] } })).toBeNull();
+        expect(transcriptLineModel({ type: 'user', message: { model: 'claude-haiku-5-5', content: 'hi' } })).toBeNull();
+        expect(transcriptLineModel(null)).toBeNull();
     });
 });

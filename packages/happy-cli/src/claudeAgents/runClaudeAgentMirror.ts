@@ -256,6 +256,28 @@ function uuidOf(entry: unknown): string | null {
 }
 
 /**
+ * Whether typed text is one of the markers Claude Code writes as a user line when a turn is
+ * stopped (Esc, or a denied permission). The Mac shows it as "Interrupted"; on the phone it would
+ * read as something the user said.
+ */
+export function isInterruptMarker(text: string): boolean {
+    return /^\[Request interrupted by user( for tool use)?\]$/.test(text.trim());
+}
+
+/**
+ * The model a main-agent assistant line ran on, as the app's `metadata.runningModel`. Null for
+ * side-chain lines (a sub-agent may run another model), Claude Code's `<synthetic>` lines, and
+ * lines that name none.
+ */
+export function transcriptLineModel(line: unknown): string | null {
+    if (!isRecord(line) || line.type !== 'assistant' || line.isSidechain === true || !isRecord(line.message)) {
+        return null;
+    }
+    const model = typeof line.message.model === 'string' ? line.message.model.trim() : '';
+    return model.length > 0 && model !== '<synthetic>' ? model : null;
+}
+
+/**
  * The text of a transcript line the user typed: a plain string, or text blocks only.
  * Null for anything else (tool results, images, side-chain and meta lines).
  */
@@ -566,12 +588,19 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         initial: agent.cwd,
         publish: (cwd) => session.updateMetadata((current) => ({ ...current, cwd })),
     });
+    // The model the agent runs on, for the app's model label; already-uploaded lines count too.
+    let runningModel: string | null = null;
     const scanner = await createSessionScanner({
         sessionId: null,
         workingDirectory: agent.cwd,
         searchOtherProjects: true,
         onMessage: (message) => {
             agentCwd.observe(message);
+            const model = transcriptLineModel(message);
+            if (model !== null && model !== runningModel) {
+                runningModel = model;
+                session.updateMetadata((current) => ({ ...current, runningModel: model }));
+            }
             const uuid = message.type === 'summary' ? null : message.uuid;
             if (uuid !== null && alreadyUploaded.has(uuid)) {
                 return;
@@ -580,7 +609,12 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
             if (typed !== null && echo.shouldSkip(typed)) {
                 return;
             }
-            void session.sendClaudeSessionMessageFromLocalTranscript(message);
+            if (typed !== null && isInterruptMarker(typed)) {
+                // Ends the turn as the marker's user line would have, without a user bubble.
+                session.closeClaudeSessionTurn('completed');
+            } else {
+                void session.sendClaudeSessionMessageFromLocalTranscript(message);
+            }
             if (uuid !== null) {
                 lastUuid = uuid;
                 writeMirrorState(agentId, { happySessionId: response.id, lastUuid });
