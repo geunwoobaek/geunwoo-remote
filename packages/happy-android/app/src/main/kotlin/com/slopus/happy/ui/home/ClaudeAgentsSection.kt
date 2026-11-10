@@ -37,6 +37,7 @@ import com.slopus.happy.ui.theme.HappyTheme
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -123,10 +124,14 @@ fun claudeAgentBlocks(
     }
 }
 
+/** How often the home lists the Mac's background sessions again while it is on screen. */
+const val CLAUDE_AGENTS_RELIST_MS = 10_000L
+
 /**
  * What the home asks of the Mac's background sessions: what each online machine
- * listed, and which row is being opened. Listing is on demand ([refresh], on
- * entering home and on pull to refresh), never on a timer.
+ * listed, and which row is being opened. Listing runs while the home is on screen
+ * ([keepListed]: at once, then every [CLAUDE_AGENTS_RELIST_MS], so a session started
+ * on the Mac shows up by itself) and on pull to refresh; never while the home is hidden.
  */
 class ClaudeAgentsModel(private val ops: () -> MachineOps?) {
     private val listingsState = MutableStateFlow<Map<String, ClaudeAgentsListing>>(emptyMap())
@@ -145,6 +150,14 @@ class ClaudeAgentsModel(private val ops: () -> MachineOps?) {
             machineIds.map { id ->
                 async { listingsState.update { known -> known + (id to machineOps.listClaudeAgents(id)) } }
             }.awaitAll()
+        }
+    }
+
+    /** Lists [machineIds] now and again every [everyMs] until cancelled: run it only while the home is on screen. */
+    suspend fun keepListed(machineIds: List<String>, everyMs: Long = CLAUDE_AGENTS_RELIST_MS) {
+        while (true) {
+            refresh(machineIds)
+            delay(everyMs)
         }
     }
 

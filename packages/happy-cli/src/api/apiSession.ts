@@ -691,13 +691,24 @@ export class ApiSessionClient extends EventEmitter {
 
     private static readonly MAX_OUTBOX_BATCH_SIZE = 50;
 
+    private outboxOldestFirst = false;
+
+    /**
+     * Uploads queued messages in the order they were queued. The server numbers messages as they
+     * arrive and the app loads a session newest-seq first, so a client that queues a long history at
+     * once (a Mac background session's mirror) needs this for that page to hold the newest messages.
+     */
+    uploadOldestFirst(): void {
+        this.outboxOldestFirst = true;
+    }
+
     private async flushOutbox() {
-        // Send latest messages first so the user sees recent activity immediately,
+        // By default send latest messages first so the user sees recent activity immediately,
         // then backfill older messages in subsequent batches.
         while (this.pendingOutbox.length > 0) {
             const batchSize = Math.min(this.pendingOutbox.length, ApiSessionClient.MAX_OUTBOX_BATCH_SIZE);
-            const batchStart = this.pendingOutbox.length - batchSize;
-            const batch = this.pendingOutbox.slice(batchStart);
+            const batchStart = this.outboxOldestFirst ? 0 : this.pendingOutbox.length - batchSize;
+            const batch = this.pendingOutbox.slice(batchStart, batchStart + batchSize);
 
             const response = await axios.post<V3PostSessionMessagesResponse>(
                 `${configuration.serverUrl}/v3/sessions/${encodeURIComponent(this.sessionId)}/messages`,

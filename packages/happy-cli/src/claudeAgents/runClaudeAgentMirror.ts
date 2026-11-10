@@ -116,6 +116,53 @@ export function entriesAfter(entries: unknown[], lastUuid: string | null): unkno
     return index === -1 ? entries : entries.slice(index + 1);
 }
 
+/**
+ * How many transcript lines a mirror uploads at most when it opens: the recent part of the
+ * conversation. A background session can run for days (one measured 14,000 lines), and the app
+ * shows nothing until it has received and laid out what was uploaded.
+ */
+export const BACKFILL_LINES = 300;
+
+/** How far back the upload may begin so that the turn under way starts at its prompt. */
+export const BACKFILL_MAX_LINES = 1000;
+
+/** A line the user typed (not a tool result, not a stop marker): where a turn begins. */
+function isPromptLine(entry: unknown): boolean {
+    if (!isRecord(entry) || entry.type !== 'user' || !isRecord(entry.message)) {
+        return false;
+    }
+    const text = typedUserText(entry as RawJSONLines);
+    return text !== null && !isInterruptMarker(text);
+}
+
+/**
+ * Index of the first transcript entry a mirror uploads: right after `lastUuid` when an earlier run
+ * uploaded up to it, but never before the recent window of BACKFILL_LINES lines. The window opens
+ * at the prompt of the turn it begins in, so no turn shows up cut; when that prompt lies more than
+ * BACKFILL_MAX_LINES back, it opens at the first assistant line instead, so no tool result shows up
+ * without its call.
+ */
+export function uploadStart(entries: unknown[], lastUuid: string | null): number {
+    const resume = entries.length - entriesAfter(entries, lastUuid).length;
+    if (entries.length <= BACKFILL_LINES) {
+        return resume;
+    }
+    const floor = entries.length - BACKFILL_LINES;
+    const ceiling = Math.max(0, entries.length - BACKFILL_MAX_LINES);
+    let windowStart = floor;
+    for (let i = floor; i >= ceiling; i--) {
+        if (isPromptLine(entries[i])) {
+            windowStart = i;
+            break;
+        }
+    }
+    if (windowStart === floor && !isPromptLine(entries[floor])) {
+        const reply = entries.findIndex((entry, i) => i >= floor && isRecord(entry) && entry.type === 'assistant');
+        windowStart = reply === -1 ? floor : reply;
+    }
+    return Math.max(resume, windowStart);
+}
+
 /** What the next `claude agents` listing means for a mirror that follows `currentSessionId`. */
 export function decideAgentChange(
     agents: ClaudeAgent[],
@@ -493,7 +540,9 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
 
     const priorLifecycle = reconnected ? null : response.metadata?.lifecycleState;
     const session: ApiSessionClient = api.sessionSyncClient(response);
-    const notice = (message: string): void => session.sendSessionEvent({ type: 'message', message });
+    // The log is uploaded in one go when the mirror opens; the app's newest page must hold its end.
+    session.uploadOldestFirst();
+    const notice =(message: string): void => session.sendSessionEvent({ type: 'message', message });
 
     // Whatever the phone sent before this process started must never be typed into the Mac session.
     // The phone showed it as sent, so say once that it did not reach the Mac.
@@ -570,20 +619,21 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         cwd: agent.cwd,
     });
 
-    // Upload: skip what a previous run already uploaded, and what the phone typed itself.
+    // Upload: only the recent part of the log, skipping what a previous run already uploaded and
+    // what the phone typed itself. Lines before the start count as uploaded so the scanner passes them.
     const saved = readMirrorState(agentId);
     let lastUuid: string | null = saved?.happySessionId === response.id ? saved.lastUuid : null;
     const alreadyUploaded = new Set<string>();
-    if (lastUuid !== null) {
-        const entries = readTranscriptEntries(agent.cwd, currentSessionId);
-        const rest = entriesAfter(entries, lastUuid);
-        for (const entry of entries.slice(0, entries.length - rest.length)) {
+    const skipBeforeUploadStart = (sessionId: string, after: string | null): void => {
+        const entries = readTranscriptEntries(agent.cwd, sessionId);
+        for (const entry of entries.slice(0, uploadStart(entries, after))) {
             const uuid = uuidOf(entry);
             if (uuid !== null) {
                 alreadyUploaded.add(uuid);
             }
         }
-    }
+    };
+    skipBeforeUploadStart(currentSessionId, lastUuid);
     const agentCwd = createAgentCwdTracker({
         initial: agent.cwd,
         publish: (cwd) => session.updateMetadata((current) => ({ ...current, cwd })),
@@ -684,6 +734,7 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         if (change !== 'same') {
             logger.debug(`[MIRROR] Session changed ${currentSessionId} -> ${change.switchTo}`);
             currentSessionId = change.switchTo;
+            skipBeforeUploadStart(change.switchTo, null);
             await scanner.onNewSession(change.switchTo);
             session.updateMetadata((current) => ({ ...current, claudeSessionId: change.switchTo }));
         }

@@ -1375,6 +1375,32 @@ describe('ApiSessionClient v3 messages API migration', () => {
         expect(onUserMessage).toHaveBeenCalledWith(prompt);
     });
 
+    it('uploads a backlog oldest first once asked to, so the server seq follows the order it was sent in', async () => {
+        const client = new ApiSessionClient('fake-token', session);
+        client.uploadOldestFirst();
+        mockAxiosPost.mockResolvedValue({ data: { messages: [] } });
+
+        for (let i = 0; i < 120; i++) {
+            client.sendCodexMessage({ type: 'backlog', i });
+        }
+        await waitForCheck(() => {
+            expect((client as any).pendingOutbox).toHaveLength(0);
+        });
+
+        // The server turns away a request of more than one batch.
+        for (const [, payload] of mockAxiosPost.mock.calls) {
+            expect(payload.messages.length).toBeLessThanOrEqual(50);
+        }
+        const sent = mockAxiosPost.mock.calls
+            .flatMap(([, payload]) => payload.messages)
+            .map((message: { content: string }) => decrypt(
+                (client as any).encryptionKey,
+                (client as any).encryptionVariant,
+                decodeBase64(message.content),
+            ).content.data.i);
+        expect(sent).toEqual(Array.from({ length: 120 }, (_, i) => i));
+    });
+
     it('flushOutbox tolerates missing response.data.messages and keeps the cursor unchanged', async () => {
         const client = new ApiSessionClient('fake-token', session);
         (client as any).lastReceivedSeq = 7;

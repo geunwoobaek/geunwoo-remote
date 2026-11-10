@@ -339,7 +339,7 @@
   - `sealed interface OpenClaudeAgentResult { data class Success(val sessionId: String); data class Error(val message: String) }`
   - `suspend fun MachineOps.openClaudeAgent(machineId: String, id: String): OpenClaudeAgentResult`
 - 화면 규칙:
-  - 온라인 머신마다 섹션을 그린다. 홈 진입 때와 당겨서 새로고침할 때 다시 부른다.
+  - 온라인 머신마다 섹션을 그린다. 홈이 보이는 동안 10초마다, 그리고 당겨서 새로고침할 때 다시 부른다.
   - 행: 이름(없으면 폴더 끝부분), 폴더 끝부분, 상태(일하는 중 / 대기 / 권한 기다림).
   - 이미 홈에 거울 세션 행이 있는 항목(`mirrorSessionId`가 홈 세션 목록에 있음)은 섹션에서 뺀다.
   - 누르면 `openClaudeAgent` 뒤 받은 sessionId로 채팅 화면을 연다.

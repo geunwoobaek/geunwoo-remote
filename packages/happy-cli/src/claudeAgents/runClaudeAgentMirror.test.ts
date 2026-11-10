@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AttachTerminal } from './attachTerminal';
 import type { Metadata } from '@/api/types';
-import { anyUndelivered, buildMirrorMetadata, decideAgentChange, entriesAfter, isInterruptMarker, mirrorTag, resetMirrorMetadata, serializeTerminalOpens, settleStaleRequests, shouldAbortReuse, transcriptLineModel } from './runClaudeAgentMirror';
+import { anyUndelivered, BACKFILL_LINES, BACKFILL_MAX_LINES, buildMirrorMetadata, decideAgentChange, entriesAfter, isInterruptMarker, mirrorTag, resetMirrorMetadata, serializeTerminalOpens, settleStaleRequests, shouldAbortReuse, transcriptLineModel, uploadStart } from './runClaudeAgentMirror';
 import type { ClaudeAgent } from './types';
 
 const agent = (overrides: Partial<ClaudeAgent> = {}): ClaudeAgent => ({
@@ -67,6 +67,50 @@ describe('entriesAfter', () => {
     it('returns everything when the saved uuid is not in the entries or there is none', () => {
         expect(entriesAfter(entries, 'zzz')).toEqual(entries);
         expect(entriesAfter(entries, null)).toEqual(entries);
+    });
+});
+
+describe('uploadStart', () => {
+    const prompt = (n: number) => ({ type: 'user', uuid: `u${n}`, message: { role: 'user', content: `prompt ${n}` } });
+    const reply = (n: number) => ({ type: 'assistant', uuid: `u${n}`, message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } });
+    const toolResult = (n: number) => ({ type: 'user', uuid: `u${n}`, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: 'done' }] } });
+    /** `turns` turns of `length` lines each: a prompt, then replies. */
+    const turns = (count: number, length: number) =>
+        Array.from({ length: count * length }, (_, i) => (i % length === 0 ? prompt(i) : reply(i)));
+
+    it('uploads a short transcript whole', () => {
+        const entries = turns(10, 5);
+        expect(uploadStart(entries, null)).toBe(0);
+    });
+
+    it('starts a long transcript at the prompt of the turn the recent window begins in', () => {
+        const entries = turns(70, 7);
+        // The window begins at 490 - 300 = 190, inside the turn whose prompt is line 189.
+        expect(uploadStart(entries, null)).toBe(189);
+        expect(BACKFILL_LINES).toBe(300);
+    });
+
+    it('goes on after the saved uuid when that is inside the window', () => {
+        const entries = turns(70, 7);
+        expect(uploadStart(entries, 'u450')).toBe(451);
+    });
+
+    it('ignores a saved uuid that is older than the window or not in the transcript', () => {
+        const entries = turns(70, 7);
+        expect(uploadStart(entries, 'u20')).toBe(189);
+        expect(uploadStart(entries, 'gone')).toBe(189);
+    });
+
+    it('starts a turn longer than the window at its prompt, up to the hard ceiling', () => {
+        const entries = [...turns(10, 10), prompt(100), ...Array.from({ length: 699 }, (_, i) => reply(101 + i))];
+        expect(uploadStart(entries, null)).toBe(100);
+    });
+
+    it('starts a turn longer than the hard ceiling at a reply line inside the window, never at a tool result', () => {
+        const entries = [prompt(0), ...Array.from({ length: 1499 }, (_, i) => ((i + 1) % 2 === 1 ? reply(i + 1) : toolResult(i + 1)))];
+        // The window begins at 1500 - 300 = 1200, a tool result; the next line is a reply.
+        expect(BACKFILL_MAX_LINES).toBe(1000);
+        expect(uploadStart(entries, null)).toBe(1201);
     });
 });
 

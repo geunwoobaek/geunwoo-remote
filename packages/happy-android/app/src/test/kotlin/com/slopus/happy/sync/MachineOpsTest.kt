@@ -7,6 +7,9 @@ import com.slopus.happy.ui.home.ClaudeAgentsModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -480,6 +483,26 @@ class MachineOpsTest {
         // A machine that is not among the listed ones does not appear by being asked about.
         model.refreshMachine("m2")
         assertEquals(setOf("m1"), model.listings.value.keys)
+    }
+
+    @Test
+    fun aSessionStartedOnTheMacWhileHomeIsShownAppearsWithoutPullingToRefresh() = runBlocking {
+        h.startAndSync()
+        val agent = buildJsonObject { put("id", "demo-agent"); put("sessionId", "claude-1"); put("cwd", "/Users/tester/project"); put("status", "idle") }
+        val started = java.util.concurrent.atomic.AtomicBoolean(false)
+        val calls = respond("list-claude-agents") { buildJsonObject { putJsonArray("agents") { if (started.get()) add(agent) } } }
+        val model = ClaudeAgentsModel { ops }
+        val listing = launch(Dispatchers.Default) { model.keepListed(listOf("m1"), everyMs = 50) }
+        withTimeout(10_000) { model.listings.first { it["m1"] != null } }
+        assertTrue(model.listings.value.getValue("m1").agents.isEmpty())
+        started.set(true)
+        val shown = withTimeout(10_000) { model.listings.first { it["m1"]?.agents?.isNotEmpty() == true } }
+        assertEquals("demo-agent", shown.getValue("m1").agents.single().id)
+        listing.cancelAndJoin()
+        // Once home is no longer shown, the Mac is not asked again.
+        val asked = calls.size
+        delay(200)
+        assertEquals(asked, calls.size)
     }
 
     @Test

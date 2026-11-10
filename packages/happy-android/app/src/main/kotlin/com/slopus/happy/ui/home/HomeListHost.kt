@@ -197,7 +197,7 @@ fun HomeListHost(graph: AppGraph, navigation: HomeNavigation, phone: Boolean = f
             .collect { services.homeListOffsets[accountKey] = it }
     }
 
-    // The Mac's background Claude sessions: listed when home is shown and on pull to refresh, never on a timer.
+    // The Mac's background Claude sessions: listed while home is on screen (again every 10 s) and on pull to refresh.
     val snapshot by services.snapshots.collectAsStateWithLifecycle()
     val agentsModel = remember(services) { ClaudeAgentsModel { services.machineOps } }
     val agentListings by agentsModel.listings.collectAsStateWithLifecycle()
@@ -207,7 +207,7 @@ fun HomeListHost(graph: AppGraph, navigation: HomeNavigation, phone: Boolean = f
     val agentMachineIds = remember(agentMachines) { agentMachines.map { it.id } }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(agentsModel, agentMachineIds, lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { agentsModel.refresh(agentMachineIds) }
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { agentsModel.keepListed(agentMachineIds) }
     }
     // A mirror that is live in the list has its own row; one whose row sits in the archive is still opened from here.
     val liveSessionIds = remember(snapshot?.sessions) { snapshot?.sessions.orEmpty().filter { it.active }.mapTo(HashSet()) { it.id } }
