@@ -343,6 +343,7 @@ class HomeListModel(
         .map { inputs ->
             val zoneId = zone()
             deriveHomeList(inputs, zoneId, LocalDate.now(zoneId), clock::firstSeen).also { derived ->
+                // A chat no longer shown (gone, or held back under "Show N more") starts from now if it comes back.
                 clock.retain(derived.rows.mapNotNullTo(HashSet()) { row -> (row as? HomeRow.Chat)?.takeIf { it.section != null }?.row?.session?.id })
             }
         }

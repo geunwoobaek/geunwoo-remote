@@ -262,7 +262,7 @@ fun FlatSessionRow(
                             style = FlatRowSpec.title,
                             baseColor = ink,
                             highlightColor = ShimmerSpec.sheen(ink, ground),
-                            shimmering = presentation.shimmerTitle || section == HomeSection.Working,
+                            shimmering = presentation.shimmerTitle || (section == HomeSection.Working && !faded),
                             modifier = Modifier.wrapContentHeight(unbounded = carded),
                         )
                     }

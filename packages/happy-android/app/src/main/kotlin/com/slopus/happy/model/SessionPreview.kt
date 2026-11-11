@@ -31,7 +31,7 @@ fun previewOf(newestFirst: List<NormalizedMessage>): SessionPreview {
                 line = body.content.asReversed().firstNotNullOfOrNull { content ->
                     when (content) {
                         is AgentContent.Text -> previewLine(content.text)
-                        is AgentContent.ToolUse -> (content.title?.takeIf { it.isNotBlank() } ?: content.name).let(::previewLine)
+                        is AgentContent.ToolUse -> (content.title?.takeIf { it.isNotBlank() } ?: content.name).let { previewLine(it, marks = false) }
                         else -> null
                     }
                 }
@@ -44,13 +44,15 @@ fun previewOf(newestFirst: List<NormalizedMessage>): SessionPreview {
 }
 
 private val leadingMarks = Regex("^(?:#{1,6}\\s+|>\\s*|[-*+]\\s+|\\d+[.)]\\s+)+")
-private val inlineMarks = Regex("[*_`~]+")
+// Underscores stay: they are in names (`user_id`, `mcp__x__create_issue`) far more often than emphasis.
+private val inlineMarks = Regex("\\*+|`+|~~")
 private val spaces = Regex("\\s+")
 
-/** [text]'s first non-blank line as one plain line, or null when it has none. */
-private fun previewLine(text: String): String? {
+/** [text]'s first non-blank line as one plain line (markdown [marks] dropped), or null when it has none. */
+private fun previewLine(text: String, marks: Boolean = true): String? {
     val first = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null
-    val plain = first.replace(leadingMarks, "").replace(inlineMarks, "").replace(spaces, " ").trim()
+    val unmarked = if (marks) first.replace(leadingMarks, "").replace(inlineMarks, "") else first
+    val plain = unmarked.replace(spaces, " ").trim()
     if (plain.isEmpty()) return null
     return if (plain.length <= SESSION_PREVIEW_MAX) plain else plain.take(SESSION_PREVIEW_MAX - 1).trimEnd() + "…"
 }

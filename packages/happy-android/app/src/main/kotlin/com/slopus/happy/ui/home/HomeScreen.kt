@@ -32,6 +32,7 @@ import com.slopus.happy.ui.components.PageProgressIndicator as CircularProgressI
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
@@ -303,7 +304,8 @@ fun HomeList(
 ) {
     val colors = HappyTheme.colors
     val flat = state.grouping == SessionListGrouping.Flat
-    val now = rememberNow()
+    val clocked = remember(state.rows) { state.rows.any { it is HomeRow.Chat && (it.section == HomeSection.NeedsInput || it.section == HomeSection.Working) } }
+    val now = rememberNow(ticking = clocked)
     val scope = rememberCoroutineScope()
     val hasBanners = state.offlineBanner != null || update != null || migration != null
     // A chip scrolls to its section's heading: past the banners and the notice slot.

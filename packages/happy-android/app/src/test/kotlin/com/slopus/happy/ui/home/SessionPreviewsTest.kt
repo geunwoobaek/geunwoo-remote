@@ -54,6 +54,20 @@ class SessionPreviewsTest {
         assertEquals("First b", after["b"]?.line)
     }
 
+    /** A turn longer than the messages read keeps its start: the Working clock never jumps back to now. */
+    @Test fun aLongTurnKeepsItsStart() {
+        val few = SessionPreviews(store, limit = 3)
+        store.upsertSessions(listOf(session("a")))
+        store.insertMessages("a", listOf(MessageRecord("a", 1, "a-u1", null, """{"role":"user","content":{"type":"text","text":"go"}}""", 1_000, 1_000)))
+        store.insertMessages("a", listOf(answer("a", 2, "Working")))
+        assertEquals(1_000L, few.previews(listOf("a"))["a"]?.turnStartedAt)
+
+        store.insertMessages("a", (3L..8L).map { answer("a", it, "Step $it") })
+        val later = few.previews(listOf("a"))["a"]
+        assertEquals("Step 8", later?.line)
+        assertEquals(1_000L, later?.turnStartedAt)
+    }
+
     @Test fun aSessionWithNoStoredMessagesIsLeftOut() {
         store.upsertSessions(listOf(session("a")))
         assertEquals(emptyMap<String, Any>(), previews.previews(listOf("a", "unknown")))

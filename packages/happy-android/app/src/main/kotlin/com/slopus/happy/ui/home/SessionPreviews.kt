@@ -27,10 +27,14 @@ class SessionPreviews(
         val out = HashMap<String, SessionPreview>(seqs.size)
         for ((id, seq) in seqs) {
             if (seq <= 0) continue
-            val entry = cache[id]?.takeIf { it.seq == seq } ?: run {
+            val previous = cache[id]
+            val entry = previous?.takeIf { it.seq == seq } ?: run {
                 onRead(id)
                 val newestFirst = store.messages(id, limit).asReversed().mapNotNull(ChatNormalizer::normalize)
-                Entry(seq, previewOf(newestFirst)).also { cache[id] = it }
+                var preview = previewOf(newestFirst)
+                // A long turn's tool calls push its user message out of the newest [limit]: it is still that turn.
+                if (preview.turnStartedAt == null) preview = preview.copy(turnStartedAt = previous?.preview?.turnStartedAt)
+                Entry(seq, preview).also { cache[id] = it }
             }
             out[id] = entry.preview
         }

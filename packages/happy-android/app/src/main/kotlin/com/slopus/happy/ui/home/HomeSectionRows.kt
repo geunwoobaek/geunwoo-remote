@@ -23,6 +23,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.slopus.happy.R
@@ -59,11 +62,13 @@ fun sectionAccent(section: HomeSection): Color? = when (section) {
     HomeSection.Completed -> null
 }
 
-/** The clock elapsed times count to, ticking every [periodMs]. */
+/** The clock elapsed times count to, ticking every [periodMs] while [ticking] (a waiting or working row is listed). */
 @Composable
-fun rememberNow(periodMs: Long = 30_000): Long {
+fun rememberNow(ticking: Boolean = true, periodMs: Long = 30_000): Long {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(periodMs) {
+    LaunchedEffect(ticking, periodMs) {
+        if (!ticking) return@LaunchedEffect
+        now = System.currentTimeMillis()
         while (true) {
             delay(periodMs)
             now = System.currentTimeMillis()
@@ -100,7 +105,7 @@ fun SectionChipsRow(counts: List<Pair<HomeSection, Int>>, onChip: (HomeSection) 
                     .testTag(HomeSectionTags.CHIP)
                     .clip(RoundedCornerShape(HomeSectionSpec.chipRadius))
                     .background(accent?.copy(alpha = 0.14f) ?: colors.surfaceHigh)
-                    .clickable { onChip(section) }
+                    .clickable(role = Role.Button) { onChip(section) }
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
@@ -117,7 +122,7 @@ fun SectionHeaderRow(section: HomeSection, count: Int) {
         HomeSection.Completed -> stringResource(R.string.home_section_completed)
     }
     Row(
-        modifier = Modifier.fillMaxSize().testTag(HomeSectionTags.HEADER).padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxSize().testTag(HomeSectionTags.HEADER).semantics(mergeDescendants = true) { heading() }.padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -133,7 +138,7 @@ fun ShowMoreRow(hidden: Int, callbacks: HomeListCallbacks) {
         modifier = Modifier
             .fillMaxSize()
             .testTag(HomeSectionTags.SHOW_MORE)
-            .clickable { callbacks.onShowMoreCompleted() }
+            .clickable(role = Role.Button) { callbacks.onShowMoreCompleted() }
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.CenterStart,
     ) {

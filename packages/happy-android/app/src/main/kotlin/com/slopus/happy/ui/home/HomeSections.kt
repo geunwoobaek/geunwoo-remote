@@ -55,9 +55,11 @@ fun sectionedRows(
             val session = row.session
             val section = homeSectionOf(session.state)
             val preview = previews[session.id]
+            // Every row tells the clock its section, Completed too, so a chat back at work starts again from now.
+            val seen = firstSeen(session.id, section)
             val since = when (section) {
-                HomeSection.NeedsInput -> session.stateSince ?: firstSeen(session.id, section)
-                HomeSection.Working -> preview?.turnStartedAt ?: firstSeen(session.id, section)
+                HomeSection.NeedsInput -> session.stateSince ?: seen
+                HomeSection.Working -> preview?.turnStartedAt ?: seen
                 HomeSection.Completed -> null
             }
             section to row.copy(session = session.copy(preview = preview?.line, stateSince = since))

@@ -159,6 +159,8 @@ class HomeServices private constructor(private val graph: AppGraph) {
             .map { ids -> reader.previews(ids) }
             .distinctUntilChanged()
             .flowOn(Dispatchers.IO)
+            // Home draws at once, with folders, and takes the last lines when they are read.
+            .onStart { emit(emptyMap()) }
     }
 
     val list = HomeListModel(

@@ -32,6 +32,11 @@ class SessionPreviewTest {
     @Test fun aToolCallIsALine() {
         assertEquals("Run tests", previewOf(listOf(tool(2, "Bash", "Run tests"))).line)
         assertEquals("Bash", previewOf(listOf(tool(2, "Bash", null))).line)
+        assertEquals("mcp__jira__create_issue", previewOf(listOf(tool(2, "mcp__jira__create_issue", null))).line)
+    }
+
+    @Test fun namesKeepTheirUnderscores() {
+        assertEquals("Renamed user_id in models", previewOf(listOf(text(2, "Renamed `user_id` in **models**"))).line)
     }
 
     @Test fun thinkingSidechainAndEventsAreSkipped() {

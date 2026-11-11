@@ -172,6 +172,17 @@ class HomeSectionsTest {
         assertEquals(50L, clock.firstSeen("a", HomeSection.Working))
     }
 
+    /** Through the list itself: a chat that finished and went back to work counts from then, not from its last turn. */
+    @Test fun aChatBackAtWorkStartsItsClockAgain() {
+        var now = 1_000L
+        val clock = SectionClock { now }
+        assertEquals(1_000L, chat(derive(listOf(chat("a", thinking = true)), firstSeen = clock::firstSeen), "a").row.session.stateSince)
+        now = 2_000
+        derive(listOf(chat("a")), firstSeen = clock::firstSeen)
+        now = 3_000
+        assertEquals(3_000L, chat(derive(listOf(chat("a", thinking = true)), firstSeen = clock::firstSeen), "a").row.session.stateSince)
+    }
+
     @Test fun projectGroupingIsUnchanged() {
         val state = derive(listOf(blocked("p"), chat("d")), grouping = SessionListGrouping.Project)
         assertTrue(state.rows.none { it is HomeRow.SectionChips || it is HomeRow.SectionHeader || it is HomeRow.ShowMore })
