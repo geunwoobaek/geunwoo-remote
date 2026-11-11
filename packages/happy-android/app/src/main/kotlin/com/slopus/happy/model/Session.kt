@@ -26,6 +26,9 @@ data class AgentAttention(
     companion object {
         val None = AgentAttention(0, 0)
 
+        /** The tool whose request is a question to answer (Reply), not a permission to approve. */
+        private const val QUESTION_TOOL = "AskUserQuestion"
+
         fun parse(agentStateJson: String?): AgentAttention = of(AgentState.parse(agentStateJson))
 
         fun of(state: AgentState?): AgentAttention {
@@ -34,7 +37,9 @@ data class AgentAttention(
             val since = (state.requests.values.mapNotNull { it.createdAt } + pending.map { it.createdAt })
                 .filter { it > 0 }
                 .minOrNull()
-            return AgentAttention(state.requests.size, pending.size, since)
+            // Claude's own question tool arrives as a request but waits on an answer, not an approval.
+            val questions = state.requests.values.count { it.tool == QUESTION_TOOL }
+            return AgentAttention(state.requests.size - questions, pending.size + questions, since)
         }
     }
 }

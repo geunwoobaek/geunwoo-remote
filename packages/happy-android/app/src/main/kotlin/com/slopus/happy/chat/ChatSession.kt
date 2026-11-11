@@ -44,11 +44,4 @@ data class ChatSessionInfo(val session: Session, val agentState: AgentState?) {
 
 /** sessionState.ts `resolveSessionState` over the chat's typed agent state. */
 fun resolveSessionState(agentState: AgentState?, thinking: Boolean, online: Boolean): SessionState =
-    resolveSessionState(
-        AgentAttention(
-            permissionRequests = agentState?.requests?.size ?: 0,
-            pendingCommunications = selectPendingCommunications(agentState).size,
-        ),
-        thinking,
-        online,
-    )
+    resolveSessionState(AgentAttention.of(agentState), thinking, online)

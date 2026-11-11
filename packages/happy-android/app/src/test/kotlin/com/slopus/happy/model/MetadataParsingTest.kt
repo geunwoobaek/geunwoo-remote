@@ -150,6 +150,17 @@ class MetadataParsingTest {
         assertEquals(AgentAttention(permissionRequests = 1, pendingCommunications = 2), attention)
     }
 
+    /** Claude's AskUserQuestion comes as a request but waits on an answer: it counts as a question (Reply, not Approve). */
+    @Test
+    fun anAskUserQuestionRequestIsAQuestion() {
+        val attention = AgentAttention.parse(
+            """{"requests":{"r1":{"tool":"AskUserQuestion"},"r2":{"tool":"Bash"}}}""",
+        )
+        assertEquals(AgentAttention(permissionRequests = 1, pendingCommunications = 1), attention)
+        val onlyAsking = AgentAttention.parse("""{"requests":{"r1":{"tool":"AskUserQuestion"}}}""")
+        assertEquals(SessionState.InputRequired, resolveSessionState(onlyAsking, thinking = true, isOnline = true))
+    }
+
     /**
      * agentCommunications.ts `readQuestions`: a form waits on the user only if
      * a question can be answered, by an option or by writing one's own.
