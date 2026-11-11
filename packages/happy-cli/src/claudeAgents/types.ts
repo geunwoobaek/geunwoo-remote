@@ -23,7 +23,8 @@ export type ClaudeAgent = {
 export type ClaudeAgentsUnavailable = 'claude-missing' | 'tmux-missing' | 'agents-command-failed';
 
 export type ClaudeAgentsListing = {
-    agents: Array<ClaudeAgent & { mirrorSessionId?: string }>;
+    /** [lastLine]: the session's newest answer line or tool call, read from its transcript. */
+    agents: Array<ClaudeAgent & { mirrorSessionId?: string; lastLine?: string }>;
     unavailable?: ClaudeAgentsUnavailable;
     /** This daemon answers `start-claude-agent`; the app checks it before choosing that path. */
     startSupported: true;

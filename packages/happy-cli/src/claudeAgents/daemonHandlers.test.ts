@@ -44,6 +44,7 @@ function makeDeps(overrides: Partial<ClaudeAgentHandlerDeps> = {}): { deps: Clau
         tmuxInstalled: async () => true,
         fetchAgents: async () => [agent('abc12345')],
         liveMirrors: () => new Map(),
+        lastLine: () => null,
         mirrorStarting: () => false,
         persistedMirrors: () => new Map(),
         spawnMirror: async (agentId, reconnect, cwd) => {
@@ -89,6 +90,16 @@ describe('list-claude-agents', () => {
         ]);
         expect('mirrorSessionId' in listing.agents[1]).toBe(false);
         expect(spawns).toEqual([]);
+    });
+
+    it('list carries each session\'s last line and leaves it out when there is none', async () => {
+        const { deps } = makeDeps({
+            fetchAgents: async () => [agent('abc12345'), agent('def67890')],
+            lastLine: (listed) => (listed.id === 'abc12345' ? 'Tests pass' : null),
+        });
+        const listing = await createClaudeAgentHandlers(deps).list();
+        expect(listing.agents[0].lastLine).toBe('Tests pass');
+        expect('lastLine' in listing.agents[1]).toBe(false);
     });
 
     it('listReportsStartSupported', async () => {

@@ -20,7 +20,7 @@ import type { PersistedSession } from '@/persistence';
 import { cleanupDaemonState, isDaemonRunningCurrentlyInstalledHappyVersion, stopDaemon } from './controlClient';
 import { startDaemonControlServer } from './controlServer';
 import { statSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { projectPath } from '@/projectPath';
 import { getTmuxUtilities, isTmuxAvailable, parseTmuxSessionIdentifier, formatTmuxSessionIdentifier } from '@/utils/tmux';
 import { expandEnvironmentVariables } from '@/utils/expandEnvVars';
@@ -47,6 +47,8 @@ import {
 import { claudeBgEnvironment } from '@/claudeAgents/startAgent';
 import type { EnsureDirectoryResult } from '@/claudeAgents/types';
 import { isTmuxInstalled } from '@/claudeAgents/attachTerminal';
+import { readLastLine } from '@/claudeAgents/transcript';
+import { bundleReadyForHandoff } from './bundleHandoff';
 import {
   MIRROR_RESUME_REFUSAL,
   createClaudeAgentHandlers,
@@ -1003,6 +1005,7 @@ export async function startDaemon(): Promise<void> {
       tmuxInstalled: isTmuxInstalled,
       fetchAgents: fetchClaudeAgents,
       liveMirrors,
+      lastLine: (agent) => readLastLine(agent.cwd, agent.sessionId),
       // Still tracked after a webhook timeout; the late webhook fills in happySessionId.
       mirrorStarting: (agentId) => {
         const pid = mirrorPids.get(agentId);
@@ -1221,17 +1224,10 @@ export async function startDaemon(): Promise<void> {
       }
 
       // Check if daemon needs update by detecting whether `dist/index.mjs` was
-      // replaced on disk since the daemon started (npm install rewrites the file).
-      // Skip if we never captured an initial mtime (dev mode).
-      let bundleReplaced = false;
-      if (initialBundleMtimeMs > 0) {
-        try {
-          const currentMtimeMs = statSync(bundlePath).mtimeMs;
-          bundleReplaced = currentMtimeMs !== initialBundleMtimeMs;
-        } catch {
-          // File temporarily missing (e.g. mid-install) — retry on next heartbeat.
-        }
-      }
+      // replaced on disk since the daemon started (npm install rewrites the file),
+      // and only once the rebuild that replaced it is over: handing off mid-rebuild
+      // leaves nothing running. Skip if we never captured an initial mtime (dev mode).
+      const bundleReplaced = initialBundleMtimeMs > 0 && bundleReadyForHandoff(dirname(bundlePath), initialBundleMtimeMs, Date.now());
       if (bundleReplaced) {
         // TODO: We probably do not want to keep this in-process self-restart logic long-term.
         // A native service manager would make startup and upgrades much simpler: the CLI would

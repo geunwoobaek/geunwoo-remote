@@ -63,6 +63,8 @@ export type ClaudeAgentHandlerDeps = {
     fetchAgents(claudePath: string): Promise<ClaudeAgent[]>;
     /** agentId → happySessionId of the mirror processes that are running right now. */
     liveMirrors(): Map<string, string>;
+    /** What the agent's session said last, from the end of its transcript; null when there is nothing to show. */
+    lastLine(agent: ClaudeAgent): string | null;
     /** True while a mirror process this daemon spawned for the agent is alive but has not reported its session yet. */
     mirrorStarting(agentId: string): boolean;
     /** agentId → the stored keys of its most recent mirror session. */
@@ -169,9 +171,15 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
             const agents = await deps.fetchAgents(claudePath);
             const live = deps.liveMirrors();
             return {
+                // The last line keeps the app's row current while no mirror streams the chat.
                 agents: agents.map((agent) => {
                     const mirrorSessionId = live.get(agent.id);
-                    return mirrorSessionId === undefined ? agent : { ...agent, mirrorSessionId };
+                    const lastLine = deps.lastLine(agent);
+                    return {
+                        ...agent,
+                        ...(mirrorSessionId === undefined ? {} : { mirrorSessionId }),
+                        ...(lastLine === null ? {} : { lastLine }),
+                    };
                 }),
                 startSupported: true,
             };

@@ -62,7 +62,8 @@ fun sectionedRows(
                 HomeSection.Working -> preview?.turnStartedAt ?: seen
                 HomeSection.Completed -> null
             }
-            section to row.copy(session = session.copy(preview = preview?.line, stateSince = since))
+            // A line the row already has is the Mac's, newer than anything stored for it.
+            section to row.copy(session = session.copy(preview = session.preview ?: preview?.line, stateSince = since))
         }
         .groupBy({ it.first }, { it.second })
     val sections = HomeSection.entries.mapNotNull { section ->

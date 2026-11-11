@@ -66,7 +66,11 @@ data class SessionRowData(
     val opening: Boolean = false,
     /** Since when it has been in its home section (waiting on the user, or working); null when unknown. */
     val stateSince: Long? = null,
-    /** Its last answer or tool line, from this device's stored messages; null when there is none yet. */
+    /**
+     * Its last answer or tool line. Set on a Mac background session no mirror
+     * follows, from the Mac's transcript; home's sections fill it in from this
+     * device's stored messages otherwise. Null when there is none yet.
+     */
     val preview: String? = null,
 )
 
@@ -271,6 +275,8 @@ fun buildSessionListViewData(
                         // The Mac session's own name and state: it can be renamed there, and a mirror's process can be gone.
                         name = liveAgent.name ?: row.name,
                         state = mirrorState(session, row.state, liveAgent),
+                        // A mirror that is not running stores nothing new: the Mac's transcript says what came since.
+                        preview = if (session.active) null else liveAgent.lastLine?.let(::sessionPreviewLine),
                         opening = source.opening,
                     )
                 },

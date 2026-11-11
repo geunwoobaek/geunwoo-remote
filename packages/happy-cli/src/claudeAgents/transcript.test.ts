@@ -6,6 +6,7 @@ import { getProjectPath } from '@/claude/utils/path';
 import {
     findPendingToolUse,
     findToolUseOutcome,
+    readLastLine,
     readSessionStatus,
     readTranscriptEntries,
 } from './transcript';
@@ -223,5 +224,71 @@ describe('readTranscriptEntries', () => {
 
     it('returns an empty list when the transcript does not exist', () => {
         expect(readTranscriptEntries('/Users/tester/project', 'missing')).toEqual([]);
+    });
+});
+
+describe('readLastLine', () => {
+    let configDir: string;
+    let previousConfigDir: string | undefined;
+    const cwd = '/Users/tester/project';
+
+    const assistant = (content: unknown[], extra: Record<string, unknown> = {}) => ({
+        type: 'assistant',
+        ...extra,
+        message: { id: 'msg', role: 'assistant', content },
+    });
+
+    function transcript(sessionId: string, entries: unknown[]): void {
+        const projectPath = getProjectPath(cwd);
+        mkdirSync(projectPath, { recursive: true });
+        writeFileSync(join(projectPath, `${sessionId}.jsonl`), entries.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    }
+
+    beforeEach(() => {
+        configDir = mkdtempSync(join(tmpdir(), 'claude-config-'));
+        previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
+        process.env.CLAUDE_CONFIG_DIR = configDir;
+    });
+
+    afterEach(() => {
+        if (previousConfigDir === undefined) {
+            delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+            process.env.CLAUDE_CONFIG_DIR = previousConfigDir;
+        }
+        rmSync(configDir, { recursive: true, force: true });
+    });
+
+    it('takes the first non-blank line of the newest answer, passing over thinking, results and sub-agents', () => {
+        transcript('s1', [
+            assistant([{ type: 'text', text: 'older answer' }]),
+            userText('next question'),
+            assistant([{ type: 'thinking', thinking: 'hmm' }, { type: 'text', text: '\n\n## Done: tests pass\nmore' }]),
+            toolResultEntry('toolu_9', 'output'),
+            assistant([{ type: 'text', text: 'sub-agent chatter' }], { isSidechain: true }),
+        ]);
+
+        expect(readLastLine(cwd, 's1')).toBe('## Done: tests pass');
+    });
+
+    it('names a tool call by its description, else its name', () => {
+        transcript('s2', [assistant([{ type: 'tool_use', id: 't1', name: 'Bash', input: { description: 'Run the tests' } }])]);
+        transcript('s3', [assistant([{ type: 'tool_use', id: 't2', name: 'Read', input: { file_path: '/x' } }])]);
+
+        expect(readLastLine(cwd, 's2')).toBe('Run the tests');
+        expect(readLastLine(cwd, 's3')).toBe('Read');
+    });
+
+    it('reads only the end of a long transcript and skips the line it cut', () => {
+        transcript('s4', [userText('x'.repeat(200_000)), assistant([{ type: 'text', text: 'latest' }])]);
+
+        expect(readLastLine(cwd, 's4')).toBe('latest');
+    });
+
+    it('is null without a transcript or an answer', () => {
+        transcript('s5', [userText('only a question')]);
+
+        expect(readLastLine(cwd, 's5')).toBeNull();
+        expect(readLastLine(cwd, 'missing')).toBeNull();
     });
 });

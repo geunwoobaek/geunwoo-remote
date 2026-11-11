@@ -48,6 +48,9 @@ private val leadingMarks = Regex("^(?:#{1,6}\\s+|>\\s*|[-*+]\\s+|\\d+[.)]\\s+)+"
 private val inlineMarks = Regex("\\*+|`+|~~")
 private val spaces = Regex("\\s+")
 
+/** A line the Mac read from a session's transcript, made a row's last line the way [previewOf] makes one. */
+fun sessionPreviewLine(text: String): String? = previewLine(text)
+
 /** [text]'s first non-blank line as one plain line (markdown [marks] dropped), or null when it has none. */
 private fun previewLine(text: String, marks: Boolean = true): String? {
     val first = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null

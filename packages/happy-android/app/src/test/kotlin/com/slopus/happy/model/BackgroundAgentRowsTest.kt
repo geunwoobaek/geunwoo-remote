@@ -182,6 +182,18 @@ class BackgroundAgentRowsTest {
     }
 
     @Test
+    fun aSessionNoMirrorFollowsTakesItsLastLineFromTheMac() {
+        val line = "## **Done**: the tests pass"
+        val unopened = mapOf("m1" to listing(claudeAgent("a1", lastLine = line)))
+        assertEquals("Done: the tests pass", rows(items(emptyList(), unopened)).single().preview)
+        val stopped = listOf(mirror("s1", "a1", active = false))
+        assertEquals("Done: the tests pass", rows(items(stopped, unopened)).single().preview)
+        // A running mirror streams the chat itself: home reads its stored messages.
+        val running = listOf(mirror("s1", "a1"))
+        assertNull(rows(items(running, unopened)).single().preview)
+    }
+
+    @Test
     fun aRunningMirrorFollowsTheMacsState() {
         // The server can still call a mirror active and thinking after its process is gone.
         val thinking = mirror("s1", "a1").copy(thinking = true)

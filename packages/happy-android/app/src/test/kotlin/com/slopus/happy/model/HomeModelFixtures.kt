@@ -118,7 +118,8 @@ object HomeModelFixtures {
         startedAt: Long = 0,
         mirrorSessionId: String? = null,
         state: String? = null,
-    ) = ClaudeAgentEntry(id, "claude-$id", name, cwd, status, startedAt, mirrorSessionId, state)
+        lastLine: String? = null,
+    ) = ClaudeAgentEntry(id, "claude-$id", name, cwd, status, startedAt, mirrorSessionId, state, lastLine)
 
     /** A machine's listing of [agents]. */
     fun listing(vararg agents: ClaudeAgentEntry, unavailable: String? = null) = ClaudeAgentsListing(agents.toList(), unavailable)

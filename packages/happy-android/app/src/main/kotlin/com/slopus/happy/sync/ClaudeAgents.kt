@@ -28,6 +28,8 @@ data class ClaudeAgentEntry(
      * busy by [status] yet done here, so this one decides.
      */
     val state: String? = null,
+    /** Its newest answer line or tool call, read from the Mac's transcript; null from a daemon that does not send it. */
+    val lastLine: String? = null,
 )
 
 /**
@@ -81,6 +83,7 @@ fun parseClaudeAgentsListing(json: JsonElement?): ClaudeAgentsListing {
             startedAt = (row["startedAt"] as? JsonPrimitive)?.doubleOrNull?.toLong() ?: 0L,
             mirrorSessionId = row.string("mirrorSessionId")?.takeIf { it.isNotEmpty() },
             state = row.string("state")?.takeIf { it.isNotEmpty() },
+            lastLine = row.string("lastLine")?.takeIf { it.isNotBlank() },
         )
     }
     return ClaudeAgentsListing(

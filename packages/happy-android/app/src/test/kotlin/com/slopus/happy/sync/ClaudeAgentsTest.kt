@@ -33,6 +33,7 @@ class ClaudeAgentsTest {
                     put("state", "working")
                     put("startedAt", 1_700_000_000_000)
                     put("mirrorSessionId", "happy-1")
+                    put("lastLine", "Tests pass")
                 })
                 add(buildJsonObject {
                     put("id", "other-agent")
@@ -49,7 +50,7 @@ class ClaudeAgentsTest {
         })
         assertEquals(
             listOf(
-                ClaudeAgentEntry("demo-agent", "claude-session-1", "Demo", "/Users/tester/project", "waiting", 1_700_000_000_000, "happy-1", "working"),
+                ClaudeAgentEntry("demo-agent", "claude-session-1", "Demo", "/Users/tester/project", "waiting", 1_700_000_000_000, "happy-1", "working", "Tests pass"),
                 ClaudeAgentEntry("other-agent", "claude-session-2", null, "/Users/tester/other", "idle", 1_700_000_100_000, null),
             ),
             listing.agents,

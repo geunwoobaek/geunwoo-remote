@@ -88,6 +88,7 @@ fun backgroundAgentRow(machineId: String, agent: ClaudeAgentEntry, opening: Bool
     machineId = machineId,
     path = agent.cwd,
     opening = opening,
+    preview = agent.lastLine?.let(::sessionPreviewLine),
 )
 
 private fun Session.agentKey(): Pair<String, String>? {

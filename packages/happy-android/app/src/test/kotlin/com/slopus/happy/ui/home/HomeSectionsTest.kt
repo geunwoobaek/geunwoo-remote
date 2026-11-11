@@ -1,9 +1,12 @@
 package com.slopus.happy.ui.home
 
 import com.slopus.happy.model.AgentAttention
+import com.slopus.happy.model.HomeModelFixtures.claudeAgent
+import com.slopus.happy.model.HomeModelFixtures.listing
 import com.slopus.happy.model.HomeModelFixtures.machine
 import com.slopus.happy.model.HomeModelFixtures.machineMetadata
 import com.slopus.happy.model.HomeModelFixtures.metadata
+import com.slopus.happy.model.HomeModelFixtures.mirror
 import com.slopus.happy.model.HomeModelFixtures.session
 import com.slopus.happy.model.Session
 import com.slopus.happy.model.SessionListGrouping
@@ -181,6 +184,25 @@ class HomeSectionsTest {
         derive(listOf(chat("a")), firstSeen = clock::firstSeen)
         now = 3_000
         assertEquals(3_000L, chat(derive(listOf(chat("a", thinking = true)), firstSeen = clock::firstSeen), "a").row.session.stateSince)
+    }
+
+    /** A stopped mirror's stored line is old: the Mac's line wins; a running mirror's stored line stands. */
+    @Test fun theMacsLineOutranksAStoppedMirrorsStoredOne() {
+        val stopped = mirror("s1", "a1", active = false)
+        val running = mirror("s2", "a2")
+        val state = deriveHomeList(
+            HomeListInputs(
+                HomeSnapshot(listOf(stopped, running), listOf(online)), SessionListGrouping.Flat, true, emptySet(), emptySet(), emptySet(),
+                agentListings = mapOf(
+                    "m1" to listing(claudeAgent("a1", lastLine = "From the Mac"), claudeAgent("a2", lastLine = "Also from the Mac")),
+                ),
+                previews = mapOf("s1" to SessionPreview("Stored long ago", null), "s2" to SessionPreview("Streamed just now", null)),
+            ),
+            zone,
+            today,
+        ) { _, _ -> null }
+        assertEquals("From the Mac", chat(state, "s1").row.session.preview)
+        assertEquals("Streamed just now", chat(state, "s2").row.session.preview)
     }
 
     @Test fun projectGroupingIsUnchanged() {
