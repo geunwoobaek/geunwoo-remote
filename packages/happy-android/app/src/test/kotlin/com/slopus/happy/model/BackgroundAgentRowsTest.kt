@@ -166,9 +166,44 @@ class BackgroundAgentRowsTest {
         )
         val byId = rows(items(emptyList(), listings)).associateBy { it.id }
         assertEquals(SessionState.Waiting, byId.getValue("agent:m1:done").state)
-        assertEquals(SessionState.PermissionRequired, byId.getValue("agent:m1:blocked").state)
+        assertEquals(SessionState.InputRequired, byId.getValue("agent:m1:blocked").state)
         assertEquals(SessionState.Thinking, byId.getValue("agent:m1:working").state)
         assertEquals(SessionState.Thinking, byId.getValue("agent:m1:unknown").state)
+    }
+
+    @Test
+    fun aMirrorTakesTheNameTheMacSessionHasNow() {
+        val sessions = listOf(mirror("s1", "a1", name = "old-auto-name", active = false))
+        val listings = mapOf("m1" to listing(claudeAgent("a1", name = "Renamed on the Mac", status = "busy", state = "working")))
+        assertEquals("Renamed on the Mac", rows(items(sessions, listings)).single().name)
+        // A Mac session with no name keeps the mirror's.
+        val unnamed = mapOf("m1" to listing(claudeAgent("a1", status = "busy", state = "working")))
+        assertEquals("old-auto-name", rows(items(sessions, unnamed)).single().name)
+    }
+
+    @Test
+    fun aRunningMirrorFollowsTheMacsState() {
+        // The server can still call a mirror active and thinking after its process is gone.
+        val thinking = mirror("s1", "a1").copy(thinking = true)
+        val done = mapOf("m1" to listing(claudeAgent("a1", status = "busy", state = "done")))
+        assertEquals(SessionState.Waiting, rows(items(listOf(thinking), done)).single().state)
+        val idle = mirror("s1", "a1")
+        val working = mapOf("m1" to listing(claudeAgent("a1", status = "busy", state = "working")))
+        assertEquals(SessionState.Thinking, rows(items(listOf(idle), working)).single().state)
+        // A daemon that sends no state leaves a running mirror's own state alone.
+        val noState = mapOf("m1" to listing(claudeAgent("a1", status = "idle")))
+        assertEquals(SessionState.Thinking, rows(items(listOf(thinking), noState)).single().state)
+    }
+
+    @Test
+    fun onlyARunningMirrorsOwnRequestAsksForApproval() {
+        val blocked = mapOf("m1" to listing(claudeAgent("a1", status = "waiting", state = "blocked")))
+        // Waiting on the Mac alone: the phone can answer it by replying, not approve it.
+        assertEquals(SessionState.InputRequired, rows(items(listOf(mirror("s1", "a1", active = false)), blocked)).single().state)
+        assertEquals(SessionState.InputRequired, rows(items(listOf(mirror("s1", "a1")), blocked)).single().state)
+        // A permission request the running mirror holds is still approved from the phone.
+        val asking = mirror("s1", "a1").copy(attention = AgentAttention(permissionRequests = 1, pendingCommunications = 0))
+        assertEquals(SessionState.PermissionRequired, rows(items(listOf(asking), blocked)).single().state)
     }
 
     @Test

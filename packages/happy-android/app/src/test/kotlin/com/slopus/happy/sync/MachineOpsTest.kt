@@ -394,7 +394,7 @@ class MachineOpsTest {
         }
         assertEquals(
             ClaudeAgentsListing(
-                listOf(ClaudeAgentEntry("demo-agent", "claude-1", "Demo", "/Users/tester/project", "busy", 5, null)),
+                listOf(ClaudeAgentEntry("demo-agent", "claude-1", "Demo", "/Users/tester/project", "busy", 5, null, "working")),
                 "tmux-missing",
             ),
             ops.listClaudeAgents("m1"),

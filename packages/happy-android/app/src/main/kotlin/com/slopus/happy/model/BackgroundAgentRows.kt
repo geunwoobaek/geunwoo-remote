@@ -41,17 +41,33 @@ fun folderTail(cwd: String): String = cwd.trimEnd('/', '\\').substringAfterLast(
 /**
  * A background session as a row's state, grouped the way `claude agents`
  * groups it: by its [ClaudeAgentEntry.state] when that is one the app knows,
- * else by its status (busy shimmers, waiting shows the orange dot).
+ * else by its status (busy shimmers, waiting shows the orange dot). Waiting
+ * is input required, not a permission: the Mac does not say which (a
+ * permission prompt is just an open dialog there), and only a running
+ * mirror's own request can be approved from the phone.
  */
 fun backgroundAgentState(agent: ClaudeAgentEntry): SessionState = when (agent.state) {
     "working" -> SessionState.Thinking
-    "blocked" -> SessionState.PermissionRequired
+    "blocked" -> SessionState.InputRequired
     "done" -> SessionState.Waiting
     else -> when (agent.status) {
         "busy" -> SessionState.Thinking
-        "waiting" -> SessionState.PermissionRequired
+        "waiting" -> SessionState.InputRequired
         else -> SessionState.Waiting
     }
+}
+
+/**
+ * The state of a mirror of the running Mac session [agent]. A mirror that is
+ * running and holds a request or question keeps it (answered from the phone).
+ * Otherwise the Mac decides when it says how the session stands: the server
+ * can still call a mirror active and thinking after its process is gone. A
+ * running mirror of a daemon that sends no state keeps its own.
+ */
+fun mirrorState(session: Session, own: SessionState, agent: ClaudeAgentEntry): SessionState = when {
+    session.active && (own == SessionState.PermissionRequired || own == SessionState.InputRequired) -> own
+    session.active && agent.state == null -> own
+    else -> backgroundAgentState(agent)
 }
 
 /**

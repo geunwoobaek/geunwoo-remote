@@ -268,8 +268,9 @@ fun buildSessionListViewData(
                         active = true,
                         archived = false,
                         activeAt = null,
-                        // A mirror whose process is gone says what the Mac session is doing.
-                        state = if (session.active) row.state else backgroundAgentState(liveAgent),
+                        // The Mac session's own name and state: it can be renamed there, and a mirror's process can be gone.
+                        name = liveAgent.name ?: row.name,
+                        state = mirrorState(session, row.state, liveAgent),
                         opening = source.opening,
                     )
                 },
