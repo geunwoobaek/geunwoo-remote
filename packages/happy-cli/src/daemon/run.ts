@@ -1003,6 +1003,12 @@ export async function startDaemon(): Promise<void> {
       tmuxInstalled: isTmuxInstalled,
       fetchAgents: fetchClaudeAgents,
       liveMirrors,
+      // Still tracked after a webhook timeout; the late webhook fills in happySessionId.
+      mirrorStarting: (agentId) => {
+        const pid = mirrorPids.get(agentId);
+        return pid !== undefined && isPidAlive(pid) && !stoppingPids.has(pid)
+          && pidToTrackedSession.has(pid) && pidToTrackedSession.get(pid)!.happySessionId === undefined;
+      },
       persistedMirrors: () => pickPersistedMirrors(readPersistedSessions()),
       // The mirror never asks to create a directory (the agent's own cwd exists), but the shared result type allows it.
       spawnMirror: async (agentId, reconnect, cwd) => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Metadata } from '@/api/types';
 import {
+    LATE_MIRROR_WAIT_MS,
     MIRROR_RESUME_REFUSAL,
     createClaudeAgentHandlers,
     isClaudeAgentMirror,
@@ -43,6 +44,7 @@ function makeDeps(overrides: Partial<ClaudeAgentHandlerDeps> = {}): { deps: Clau
         tmuxInstalled: async () => true,
         fetchAgents: async () => [agent('abc12345')],
         liveMirrors: () => new Map(),
+        mirrorStarting: () => false,
         persistedMirrors: () => new Map(),
         spawnMirror: async (agentId, reconnect, cwd) => {
             spawns.push({ agentId, reconnect, cwd });
@@ -192,6 +194,33 @@ describe('start-claude-agent', () => {
         const result = await createClaudeAgentHandlers(deps).start(startRequest);
         expect(result).toEqual({ type: 'error', code: 'start-failed', errorMessage: 'Session process 1 exited before connecting.' });
         expect(fakes.calls).toEqual(['bg', 'stop 35d81094', 'rm 35d81094']);
+    });
+
+    it('opens a mirror that reports after the webhook timeout, keeping the agent', async () => {
+        let polls = 0;
+        const { deps, fakes } = makeStartDeps({}, {
+            spawnMirror: async () => ({ type: 'error', errorMessage: 'Session webhook timeout for PID 1' }),
+            mirrorStarting: () => true,
+            liveMirrors: () => (polls++ >= 3 ? new Map([['35d81094', 'happy-late']]) : new Map()),
+        });
+        const result = await createClaudeAgentHandlers(deps).start(startRequest);
+        expect(result).toEqual({ type: 'success', sessionId: 'happy-late', agentId: '35d81094' });
+        expect(fakes.calls).toEqual(['bg']);
+    });
+
+    it('keeps the agent when its mirror is still connecting after the extra wait', async () => {
+        const { deps, fakes } = makeStartDeps({ appearsOnFetch: 1 }, {
+            spawnMirror: async () => ({ type: 'error', errorMessage: 'Session webhook timeout for PID 1' }),
+            mirrorStarting: () => true,
+        });
+        const handlers = createClaudeAgentHandlers(deps);
+        const result = await handlers.start(startRequest);
+        expect(result).toMatchObject({ type: 'error', code: 'start-failed' });
+        expect((result as { errorMessage: string }).errorMessage).toContain('still connecting');
+        expect(fakes.calls).toEqual(['bg']);
+        expect(fakes.sleeps.reduce((total, ms) => total + ms, 0)).toBe(LATE_MIRROR_WAIT_MS);
+        // Still ours: the user can discard it from the phone.
+        expect(await handlers.discard('35d81094')).toMatchObject({ type: 'success' });
     });
 
     it('cleans up when opening the mirror throws', async () => {
@@ -405,6 +434,37 @@ describe('open-claude-agent', () => {
         });
         expect(await createClaudeAgentHandlers(deps).open('abc12345')).toEqual({ type: 'success', sessionId: 'happy-fresh' });
         expect(calls.map((call) => call.reconnect !== undefined)).toEqual([true, false]);
+    });
+
+    it('open waits for a late reconnect mirror instead of spawning a second one', async () => {
+        let polls = 0;
+        const calls: SpawnCall[] = [];
+        const { deps } = makeDeps({
+            persistedMirrors: () => new Map([['abc12345', persisted]]),
+            spawnMirror: async (agentId, reconnect, cwd): Promise<OpenClaudeAgentResult> => {
+                calls.push({ agentId, reconnect, cwd });
+                return { type: 'error', errorMessage: 'Session webhook timeout for PID 1' };
+            },
+            mirrorStarting: () => true,
+            // The two looks before any spawn see nothing; the mirror reports on the second poll after it.
+            liveMirrors: () => (polls++ >= 4 ? new Map([['abc12345', 'happy-old']]) : new Map()),
+        });
+        expect(await createClaudeAgentHandlers(deps).open('abc12345')).toEqual({ type: 'success', sessionId: 'happy-old' });
+        expect(calls.map((call) => call.reconnect !== undefined)).toEqual([true]);
+    });
+
+    it('open does not spawn fresh while the reconnect mirror is still starting', async () => {
+        const calls: SpawnCall[] = [];
+        const { deps } = makeDeps({
+            persistedMirrors: () => new Map([['abc12345', persisted]]),
+            spawnMirror: async (agentId, reconnect, cwd): Promise<OpenClaudeAgentResult> => {
+                calls.push({ agentId, reconnect, cwd });
+                return { type: 'error', errorMessage: 'Session webhook timeout for PID 1' };
+            },
+            mirrorStarting: () => true,
+        });
+        expect(await createClaudeAgentHandlers(deps).open('abc12345')).toEqual({ type: 'error', errorMessage: 'Session webhook timeout for PID 1' });
+        expect(calls.map((call) => call.reconnect !== undefined)).toEqual([true]);
     });
 
     it('open returns the fresh spawn error when both the reconnect and the fresh spawn fail', async () => {

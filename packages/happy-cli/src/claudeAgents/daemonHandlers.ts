@@ -38,6 +38,12 @@ export type ClaudeAgentHandlers = {
 /** How long a started agent may take to show up in `claude agents --json`. */
 export const START_APPEAR_TIMEOUT_MS = 10_000;
 export const START_POLL_INTERVAL_MS = 500;
+/**
+ * How much longer to wait for a mirror that missed the daemon's 15 s webhook timeout but is still
+ * running. A busy Mac can take that long just to load the CLI. With `claude --bg`, the 10 s
+ * appear wait and the 15 s webhook wait, a start stays under the app's 50 s RPC timeout.
+ */
+export const LATE_MIRROR_WAIT_MS = 15_000;
 /** How long a successful start is answered again for a repeated `clientRequestId`. */
 export const START_RESULT_REUSE_MS = 5 * 60_000;
 
@@ -57,6 +63,8 @@ export type ClaudeAgentHandlerDeps = {
     fetchAgents(claudePath: string): Promise<ClaudeAgent[]>;
     /** agentId → happySessionId of the mirror processes that are running right now. */
     liveMirrors(): Map<string, string>;
+    /** True while a mirror process this daemon spawned for the agent is alive but has not reported its session yet. */
+    mirrorStarting(agentId: string): boolean;
     /** agentId → the stored keys of its most recent mirror session. */
     persistedMirrors(): Map<string, PersistedMirror>;
     /**
@@ -172,6 +180,26 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
         }
     }
 
+    /**
+     * A spawn that timed out may still be a mirror coming up: wait for it to report instead of
+     * failing (or spawning a second mirror next to it). Any other failure is returned as is.
+     */
+    async function awaitLateMirror(agentId: string, spawned: OpenClaudeAgentResult): Promise<OpenClaudeAgentResult> {
+        if (spawned.type === 'success') {
+            return spawned;
+        }
+        for (let waited = 0; ; waited += START_POLL_INTERVAL_MS) {
+            const sessionId = deps.liveMirrors().get(agentId);
+            if (sessionId !== undefined) {
+                return { type: 'success', sessionId };
+            }
+            if (!deps.mirrorStarting(agentId) || waited >= LATE_MIRROR_WAIT_MS) {
+                return spawned;
+            }
+            await deps.sleep(START_POLL_INTERVAL_MS);
+        }
+    }
+
     async function openUncached(agentId: string): Promise<OpenClaudeAgentResult> {
         const liveSessionId = deps.liveMirrors().get(agentId);
         if (liveSessionId !== undefined) {
@@ -199,18 +227,18 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
 
         const persisted = deps.persistedMirrors().get(agentId);
         if (persisted !== undefined) {
-            const reconnected = await deps.spawnMirror(
+            const reconnected = await awaitLateMirror(agentId, await deps.spawnMirror(
                 agentId,
                 { happySessionId: persisted.happySessionId, env: reconnectEnv(persisted) },
                 agent.cwd,
-            );
-            if (reconnected.type === 'success') {
+            ));
+            if (reconnected.type === 'success' || deps.mirrorStarting(agentId)) {
                 return reconnected;
             }
-            // The stored keys may no longer open the session (the mirror exits before it reports,
-            // or never reports within the daemon's webhook timeout). Start one fresh instead.
+            // The stored keys may no longer open the session (the mirror exited before it reported).
+            // Start one fresh instead.
         }
-        return deps.spawnMirror(agentId, undefined, agent.cwd);
+        return awaitLateMirror(agentId, await deps.spawnMirror(agentId, undefined, agent.cwd));
     }
 
     function open(agentId: string): Promise<OpenClaudeAgentResult> {
@@ -314,7 +342,8 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
             };
         }
 
-        // From here on the Mac has a session: every failure removes it before answering.
+        // From here on the Mac has a session: every failure removes it before answering, except
+        // a mirror that is still connecting (see below).
         startedHere.add(agentId);
         try {
             if (!(await waitForAgent(claudePath, agentId))) {
@@ -322,6 +351,15 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
             }
             const opened = await open(agentId);
             if (opened.type === 'error') {
+                if (deps.mirrorStarting(agentId)) {
+                    // Removing the agent now would also take down a mirror that is about to connect.
+                    // It stays ours, so the phone can still discard it.
+                    return {
+                        type: 'error',
+                        code: 'start-failed',
+                        errorMessage: `Background session ${agentId} is running on the Mac, but its mirror is still connecting. It will show in the session list shortly.`,
+                    };
+                }
                 return failAfterStart(claudePath, agentId, opened.errorMessage);
             }
             return { type: 'success', sessionId: opened.sessionId, agentId };

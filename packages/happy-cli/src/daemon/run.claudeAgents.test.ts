@@ -176,9 +176,26 @@ describe('daemon Claude background agents', () => {
     await boot();
     mocks.spawn.mockReturnValue({ pid: 12345, on: vi.fn() });
     const first = mocks.handlers.claudeAgents.open('abc12345');
-    await vi.advanceTimersByTimeAsync(15_000);
+    // The 15 s webhook timeout, then the extra wait for a mirror that is still running.
+    await vi.advanceTimersByTimeAsync(31_000);
     expect(await first).toMatchObject({ type: 'error', errorMessage: expect.stringContaining('timeout') });
-    expect(await mocks.handlers.claudeAgents.open('abc12345')).toMatchObject({ type: 'error' });
+    const second = mocks.handlers.claudeAgents.open('abc12345');
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(await second).toMatchObject({ type: 'error' });
+    expect(mocks.spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a mirror whose webhook arrives after the timeout', async () => {
+    vi.useFakeTimers();
+    await boot();
+    mocks.spawn.mockReturnValue({ pid: 12345, on: vi.fn() });
+    const first = mocks.handlers.claudeAgents.open('abc12345');
+    await vi.advanceTimersByTimeAsync(16_000);
+    mocks.webhook('happy-late', { ...mirrorMetadata, hostPid: 12345 }, {
+      encryptionKey: new Uint8Array(32), encryptionVariant: 'dataKey', seq: 0, metadataVersion: 0, agentStateVersion: 0,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await first).toEqual({ type: 'success', sessionId: 'happy-late' });
     expect(mocks.spawn).toHaveBeenCalledTimes(1);
   });
 
