@@ -77,14 +77,21 @@ class HomeListTest {
 
     private fun derive(inputs: HomeListInputs) = deriveHomeList(inputs, zone, today)
 
-    private fun shape(state: HomeListState) = state.rows.map { row ->
+    // The sections' chips and headings are HomeSectionsTest's; here, the chats' order.
+    private fun shape(state: HomeListState) = state.rows.filterNot { it is HomeRow.SectionChips || it is HomeRow.SectionHeader }.map { row ->
         when (row) {
             is HomeRow.Chat -> "chat:${row.row.session.id}${if (row.archived) ":archived" else ""}${if (row.showBorder) "" else ":last"}"
             is HomeRow.ArchiveToggle -> if (row.hidden) "toggle:show" else "toggle:hide"
             is HomeRow.DayHeader -> "header:${row.title}"
             is HomeRow.Project -> "project:${row.row.key}"
+            is HomeRow.ShowMore -> "more:${row.hidden}"
+            is HomeRow.SectionChips, is HomeRow.SectionHeader -> error("filtered")
         }
     }
+
+    private fun chats(state: HomeListState) = state.rows.filterIsInstance<HomeRow.Chat>()
+
+    private fun chatRow(state: HomeListState, id: String) = state.rows.single { it.key == "flat-session-$id" }
 
     @Test fun flatListPutsLiveChatsByActivityThenTheArchiveByDay() {
         val state = derive(
@@ -105,8 +112,8 @@ class HomeListTest {
             ),
             shape(state),
         )
-        assertTrue((state.rows[2] as HomeRow.ArchiveToggle).banded)
-        assertEquals(DayTitle.Yesterday, (state.rows[5] as HomeRow.DayHeader).title)
+        assertTrue(state.rows.filterIsInstance<HomeRow.ArchiveToggle>().single().banded)
+        assertEquals(DayTitle.Yesterday, state.rows.filterIsInstance<HomeRow.DayHeader>()[1].title)
         assertEquals(HomeEmptyState.List, state.emptyState)
     }
 
@@ -166,9 +173,9 @@ class HomeListTest {
         val first = derive(inputs(sessions))
         val second = reuseUnchanged(first, derive(inputs(sessions.map { if (it.id == "b") it.copy(thinking = true) else it })))
         assertNotSame(first.rows, second.rows)
-        assertSame(first.rows[0], second.rows[0])
-        assertNotSame(first.rows[1], second.rows[1])
-        assertSame(first.rows[2], second.rows[2])
+        assertSame(chatRow(first, "a"), chatRow(second, "a"))
+        assertNotSame(chatRow(first, "b"), chatRow(second, "b"))
+        assertSame(chatRow(first, "c"), chatRow(second, "c"))
         // Nothing changed: the previous state itself.
         assertSame(second, reuseUnchanged(second, derive(inputs(sessions.map { if (it.id == "b") it.copy(thinking = true) else it }))))
     }
@@ -189,14 +196,14 @@ class HomeListTest {
             zone = { zone },
         )
         assertNull(model.state.value)
-        snapshots.value = HomeSnapshot(listOf(cli("a", noon), cli("b", noon - 1)), listOf(online))
+        snapshots.value = HomeSnapshot(listOf(cli("a", noon), cli("b", noon - 1), cli("c", noon - 2)), listOf(online))
         val first = model.state.value!!
-        assertEquals(2, first.rows.size)
+        assertEquals(3, chats(first).size)
 
-        snapshots.value = HomeSnapshot(listOf(cli("a", noon), cli("b", noon - 1).copy(thinking = true)), listOf(online))
+        snapshots.value = HomeSnapshot(listOf(cli("a", noon), cli("b", noon - 1).copy(thinking = true), cli("c", noon - 2)), listOf(online))
         val second = model.state.value!!
-        assertSame(first.rows[0], second.rows[0])
-        assertNotSame(first.rows[1], second.rows[1])
+        assertSame(chatRow(first, "a"), chatRow(second, "a"))
+        assertNotSame(chatRow(first, "b"), chatRow(second, "b"))
 
         settings.value = Settings.Defaults.copy(sessionListGrouping = SessionListGrouping.Project)
         assertEquals(SessionListGrouping.Project, model.state.value!!.grouping)
@@ -206,10 +213,10 @@ class HomeListTest {
         val listings = mapOf("m1" to listing(claudeAgent("a1", cwd = "/Users/tester/project", startedAt = noon - 2 * 60_000)))
         val state = derive(inputs(listOf(cli("old", noon - 3 * 60_000), cli("new", noon - 60_000)), listings = listings))
         assertEquals(listOf("chat:new", "chat:agent:m1:a1", "chat:old:last"), shape(state))
-        val agentRow = (state.rows[1] as HomeRow.Chat).row
+        val agentRow = chats(state)[1].row
         assertEquals("project", agentRow.projectName)
         assertEquals("m1:/Users/tester/project", agentRow.session.avatarId)
-        assertFalse((state.rows[1] as HomeRow.Chat).archived)
+        assertFalse(chats(state)[1].archived)
     }
 
     @Test fun anEmptyHomeWithAnUnopenedAgentListsIt() {
@@ -247,7 +254,7 @@ class HomeListTest {
         val state = derive(inputs(sessions, archiveHidden = false, listings = mapOf("m1" to listing(claudeAgent("a1", mirrorSessionId = "s1")))))
         assertEquals(listOf("chat:s1:last"), shape(state))
         assertFalse(state.hasArchivedSessions)
-        assertEquals("Demo", (state.rows[0] as HomeRow.Chat).row.session.name)
+        assertEquals("Demo", chats(state)[0].row.session.name)
         // Once the Mac session ends, the mirror is back in the archive.
         assertEquals(listOf("toggle:hide", "header:Today", "chat:s1:archived:last"), shape(derive(inputs(sessions, archiveHidden = false, listings = mapOf("m1" to listing())))))
     }
@@ -256,7 +263,7 @@ class HomeListTest {
         val listings = mapOf("m1" to listing(claudeAgent("a1")))
         val state = derive(inputs(listOf(mirror("s1", "a2", active = false)), listings = listings + ("m1" to listing(claudeAgent("a1"), claudeAgent("a2"))), opening = setOf("a1", "a2")))
         assertTrue(state.rows.filterIsInstance<HomeRow.Chat>().all { it.row.session.opening })
-        assertFalse((derive(inputs(emptyList(), listings = listings)).rows.single() as HomeRow.Chat).row.session.opening)
+        assertFalse(chats(derive(inputs(emptyList(), listings = listings))).single().row.session.opening)
     }
 
     private class Opens(private val result: OpenClaudeAgentResult?) {
@@ -276,7 +283,7 @@ class HomeListTest {
 
     @Test fun tapOnAnUnopenedAgentOpensTheMirror() = runTest {
         val listings = mapOf("m1" to listing(claudeAgent("a1")))
-        val row = (derive(inputs(emptyList(), listings = listings)).rows.single() as HomeRow.Chat).row.session
+        val row = chats(derive(inputs(emptyList(), listings = listings))).single().row.session
         val target = resolveHomeRowTarget(row.id, emptyList(), listings)
         assertEquals(HomeRowTarget.Agent("m1", "a1"), target)
         val opens = Opens(OpenClaudeAgentResult.Success("mirror-1"))
@@ -341,9 +348,9 @@ class HomeListTest {
             zone = { zone },
             agentListings = listings,
         )
-        assertEquals(1, model.state.value!!.rows.size)
+        assertEquals(1, chats(model.state.value!!).size)
         listings.value = mapOf("m1" to listing(claudeAgent("a1", startedAt = noon + 1)))
-        assertEquals("agent:m1:a1", (model.state.value!!.rows.first() as HomeRow.Chat).row.session.id)
+        assertEquals("agent:m1:a1", chats(model.state.value!!).first().row.session.id)
     }
 
     @Test fun presenceDecidesOnlineAndThinking() {

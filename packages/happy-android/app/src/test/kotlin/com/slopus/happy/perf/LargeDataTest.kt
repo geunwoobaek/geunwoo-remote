@@ -135,7 +135,9 @@ class LargeDataTest {
                 archivingSessionIds = flowOf(emptySet()),
                 scope = scope,
             )
-            val state = withTimeout(10_000) { model.state.filterNotNull().first() }
+            // Every chat listed: Completed shows only its first few until asked.
+            model.completedExpanded.value = true
+            val state = withTimeout(10_000) { model.state.filterNotNull().first { it.rows.size > 400 } }
             assertTrue(state.rows.size > 400)
             assertTrue("derived on ${threads.map { it.name }}", threads.isNotEmpty() && collector !in threads)
         } finally {

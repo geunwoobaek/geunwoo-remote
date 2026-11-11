@@ -333,6 +333,7 @@ fun HomeList(
                 is HomeRow.ArchiveToggle -> ArchiveToggleRow(row.hidden, row.banded, callbacks)
                 is HomeRow.DayHeader -> DayHeaderRow(row.title, flat)
                 is HomeRow.Project -> ProjectHomeRowContent(row.row, callbacks)
+                is HomeRow.SectionChips, is HomeRow.SectionHeader, is HomeRow.ShowMore -> Unit
             }
         }
         item(key = "bottom", contentType = "bottom") { bottomSpacer() }
@@ -351,6 +352,7 @@ private fun HomeCardItem(entry: HomeCardEntry, callbacks: HomeListCallbacks, sel
         }
         is HomeRow.ArchiveToggle -> ArchiveToggleRow(row.hidden, row.banded, callbacks, carded = true)
         is HomeRow.DayHeader -> Unit
+        is HomeRow.SectionChips, is HomeRow.SectionHeader, is HomeRow.ShowMore -> Unit
         is HomeRow.Project -> if (place != null) {
             HomeCardRow(place, ProjectListSpec.cardRowHeight(row.row), ProjectListSpec.nameX, tag = HomeTags.CARD_ROW, selected = selectedSessionId != null && row.row.shows(selectedSessionId)) {
                 ProjectHomeRowContent(row.row, callbacks, carded = true)

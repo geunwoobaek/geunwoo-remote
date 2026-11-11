@@ -29,6 +29,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import com.slopus.happy.model.SessionPreview
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -48,9 +50,29 @@ import java.time.ZoneId
 sealed interface HomeRow {
     val key: String
 
-    /** A FlatSessionRow, live or (faded) archived. */
-    data class Chat(val row: FlatSessionRowData, val showBorder: Boolean, val archived: Boolean = false) : HomeRow {
+    /** A FlatSessionRow, live or (faded) archived; [section] in the flat list's sections. */
+    data class Chat(
+        val row: FlatSessionRowData,
+        val showBorder: Boolean,
+        val archived: Boolean = false,
+        val section: HomeSection? = null,
+    ) : HomeRow {
         override val key get() = "flat-session-${row.session.id}"
+    }
+
+    /** The flat list's summary: each non-empty section and its count, in order. Tapping one scrolls to it. */
+    data class SectionChips(val counts: List<Pair<HomeSection, Int>>) : HomeRow {
+        override val key get() = "section-chips"
+    }
+
+    /** A section's heading, the first row of its card. */
+    data class SectionHeader(val section: HomeSection, val count: Int) : HomeRow {
+        override val key get() = "section-$section"
+    }
+
+    /** "Show N more": the last row of a section's card, for the [hidden] chats it holds back. */
+    data class ShowMore(val section: HomeSection, val hidden: Int) : HomeRow {
+        override val key get() = "show-more-$section"
     }
 
     /** The divider that shows or hides the archive; [banded] in the flat list. */
@@ -82,13 +104,13 @@ data class HomeCardEntry(val row: HomeRow, val place: HomeCardPlace?) {
 /** A row of a card, as opposed to a heading, a gap or the archive toggle. */
 private val HomeRow.isCardRow: Boolean
     get() = when (this) {
-        is HomeRow.Chat -> true
+        is HomeRow.Chat, is HomeRow.SectionHeader, is HomeRow.ShowMore -> true
         is HomeRow.Project -> when (row) {
             is ProjectHomeRow.Bot, is ProjectHomeRow.Task, is ProjectHomeRow.ProjectCard, is ProjectHomeRow.Worktree,
             is ProjectHomeRow.Toggle, is ProjectHomeRow.Archived -> true
             else -> false
         }
-        is HomeRow.ArchiveToggle, is HomeRow.DayHeader -> false
+        is HomeRow.ArchiveToggle, is HomeRow.DayHeader, is HomeRow.SectionChips -> false
     }
 
 /** A worktree or the toggle ending them: on its project's tree line, which already joins it to the row above. */
@@ -115,13 +137,14 @@ fun homeCardEntries(rows: List<HomeRow>, showsMachines: Boolean): List<HomeCardE
     return kept.mapIndexed { index, row ->
         if (!row.isCardRow) return@mapIndexed HomeCardEntry(row, null)
         val next = kept.getOrNull(index + 1)
-        val last = next?.isCardRow != true
+        // A section's heading opens a card of its own.
+        val last = next?.isCardRow != true || next is HomeRow.SectionHeader
         HomeCardEntry(
             row,
             HomeCardPlace(
-                first = kept.getOrNull(index - 1)?.isCardRow != true,
+                first = kept.getOrNull(index - 1)?.isCardRow != true || row is HomeRow.SectionHeader,
                 last = last,
-                separated = !last && !next!!.hangsOnTree,
+                separated = !last && !next!!.hangsOnTree && row !is HomeRow.SectionHeader,
             ),
         )
     }
@@ -163,6 +186,10 @@ data class HomeListInputs(
     val agentListings: Map<String, ClaudeAgentsListing> = emptyMap(),
     /** Agent ids whose mirror is being opened ([ClaudeAgentsModel.opening]). */
     val openingAgents: Set<String> = emptySet(),
+    /** Each chat's last line and turn start ([SessionPreviews]). */
+    val previews: Map<String, SessionPreview> = emptyMap(),
+    /** The Completed section shows every chat, not only the first [COMPLETED_SHOWN]. */
+    val completedExpanded: Boolean = false,
 )
 
 /**
@@ -170,7 +197,13 @@ data class HomeListInputs(
  * view data, the archive preference applied, then flattened into rows for
  * the chosen layout.
  */
-fun deriveHomeList(inputs: HomeListInputs, zone: ZoneId, today: LocalDate): HomeListState {
+fun deriveHomeList(
+    inputs: HomeListInputs,
+    zone: ZoneId,
+    today: LocalDate,
+    /** When this device first saw a chat in its section ([SectionClock]); null leaves the start unknown. */
+    firstSeen: (id: String, section: HomeSection) -> Long? = { _, _ -> null },
+): HomeListState {
     val snapshot = inputs.snapshot
     val machines = snapshot.machines.associateBy { it.id }
     // The Mac background sessions join the chats as rows of their own, from the machines that can be asked (online, not a Happy Agent).
@@ -195,7 +228,7 @@ fun deriveHomeList(inputs: HomeListInputs, zone: ZoneId, today: LocalDate): Home
     val choices = collectMachineChoices(snapshot.machines)
     val online = choices.count { it.online }
     val rows = when (inputs.grouping) {
-        SessionListGrouping.Flat -> flatRows(visible, hasArchived, inputs.archiveHidden)
+        SessionListGrouping.Flat -> flatRows(visible, hasArchived, inputs, firstSeen)
         SessionListGrouping.Project -> buildProjectHomeRows(visible, machines, "", inputs.expandedProjects, hasArchived, inputs.archiveHidden)
             .map(HomeRow::Project)
     }
@@ -215,16 +248,22 @@ fun deriveHomeList(inputs: HomeListInputs, zone: ZoneId, today: LocalDate): Home
 }
 
 /**
- * The flat list: live chats by recent activity, then the archive toggle in
- * the heading band, then the archive by day, each archived chat a faded row.
+ * The flat list: live chats in their sections ([sectionedRows]), then the
+ * archive toggle in the heading band, then the archive by day, each
+ * archived chat a faded row.
  */
-private fun flatRows(visible: List<SessionListItem>, hasArchived: Boolean, archiveHidden: Boolean): List<HomeRow> {
+private fun flatRows(
+    visible: List<SessionListItem>,
+    hasArchived: Boolean,
+    inputs: HomeListInputs,
+    firstSeen: (id: String, section: HomeSection) -> Long?,
+): List<HomeRow> {
     val archived = visible.filter { it is SessionListItem.Header || it is SessionListItem.SessionItem }
     val grouped = visible.filter { it !is SessionListItem.Header && it !is SessionListItem.SessionItem }
     val live = buildFlatSessionRows(grouped, sortByActivity = true)
-    val rows = ArrayList<HomeRow>(live.size + archived.size + 1)
-    live.forEachIndexed { index, row -> rows.add(HomeRow.Chat(row, showBorder = index != live.lastIndex)) }
-    if (hasArchived) rows.add(HomeRow.ArchiveToggle(archiveHidden, banded = true))
+    val rows = ArrayList<HomeRow>(live.size + archived.size + 8)
+    rows.addAll(sectionedRows(live, inputs.previews, inputs.completedExpanded, firstSeen))
+    if (hasArchived) rows.add(HomeRow.ArchiveToggle(inputs.archiveHidden, banded = true))
     archived.forEachIndexed { index, item ->
         when (item) {
             is SessionListItem.Header -> rows.add(HomeRow.DayHeader(item.title, item.day))
@@ -270,22 +309,42 @@ class HomeListModel(
     agentListings: Flow<Map<String, ClaudeAgentsListing>> = flowOf(emptyMap()),
     /** Agent ids being opened ([ClaudeAgentsModel.opening]). */
     openingAgents: Flow<Set<String>> = flowOf(emptySet()),
+    /** Each chat's last line and turn start ([SessionPreviews]). */
+    previews: Flow<Map<String, SessionPreview>> = flowOf(emptyMap()),
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
     zone: () -> ZoneId = ZoneId::systemDefault,
+    now: () -> Long = System::currentTimeMillis,
 ) {
+    /** The Completed section shows every chat ("Show N more" tapped); in memory. */
+    val completedExpanded = MutableStateFlow(false)
+
+    private val clock = SectionClock(now)
+
+    private data class Extras(
+        val listings: Map<String, ClaudeAgentsListing>,
+        val opening: Set<String>,
+        val previews: Map<String, SessionPreview>,
+        val completedExpanded: Boolean,
+    )
+
     val state: StateFlow<HomeListState?> = combine(
         snapshots.filterNotNull().filter { it.ready },
         settings.map { it.sessionListGrouping to it.hideInactiveSessions }.distinctUntilChanged(),
         localSettings.map { values -> values.expandedProjects.filterValues { it }.keys }.distinctUntilChanged(),
         combine(unreadSessionIds, archivingSessionIds, ::Pair),
-        combine(agentListings, openingAgents, ::Pair),
-    ) { snapshot, (grouping, archiveHidden), expanded, (unread, archiving), (listings, opening) ->
-        HomeListInputs(snapshot, grouping, archiveHidden, expanded, unread, archiving, listings, opening)
+        combine(agentListings, openingAgents, previews, completedExpanded, ::Extras),
+    ) { snapshot, (grouping, archiveHidden), expanded, (unread, archiving), extras ->
+        HomeListInputs(
+            snapshot, grouping, archiveHidden, expanded, unread, archiving, extras.listings, extras.opening,
+            extras.previews, extras.completedExpanded,
+        )
     }
         .distinctUntilChanged()
         .map { inputs ->
             val zoneId = zone()
-            deriveHomeList(inputs, zoneId, LocalDate.now(zoneId))
+            deriveHomeList(inputs, zoneId, LocalDate.now(zoneId), clock::firstSeen).also { derived ->
+                clock.retain(derived.rows.mapNotNullTo(HashSet()) { row -> (row as? HomeRow.Chat)?.takeIf { it.section != null }?.row?.session?.id })
+            }
         }
         .scan(null as HomeListState?) { previous, next -> reuseUnchanged(previous, next) }
         .filterNotNull()
