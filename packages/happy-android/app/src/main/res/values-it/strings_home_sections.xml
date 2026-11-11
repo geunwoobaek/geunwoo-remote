@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  values/strings_home_sections.xml in it: Android-only strings, not in
+  happy-app's catalogs. AndroidStringsTranslatedTest fails while one is missing here.
+-->
+<resources>
+    <string name="home_section_needs_input">Serve risposta</string>
+    <string name="home_section_working">In corso</string>
+    <string name="home_section_completed">Completate</string>
+    <string name="home_chip_needs_input">Serve risposta %d</string>
+    <string name="home_chip_working">In corso %d</string>
+    <string name="home_chip_done">Fatte %d</string>
+    <string name="home_badge_approve">Approva</string>
+    <string name="home_badge_reply">Rispondi</string>
+    <string name="home_show_more">Mostra altre %d</string>
+</resources>

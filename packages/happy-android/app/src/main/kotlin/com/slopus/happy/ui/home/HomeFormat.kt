@@ -29,6 +29,17 @@ fun formatSessionListTimestamp(
     return if (date.year == thisYear) monthDay else String.format(Locale.ROOT, "%s/%02d", monthDay, date.year % 100)
 }
 
+/** How long a home row has waited or worked: `40s`, `12m`, `2h`, `3d` (the largest whole unit); nothing negative. */
+fun formatElapsed(ms: Long): String {
+    val seconds = maxOf(ms, 0) / 1000
+    return when {
+        seconds < 60 -> "${seconds}s"
+        seconds < 3600 -> "${seconds / 60}m"
+        seconds < 86_400 -> "${seconds / 3600}h"
+        else -> "${seconds / 86_400}d"
+    }
+}
+
 /** `new Date(timestamp).toLocaleString()`: the date and the time with seconds, in the user's locale. */
 fun formatLocaleDateTime(timestamp: Long, zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String =
     DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT, FormatStyle.MEDIUM).withLocale(locale).format(Instant.ofEpochMilli(timestamp).atZone(zone))

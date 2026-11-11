@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Home sections (the flat list grouped like `claude agents`): no happy-app
+  catalog key. Translated in values-*/ (AndroidStringsTranslatedTest).
+-->
+<resources>
+    <string name="home_section_needs_input">Needs input</string>
+    <string name="home_section_working">Working</string>
+    <string name="home_section_completed">Completed</string>
+    <string name="home_chip_needs_input">Needs input %d</string>
+    <string name="home_chip_working">Working %d</string>
+    <string name="home_chip_done">Done %d</string>
+    <string name="home_badge_approve">Approve</string>
+    <string name="home_badge_reply">Reply</string>
+    <string name="home_show_more">Show %d more</string>
+</resources>
