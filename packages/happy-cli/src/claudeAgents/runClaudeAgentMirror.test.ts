@@ -364,6 +364,13 @@ describe('resetMirrorMetadata', () => {
         expect(reset.archivedBy).toBeUndefined();
         expect(reset.archiveReason).toBeUndefined();
     });
+
+    it('takes the name the Mac session has now, and keeps the old one when it has none', () => {
+        const opened = buildMirrorMetadata(agent({ name: 'old-auto-name' }), base);
+
+        expect(resetMirrorMetadata(opened, agent({ name: 'Renamed on the Mac' }), 99).name).toBe('Renamed on the Mac');
+        expect(resetMirrorMetadata(opened, agent({ name: null }), 99).name).toBe('old-auto-name');
+    });
 });
 
 describe('settleStaleRequests', () => {

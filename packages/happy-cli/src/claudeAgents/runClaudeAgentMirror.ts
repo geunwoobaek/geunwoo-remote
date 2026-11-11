@@ -265,6 +265,8 @@ export function resetMirrorMetadata(metadata: Metadata, agent: ClaudeAgent, now:
         claudeSessionId: agent.sessionId,
         claudeAgentId: agent.id,
         cwd: agent.cwd,
+        // The Mac session can be renamed while no mirror runs; the app has no rename of its own to keep.
+        name: agent.name ?? metadata.name,
         lifecycleState: 'running',
         lifecycleStateSince: now,
         archivedBy: undefined,
@@ -729,7 +731,13 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
             void shutdown({ archive: true, reason: 'Background session ended', code: 0 });
             return;
         }
-        agent = agents.find((candidate) => candidate.id === agentId) ?? agent;
+        const listed = agents.find((candidate) => candidate.id === agentId) ?? agent;
+        if (listed.name !== null && listed.name !== agent.name) {
+            // Renamed on the Mac while this mirror runs: the phone shows the new name.
+            const name = listed.name;
+            session.updateMetadata((current) => ({ ...current, name }));
+        }
+        agent = listed;
         latestAgents = agents;
         if (change !== 'same') {
             logger.debug(`[MIRROR] Session changed ${currentSessionId} -> ${change.switchTo}`);
