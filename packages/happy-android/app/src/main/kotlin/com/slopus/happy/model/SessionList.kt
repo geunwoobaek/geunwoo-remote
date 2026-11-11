@@ -64,6 +64,10 @@ data class SessionRowData(
     val avatarThumbhash: String? = null,
     /** Its Mac background session's mirror is being opened ([SessionRowSource]). */
     val opening: Boolean = false,
+    /** Since when it has been in its home section (waiting on the user, or working); null when unknown. */
+    val stateSince: Long? = null,
+    /** Its last answer or tool line, from this device's stored messages; null when there is none yet. */
+    val preview: String? = null,
 )
 
 /** "Today", "Yesterday" or "N days ago" over an archived day (storage.ts relativeDayTitle). */
@@ -173,6 +177,8 @@ fun buildSessionRowData(session: Session, inputs: SessionListInputs): SessionRow
         gitStatusLinesAdded = gitStatus?.linesAdded ?: 0,
         gitStatusLinesRemoved = gitStatus?.linesRemoved ?: 0,
         state = session.state,
+        stateSince = session.attention.waitingSince
+            ?.takeIf { session.state == SessionState.PermissionRequired || session.state == SessionState.InputRequired },
         activeAt = if (!session.active) session.activeAt else null,
         createdAt = session.createdAt,
         lastActivityAt = session.activityAt(),

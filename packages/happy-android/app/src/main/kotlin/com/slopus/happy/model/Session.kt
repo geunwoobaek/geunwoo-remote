@@ -17,15 +17,25 @@ enum class SessionState { Disconnected, Thinking, Waiting, PermissionRequired, I
  * chat agree on "Input required".
  */
 @Immutable
-data class AgentAttention(val permissionRequests: Int, val pendingCommunications: Int) {
+data class AgentAttention(
+    val permissionRequests: Int,
+    val pendingCommunications: Int,
+    /** When the oldest open request or question was made; null when none says. The home list's Needs input clock. */
+    val waitingSince: Long? = null,
+) {
     companion object {
         val None = AgentAttention(0, 0)
 
         fun parse(agentStateJson: String?): AgentAttention = of(AgentState.parse(agentStateJson))
 
-        fun of(state: AgentState?): AgentAttention =
-            if (state == null) None
-            else AgentAttention(state.requests.size, selectPendingCommunications(state).size)
+        fun of(state: AgentState?): AgentAttention {
+            if (state == null) return None
+            val pending = selectPendingCommunications(state)
+            val since = (state.requests.values.mapNotNull { it.createdAt } + pending.map { it.createdAt })
+                .filter { it > 0 }
+                .minOrNull()
+            return AgentAttention(state.requests.size, pending.size, since)
+        }
     }
 }
 
