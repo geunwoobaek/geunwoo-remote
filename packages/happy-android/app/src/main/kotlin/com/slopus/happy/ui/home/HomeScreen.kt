@@ -388,7 +388,11 @@ private fun HomeCardItem(
         is HomeRow.DayHeader -> Unit
         is HomeRow.SectionChips -> SectionChipsRow(row.counts, onChip)
         is HomeRow.SectionHeader -> if (place != null) {
-            HomeCardRow(place, HomeSectionSpec.headerHeight, 16.dp, accent = sectionAccent(row.section)) { SectionHeaderRow(row.section, row.count) }
+            // Each section's card stands apart from the one above it.
+            Column {
+                Spacer(Modifier.height(HomeSectionSpec.cardGap))
+                HomeCardRow(place, HomeSectionSpec.headerHeight, 16.dp, accent = sectionAccent(row.section)) { SectionHeaderRow(row.section, row.count) }
+            }
         }
         is HomeRow.ShowMore -> if (place != null) {
             HomeCardRow(place, HomeSectionSpec.showMoreHeight, 16.dp, accent = sectionAccent(row.section)) { ShowMoreRow(row.hidden, callbacks) }

@@ -43,6 +43,8 @@ object HomeSectionTags {
 object HomeSectionSpec {
     val headerHeight = 38.dp
     val showMoreHeight = 44.dp
+    /** Above each section's card. */
+    val cardGap = 12.dp
     val chipGap = 6.dp
     val chipRadius = 14.dp
     val chip = happyTextStyle(fontSize = 13, lineHeight = 18, weight = FontWeight.SemiBold)
@@ -79,7 +81,7 @@ fun SectionChipsRow(counts: List<Pair<HomeSection, Int>>, onChip: (HomeSection) 
             .contentMaxWidth(LocalWindowLayout.current)
             .testTag(HomeSectionTags.CHIPS)
             .horizontalScroll(rememberScrollState())
-            .padding(start = HomeCardSpec.inset, end = HomeCardSpec.inset, top = 4.dp, bottom = 12.dp),
+            .padding(start = HomeCardSpec.inset, end = HomeCardSpec.inset, top = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(HomeSectionSpec.chipGap),
     ) {
         for ((section, count) in counts) {

@@ -18,7 +18,9 @@ import com.slopus.happy.model.HomeModelFixtures.machine
 import com.slopus.happy.model.HomeModelFixtures.machineMetadata
 import com.slopus.happy.model.HomeModelFixtures.metadata
 import com.slopus.happy.model.HomeModelFixtures.session
+import com.slopus.happy.model.AgentAttention
 import com.slopus.happy.model.SessionListGrouping
+import com.slopus.happy.model.SessionPreview
 import com.slopus.happy.net.ConnectionStatus
 import com.slopus.happy.ui.PHONE
 import com.slopus.happy.ui.components.MenuGroup
@@ -47,6 +49,8 @@ class HomeShots {
     @get:Rule val rule = createComposeRule()
     private val dir = System.getenv("HAPPY_SHOTS_DIR")?.let(::File)
     private val noon = LocalDate.of(2026, 10, 16).atTime(12, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
+    /** The rows' elapsed times count to the real clock. */
+    private val clock = System.currentTimeMillis()
     private val studio = machine("m1", machineMetadata { put("displayName", "Studio") })
     private val callbacks = HomeListCallbacks({}, {}, {}, {}, {}, {}, {}, { _, _ -> })
     private val actions = HomeScreenActions({}, {}, {}, {}, {})
@@ -73,11 +77,24 @@ class HomeShots {
                             putJsonObject("summary") { put("text", title); put("updatedAt", 0) }
                         },
                         lastMessageSentAt = noon - i * 3_600_000L,
+                        // Two waiting on the user (a tool to approve, a question), two working, the rest done.
+                        attention = when (i) {
+                            0 -> AgentAttention(1, 0, waitingSince = clock - 12 * 60_000L)
+                            1 -> AgentAttention(0, 1, waitingSince = clock - 40_000L)
+                            else -> AgentAttention.None
+                        },
+                        thinking = i == 2 || i == 3,
                     )
                 },
                 listOf(studio),
             ),
-            SessionListGrouping.Flat, true, emptySet(), setOf("s1"), emptySet(),
+            SessionListGrouping.Flat, true, emptySet(), setOf("s4"), emptySet(),
+            previews = mapOf(
+                "s0" to SessionPreview("Bash: ./gradlew test", null),
+                "s1" to SessionPreview("Which flaky test should I fix first?", null),
+                "s2" to SessionPreview("Reading HomeScreen.kt", clock - 3 * 60_000L),
+                "s4" to SessionPreview("Done — release notes are in CHANGELOG.md", null),
+            ),
         ),
         ZoneOffset.UTC,
         LocalDate.of(2026, 10, 16),

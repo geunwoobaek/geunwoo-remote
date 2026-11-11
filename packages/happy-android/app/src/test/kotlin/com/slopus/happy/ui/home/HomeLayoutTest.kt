@@ -283,7 +283,7 @@ class HomeLayoutTest {
         val chips = rule.node(HomeSectionTags.CHIPS).bounds
         assertDp("chips 8 under the bar", barBottom + GlassSpec.feather + 8.dp, chips.top)
         val header = rule.node(HomeSectionTags.HEADER).bounds
-        assertDp("the section's card under the chips", chips.bottom, header.top)
+        assertDp("the section's card 12 under the chips", chips.bottom + 12.dp, header.top)
         assertBox("first row, in its card under its heading", row, 16.dp, header.bottom, (PHONE_WIDTH - 32).dp, 81.dp)
         val avatar = rule.onAllNodesWithTag(FlatRowTags.AVATAR, useUnmergedTree = true)[0].bounds
         assertBox("avatar", avatar, 32.dp, row.top + 20.5.dp, 40.dp, 40.dp)
