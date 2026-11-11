@@ -275,8 +275,9 @@ fun buildSessionListViewData(
                         // The Mac session's own name and state: it can be renamed there, and a mirror's process can be gone.
                         name = liveAgent.name ?: row.name,
                         state = mirrorState(session, row.state, liveAgent),
-                        // A mirror that is not running stores nothing new: the Mac's transcript says what came since.
-                        preview = if (session.active) null else liveAgent.lastLine?.let(::sessionPreviewLine),
+                        // A mirror whose process is gone stores nothing new (the server may still call it active):
+                        // the Mac's transcript says what came since. The daemon names only running mirrors.
+                        preview = if (liveAgent.mirrorSessionId == session.id) null else liveAgent.lastLine?.let(::sessionPreviewLine),
                         opening = source.opening,
                     )
                 },

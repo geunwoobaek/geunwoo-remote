@@ -25,7 +25,8 @@ export function bundleReadyForHandoff(distDir: string, startedMtimeMs: number, n
         if (entrypointMtimeMs === startedMtimeMs) {
             return false;
         }
-        const newestMtimeMs = readdirSync(distDir).reduce(
+        // Subdirectories (dist/codex) are written by the same build: their files count too.
+        const newestMtimeMs = readdirSync(distDir, { recursive: true, encoding: 'utf8' }).reduce(
             (newest, name) => Math.max(newest, statSync(join(distDir, name)).mtimeMs),
             entrypointMtimeMs,
         );

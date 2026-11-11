@@ -188,9 +188,12 @@ class BackgroundAgentRowsTest {
         assertEquals("Done: the tests pass", rows(items(emptyList(), unopened)).single().preview)
         val stopped = listOf(mirror("s1", "a1", active = false))
         assertEquals("Done: the tests pass", rows(items(stopped, unopened)).single().preview)
-        // A running mirror streams the chat itself: home reads its stored messages.
-        val running = listOf(mirror("s1", "a1"))
-        assertNull(rows(items(running, unopened)).single().preview)
+        // The server can still call a mirror active after its process is gone: the daemon does not name it.
+        val staleActive = listOf(mirror("s1", "a1"))
+        assertEquals("Done: the tests pass", rows(items(staleActive, unopened)).single().preview)
+        // A running mirror (named by the daemon) streams the chat itself: home reads its stored messages.
+        val running = mapOf("m1" to listing(claudeAgent("a1", mirrorSessionId = "s1", lastLine = line)))
+        assertNull(rows(items(staleActive, running)).single().preview)
     }
 
     @Test

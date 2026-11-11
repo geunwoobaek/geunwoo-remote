@@ -1,4 +1,4 @@
-import { mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -39,6 +39,17 @@ describe('bundleReadyForHandoff', () => {
     it('waits until nothing in dist has changed for the quiet time', async () => {
         await file('index.mjs', rebuilt);
         await file('index-abc.mjs', rebuilt + 5_000);
+
+        expect(bundleReadyForHandoff(dist, started, rebuilt + BUNDLE_QUIET_MS)).toBe(false);
+        expect(bundleReadyForHandoff(dist, started, rebuilt + 5_000 + BUNDLE_QUIET_MS)).toBe(true);
+    });
+
+    it('counts files the build writes into subdirectories', async () => {
+        await file('index.mjs', rebuilt);
+        await mkdir(join(dist, 'codex'));
+        await file('codex/bridge.mjs', rebuilt + 5_000);
+        // The directory's own time moves when files come and go in it, and counts as well.
+        await utimes(join(dist, 'codex'), rebuilt / 1000, rebuilt / 1000);
 
         expect(bundleReadyForHandoff(dist, started, rebuilt + BUNDLE_QUIET_MS)).toBe(false);
         expect(bundleReadyForHandoff(dist, started, rebuilt + 5_000 + BUNDLE_QUIET_MS)).toBe(true);

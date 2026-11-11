@@ -186,7 +186,7 @@ class HomeSectionsTest {
         assertEquals(3_000L, chat(derive(listOf(chat("a", thinking = true)), firstSeen = clock::firstSeen), "a").row.session.stateSince)
     }
 
-    /** A stopped mirror's stored line is old: the Mac's line wins; a running mirror's stored line stands. */
+    /** A stopped mirror's stored line is old: the Mac's line wins; a running mirror's (one the daemon names) stands. */
     @Test fun theMacsLineOutranksAStoppedMirrorsStoredOne() {
         val stopped = mirror("s1", "a1", active = false)
         val running = mirror("s2", "a2")
@@ -194,7 +194,10 @@ class HomeSectionsTest {
             HomeListInputs(
                 HomeSnapshot(listOf(stopped, running), listOf(online)), SessionListGrouping.Flat, true, emptySet(), emptySet(), emptySet(),
                 agentListings = mapOf(
-                    "m1" to listing(claudeAgent("a1", lastLine = "From the Mac"), claudeAgent("a2", lastLine = "Also from the Mac")),
+                    "m1" to listing(
+                        claudeAgent("a1", lastLine = "From the Mac"),
+                        claudeAgent("a2", mirrorSessionId = "s2", lastLine = "Also from the Mac"),
+                    ),
                 ),
                 previews = mapOf("s1" to SessionPreview("Stored long ago", null), "s2" to SessionPreview("Streamed just now", null)),
             ),
