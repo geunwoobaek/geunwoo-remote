@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,6 +77,8 @@ object FlatRowTags {
     const val DIVIDER = "flatRow.divider"
     const val ARCHIVE_ACTION = "flatRow.archiveAction"
     const val OPENING = "flatRow.opening"
+    const val BADGE = "flatRow.badge"
+    const val ELAPSED = "flatRow.elapsed"
 }
 
 /** FlatSessionRow.tsx */
@@ -163,6 +166,10 @@ fun FlatSessionRow(
     archiving: Boolean = false,
     selected: Boolean = false,
     carded: Boolean = false,
+    /** Home's status section the row sits in: a badge instead of the dot, the last line and how long. */
+    section: HomeSection? = null,
+    /** The clock the section's elapsed times count to. */
+    now: Long = 0,
 ) {
     LocalHomeRowObserver.current?.let { observe -> SideEffect { observe(row.session.id) } }
     val session = row.session
@@ -243,7 +250,7 @@ fun FlatSessionRow(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(modifier = Modifier.weight(1f).testTag(FlatRowTags.TITLE)) {
-                        val ink = if (faded) colors.textSecondary else colors.text
+                        val ink = if (faded || section == HomeSection.Completed) colors.textSecondary else colors.text
                         // A carded row's ground is its card's.
                         val ground = when {
                             selected -> colors.surfaceSelected
@@ -255,25 +262,53 @@ fun FlatSessionRow(
                             style = FlatRowSpec.title,
                             baseColor = ink,
                             highlightColor = ShimmerSpec.sheen(ink, ground),
-                            shimmering = presentation.shimmerTitle,
+                            shimmering = presentation.shimmerTitle || section == HomeSection.Working,
                             modifier = Modifier.wrapContentHeight(unbounded = carded),
                         )
                     }
-                    if (session.opening) {
+                    when {
                         // Its Mac background session's mirror is being opened.
-                        OpeningProgress(if (carded) HomeCardSpec.dot else FlatRowSpec.topRightDot)
-                    } else {
-                        TopRight(presentation.topRight, session.state, if (carded) HomeCardSpec.dot else FlatRowSpec.topRightDot)
+                        session.opening -> OpeningProgress(if (carded) HomeCardSpec.dot else FlatRowSpec.topRightDot)
+                        section != null -> SectionCorner(section, session, showUnreadDot)
+                        else -> TopRight(presentation.topRight, session.state, if (carded) HomeCardSpec.dot else FlatRowSpec.topRightDot)
                     }
                 }
-                Text(
-                    text = row.projectName,
-                    style = FlatRowSpec.project,
-                    color = colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.testTag(FlatRowTags.PROJECT),
-                )
+                if (section == null) {
+                    Text(
+                        text = row.projectName,
+                        style = FlatRowSpec.project,
+                        color = colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(FlatRowTags.PROJECT),
+                    )
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = session.preview ?: row.projectName,
+                            style = FlatRowSpec.project,
+                            color = colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f).testTag(FlatRowTags.PROJECT),
+                        )
+                        val since = session.stateSince
+                        val time = when {
+                            section == HomeSection.Completed -> session.lastActivityAt.takeIf { it > 0 }?.let { formatSessionListTimestamp(it, now) }
+                            since != null -> formatElapsed(now - since)
+                            else -> null
+                        }
+                        if (time != null) {
+                            Text(
+                                text = time,
+                                style = FlatRowSpec.workspace,
+                                color = colors.textSecondary,
+                                maxLines = 1,
+                                modifier = Modifier.padding(start = FlatRowSpec.topRightGap).testTag(FlatRowTags.ELAPSED),
+                            )
+                        }
+                    }
+                }
                 Row(
                     modifier = Modifier.padding(top = 1.dp).heightIn(min = if (carded) FlatRowSpec.cardWorkspaceLine() else FlatRowSpec.workspaceMinHeight),
                     verticalAlignment = Alignment.CenterVertically,
@@ -337,6 +372,56 @@ private fun OpeningProgress(size: Dp) {
         CircularProgressIndicator(modifier = Modifier.size(size), color = HappyTheme.colors.textSecondary, strokeWidth = 2.dp)
     }
 }
+
+/**
+ * A sectioned row's corner: what the user is asked for ("Approve", "Reply")
+ * in a needs-input row, the blue unread dot in a completed one, nothing
+ * while it works. The corner keeps [FlatRowTags.TOP_RIGHT], right-aligned.
+ */
+@Composable
+private fun SectionCorner(section: HomeSection, session: SessionRowData, unread: Boolean) {
+    val badge = when {
+        section != HomeSection.NeedsInput -> null
+        session.state == SessionState.PermissionRequired && !session.isBackgroundAgent -> stringResource(R.string.home_badge_approve)
+        else -> stringResource(R.string.home_badge_reply)
+    }
+    val label = when {
+        badge != null && session.state == SessionState.PermissionRequired -> stringResource(R.string.status_permission_required)
+        badge != null -> stringResource(R.string.status_input_required)
+        section == HomeSection.Completed && unread -> stringResource(R.string.status_unread)
+        else -> null
+    }
+    Box(
+        modifier = Modifier
+            .padding(start = FlatRowSpec.topRightGap)
+            .testTag(FlatRowTags.TOP_RIGHT)
+            // Without a badge the corner keeps the dot's width, so a row's title never moves as it is read.
+            .then(if (badge == null) Modifier.width(HomeCardSpec.dot) else Modifier)
+            .height(FlatRowSpec.topRightHeight)
+            .then(if (label != null) Modifier.semantics { contentDescription = label } else Modifier),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        when {
+            badge != null -> Text(
+                text = badge,
+                style = SectionBadgeStyle,
+                color = BlockedDotColor,
+                maxLines = 1,
+                modifier = Modifier
+                    .testTag(FlatRowTags.BADGE)
+                    .background(BlockedDotColor.copy(alpha = 0.14f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 7.dp, vertical = 2.dp),
+            )
+            section == HomeSection.Completed && unread -> StatusDot(
+                color = UnreadDotColor,
+                size = HomeCardSpec.dot,
+                modifier = Modifier.testTag(FlatRowTags.DOT),
+            )
+        }
+    }
+}
+
+private val SectionBadgeStyle = happyTextStyle(fontSize = 11, lineHeight = 14, weight = FontWeight.SemiBold)
 
 /** The dot while the chat waits on the user (orange) or is unread (blue), in a slot that keeps its width either way. */
 @Composable

@@ -3,6 +3,7 @@ package com.slopus.happy.ui.tablet
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -15,6 +16,7 @@ import com.slopus.happy.testing.SoftwareKeys
 import com.slopus.happy.ui.HappyApp
 import com.slopus.happy.ui.PHONE
 import com.slopus.happy.ui.home.FlatRowTags
+import com.slopus.happy.ui.home.HomeSectionTags
 import com.slopus.happy.ui.home.HomeServices
 import com.slopus.happy.ui.home.HomeTags
 import com.slopus.happy.ui.node
@@ -78,6 +80,9 @@ class HomeListAcrossTheBreakpointTest {
 
     private fun scrollAndReadPlace(): Pair<Int, Int>? {
         rule.waitUntilAtLeastOneExists(hasTestTag(FlatRowTags.ROW), 5_000)
+        // Completed lists its first few until asked for the rest.
+        rule.node(HomeSectionTags.SHOW_MORE).performClick()
+        rule.waitUntil(5_000) { HomeServices.of(graph).list.state.value?.rows.orEmpty().size > 30 }
         rule.node(HomeTags.LIST).performScrollToIndex(25)
         rule.waitForIdle()
         val key = graph.accountStore.registry.value.activeId.orEmpty()

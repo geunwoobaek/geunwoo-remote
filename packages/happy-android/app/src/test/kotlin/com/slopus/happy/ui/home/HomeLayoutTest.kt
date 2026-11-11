@@ -279,7 +279,12 @@ class HomeLayoutTest {
         val rows = rule.onAllNodesWithTag(FlatRowTags.ROW, useUnmergedTree = true)
         rows.assertCountEquals(2)
         val row = rows[0].bounds
-        assertBox("first row, in its card", row, 16.dp, barBottom + GlassSpec.feather + 8.dp, (PHONE_WIDTH - 32).dp, 81.dp)
+        // The section chips, then the Completed card: its heading, then the rows.
+        val chips = rule.node(HomeSectionTags.CHIPS).bounds
+        assertDp("chips 8 under the bar", barBottom + GlassSpec.feather + 8.dp, chips.top)
+        val header = rule.node(HomeSectionTags.HEADER).bounds
+        assertDp("the section's card under the chips", chips.bottom, header.top)
+        assertBox("first row, in its card under its heading", row, 16.dp, header.bottom, (PHONE_WIDTH - 32).dp, 81.dp)
         val avatar = rule.onAllNodesWithTag(FlatRowTags.AVATAR, useUnmergedTree = true)[0].bounds
         assertBox("avatar", avatar, 32.dp, row.top + 20.5.dp, 40.dp, 40.dp)
         val title = rule.onAllNodesWithTag(FlatRowTags.TITLE, useUnmergedTree = true)[0].bounds
@@ -299,8 +304,8 @@ class HomeLayoutTest {
         val divider = rule.node(HomeCardTags.DIVIDER).bounds
         assertBox("divider", divider, 84.dp, row.bottom - divider.height(), (PHONE_WIDTH - 84 - 16).dp, divider.height())
         assertBox("second row", rows[1].bounds, 16.dp, row.bottom, (PHONE_WIDTH - 32).dp, 81.dp)
-        // No times on home's rows.
-        rule.onAllNodesWithText("12:00 PM", substring = true, useUnmergedTree = true).assertCountEquals(0)
+        // A completed row says when it was last active, at the end of its second line.
+        rule.onAllNodesWithTag(FlatRowTags.ELAPSED, useUnmergedTree = true).assertCountEquals(2)
     }
 
     /** A row's height is its kind's, whatever it shows: a workspace or not, a dot or not, a title too long for its line. */
@@ -381,9 +386,9 @@ class HomeLayoutTest {
         }
         val offline = rule.node(HomeStateTags.OFFLINE_BANNER).bounds
         val changelog = rule.node(HomeStateTags.CHANGELOG_BANNER).bounds
-        val row = rule.node(FlatRowTags.ROW).bounds
+        val chips = rule.node(HomeSectionTags.CHIPS).bounds
         assertDp("changelog under the offline plaque", offline.bottom, changelog.top)
-        assertDp("rows 16 under the last card's bottom margin", changelog.bottom, row.top)
+        assertDp("the list 16 under the last card's bottom margin", changelog.bottom, chips.top)
         rule.node(HomeStateTags.CHANGELOG_BANNER).performClick()
         assertEquals(1, whatsNew)
     }

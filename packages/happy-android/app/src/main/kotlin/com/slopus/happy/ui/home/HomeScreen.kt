@@ -32,6 +32,8 @@ import com.slopus.happy.ui.components.PageProgressIndicator as CircularProgressI
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -301,6 +303,15 @@ fun HomeList(
 ) {
     val colors = HappyTheme.colors
     val flat = state.grouping == SessionListGrouping.Flat
+    val now = rememberNow()
+    val scope = rememberCoroutineScope()
+    val hasBanners = state.offlineBanner != null || update != null || migration != null
+    // A chip scrolls to its section's heading: past the banners and the notice slot.
+    val onChip: (HomeSection) -> Unit = { section ->
+        val keys = if (carded) state.cards.map { it.key } else state.rows.map { it.key }
+        val at = keys.indexOf("section-$section")
+        if (at >= 0) scope.launch { listState.animateScrollToItem((if (hasBanners) 1 else 0) + 1 + at) }
+    }
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -315,7 +326,7 @@ fun HomeList(
             .testTag(HomeTags.LIST),
         contentPadding = PaddingValues(top = contentTop),
     ) {
-        if (state.offlineBanner != null || update != null || migration != null) {
+        if (hasBanners) {
             item(key = "banners", contentType = "banners") {
                 HomeBanners(state.offlineBanner, update, actions, migration)
             }
@@ -325,15 +336,17 @@ fun HomeList(
         item(key = "claude-agents-notice", contentType = "claude-agents-notice") { agentsNotice?.let { ClaudeAgentsNoticeText(it) } }
         if (carded) {
             items(state.cards, key = { it.key }, contentType = { (it.row as? HomeRow.Project)?.row?.let { row -> row::class } ?: it.row::class }) { entry ->
-                HomeCardItem(entry, callbacks, selectedSessionId)
+                HomeCardItem(entry, callbacks, selectedSessionId, now, onChip)
             }
         } else items(state.rows, key = { it.key }, contentType = { it::class }) { row ->
             when (row) {
-                is HomeRow.Chat -> FlatSessionRow(row.row, row.showBorder, row.archived, callbacks, selected = row.row.session.id == selectedSessionId)
+                is HomeRow.Chat -> FlatSessionRow(row.row, row.showBorder, row.archived, callbacks, selected = row.row.session.id == selectedSessionId, section = row.section, now = now)
                 is HomeRow.ArchiveToggle -> ArchiveToggleRow(row.hidden, row.banded, callbacks)
                 is HomeRow.DayHeader -> DayHeaderRow(row.title, flat)
                 is HomeRow.Project -> ProjectHomeRowContent(row.row, callbacks)
-                is HomeRow.SectionChips, is HomeRow.SectionHeader, is HomeRow.ShowMore -> Unit
+                is HomeRow.SectionChips -> SectionChipsRow(row.counts, onChip)
+                is HomeRow.SectionHeader -> Box(Modifier.fillMaxWidth().height(HomeSectionSpec.headerHeight)) { SectionHeaderRow(row.section, row.count) }
+                is HomeRow.ShowMore -> Box(Modifier.fillMaxWidth().height(HomeSectionSpec.showMoreHeight)) { ShowMoreRow(row.hidden, callbacks) }
             }
         }
         item(key = "bottom", contentType = "bottom") { bottomSpacer() }
@@ -342,17 +355,44 @@ fun HomeList(
 
 /** One row of the phone's home: in its card ([HomeCardRow]) at its kind's fixed height, or on the page between cards. */
 @Composable
-private fun HomeCardItem(entry: HomeCardEntry, callbacks: HomeListCallbacks, selectedSessionId: String?) {
+private fun HomeCardItem(
+    entry: HomeCardEntry,
+    callbacks: HomeListCallbacks,
+    selectedSessionId: String?,
+    now: Long,
+    onChip: (HomeSection) -> Unit,
+) {
     val place = entry.place
     when (val row = entry.row) {
         is HomeRow.Chat -> if (place != null) {
-            HomeCardRow(place, FlatRowSpec.cardRowHeight(), FlatRowSpec.paddingLeft + FlatRowSpec.cardAvatar + FlatRowSpec.avatarGap, tag = HomeTags.CARD_ROW) {
-                FlatSessionRow(row.row, showBorder = false, archived = row.archived, callbacks = callbacks, selected = row.row.session.id == selectedSessionId, carded = true)
+            HomeCardRow(
+                place,
+                FlatRowSpec.cardRowHeight(),
+                FlatRowSpec.paddingLeft + FlatRowSpec.cardAvatar + FlatRowSpec.avatarGap,
+                tag = HomeTags.CARD_ROW,
+                accent = row.section?.let(::sectionAccent),
+            ) {
+                FlatSessionRow(
+                    row.row,
+                    showBorder = false,
+                    archived = row.archived,
+                    callbacks = callbacks,
+                    selected = row.row.session.id == selectedSessionId,
+                    carded = true,
+                    section = row.section,
+                    now = now,
+                )
             }
         }
         is HomeRow.ArchiveToggle -> ArchiveToggleRow(row.hidden, row.banded, callbacks, carded = true)
         is HomeRow.DayHeader -> Unit
-        is HomeRow.SectionChips, is HomeRow.SectionHeader, is HomeRow.ShowMore -> Unit
+        is HomeRow.SectionChips -> SectionChipsRow(row.counts, onChip)
+        is HomeRow.SectionHeader -> if (place != null) {
+            HomeCardRow(place, HomeSectionSpec.headerHeight, 16.dp, accent = sectionAccent(row.section)) { SectionHeaderRow(row.section, row.count) }
+        }
+        is HomeRow.ShowMore -> if (place != null) {
+            HomeCardRow(place, HomeSectionSpec.showMoreHeight, 16.dp, accent = sectionAccent(row.section)) { ShowMoreRow(row.hidden, callbacks) }
+        }
         is HomeRow.Project -> if (place != null) {
             HomeCardRow(place, ProjectListSpec.cardRowHeight(row.row), ProjectListSpec.nameX, tag = HomeTags.CARD_ROW, selected = selectedSessionId != null && row.row.shows(selectedSessionId)) {
                 ProjectHomeRowContent(row.row, callbacks, carded = true)

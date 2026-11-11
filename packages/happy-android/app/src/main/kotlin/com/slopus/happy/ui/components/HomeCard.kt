@@ -3,10 +3,12 @@ package com.slopus.happy.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -15,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -40,6 +43,8 @@ object HomeCardSpec {
     val contentTop = 8.dp
     /** A row's corner dot: waiting or unread. */
     val dot = 10.dp
+    /** A section card's leading colour band. */
+    val accent = 3.dp
 }
 
 /**
@@ -67,6 +72,8 @@ fun HomeCardRow(
     tag: String? = null,
     /** The row of what the tablet's main panel shows: its ground is the selected one. */
     selected: Boolean = false,
+    /** A section's colour: a band down the card's leading edge, under the corner's rounding. */
+    accent: Color? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val colors = HappyTheme.colors
@@ -87,6 +94,9 @@ fun HomeCardRow(
     ) {
         Box(Modifier.fillMaxSize().clip(shape).background(if (selected) colors.surfaceSelected else colors.surfaceHigh)) {
             content()
+            if (accent != null) {
+                Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(HomeCardSpec.accent).background(accent))
+            }
             if (place.separated) {
                 Box(
                     modifier = Modifier

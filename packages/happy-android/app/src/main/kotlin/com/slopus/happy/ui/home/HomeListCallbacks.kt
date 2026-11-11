@@ -28,6 +28,8 @@ class HomeListCallbacks(
     val onProjectMenu: (projectName: String, origin: WorkspaceOrigin) -> Unit,
     /** A finger landed on a session's row, before it is a tap (useSessionPressHandlers' onPressIn). */
     val onPressDown: (sessionId: String) -> Unit = {},
+    /** "Show N more" under the Completed section: list the rest of it. */
+    val onShowMoreCompleted: () -> Unit = {},
 )
 
 /**

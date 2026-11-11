@@ -18,6 +18,7 @@ import com.slopus.happy.model.Session
 import com.slopus.happy.model.SessionListGrouping
 import com.slopus.happy.model.SessionListInputs
 import com.slopus.happy.model.SessionMetadata
+import com.slopus.happy.model.SessionPreview
 import com.slopus.happy.model.buildSessionListViewData
 import com.slopus.happy.model.worktreeTabSuccessor
 import com.slopus.happy.agent.IntentOutbox
@@ -45,6 +46,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -54,6 +56,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.sample
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
@@ -139,6 +143,24 @@ class HomeServices private constructor(private val graph: AppGraph) {
     /** The Mac's background Claude sessions, listed while home is on screen ([HomeListHost]) and folded into [list]. */
     val claudeAgents = ClaudeAgentsModel { machineOps }
 
+    /**
+     * Each live chat's last line and turn start for home's sections, read from the stored
+     * messages: again when the list or the store changes, at most twice a second.
+     */
+    @OptIn(FlowPreview::class)
+    private val previews: Flow<Map<String, SessionPreview>> = run {
+        val reader = SessionPreviews(store)
+        snapshots
+            .map { snapshot -> snapshot?.sessions.orEmpty().filter { it.active || it.metadata?.claudeAgentId != null }.map { it.id } }
+            .distinctUntilChanged()
+            .combine(store.changes) { ids, _ -> ids }
+            // At most twice a second, still while a working chat streams (a debounce would wait for it to stop).
+            .sample(500)
+            .map { ids -> reader.previews(ids) }
+            .distinctUntilChanged()
+            .flowOn(Dispatchers.IO)
+    }
+
     val list = HomeListModel(
         snapshots = snapshots,
         settings = graph.settings.settings,
@@ -148,6 +170,7 @@ class HomeServices private constructor(private val graph: AppGraph) {
         scope = scope,
         agentListings = claudeAgents.listings,
         openingAgents = claudeAgents.opening,
+        previews = previews,
     )
 
     private val update = MutableStateFlow<String?>(null)
