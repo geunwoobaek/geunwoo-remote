@@ -154,9 +154,23 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
     private var latestTodos: Pair<List<TodoItem>, Long>? = null
     private var latestUsage: TimedUsage? = null
     private var nextId = 0L
+    /** Each record's [NormalizedMessage.seq], by record id. */
+    private val seqByRecordId = HashMap<String, Long>()
 
     val todos: List<TodoItem>? get() = latestTodos?.first
     val usage: ContextUsage? get() = latestUsage?.usage
+
+    /**
+     * Newest row first. Rows from records stored in one batch share a
+     * timestamp, so ties go by the record's place in the session, then by
+     * the order the row was made from its record. A send not stored yet is
+     * newer than any stored record.
+     */
+    val newestFirst: Comparator<ChatMessage> = compareByDescending<ChatMessage> { it.sortKey }
+        .thenByDescending { message ->
+            messages[message.id]?.realID?.let(seqByRecordId::get)?.takeIf { it >= 0 } ?: Long.MAX_VALUE
+        }
+        .thenByDescending { it.id.removePrefix("m").toLongOrNull() ?: Long.MAX_VALUE }
 
     private fun allocateId(): String = "m${nextId++}"
 
@@ -188,6 +202,7 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
         val changed = LinkedHashSet<String>()
         val settledIds = LinkedHashSet<String>()
         var hasReadyEvent = false
+        for (msg in incoming) seqByRecordId[msg.id] = msg.seq
 
         val traced = traceMessages(tracer, incoming, holdUnowned = options.windowStartAt != null)
         val sidechainMessages = traced.filter { it.sidechainId != null }
@@ -729,7 +744,7 @@ class ReducerState(private val now: () -> Long = System::currentTimeMillis) {
         return messages.values.asSequence()
             .filter { it.id !in nested && !it.hidden }
             .mapNotNull(::convert)
-            .sortedByDescending { it.sortKey }
+            .sortedWith(newestFirst)
             .toList()
     }
 

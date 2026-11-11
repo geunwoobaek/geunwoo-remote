@@ -19,6 +19,8 @@ data class NormalizedMessage(
     /** Session-protocol turn id: agent rows that share one belong to the same answer. */
     val turn: String? = null,
     val author: SessionAuthor? = null,
+    /** The record's place in the session; negative for a send not stored yet. Orders rows made at the same instant. */
+    val seq: Long = 0,
 ) {
     sealed interface Body {
         data class User(val text: String) : Body

@@ -32,7 +32,7 @@ object ChatNormalizer {
 
     fun normalize(record: MessageRecord): NormalizedMessage? {
         val raw = record.contentJson?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
-        return normalize(record.id, record.localId, record.createdAt, raw)
+        return normalize(record.id, record.localId, record.createdAt, raw)?.copy(seq = record.seq)
     }
 
     /** Null [raw] is a record this device could not open. */

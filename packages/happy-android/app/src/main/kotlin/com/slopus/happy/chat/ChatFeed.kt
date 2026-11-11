@@ -168,7 +168,7 @@ class ChatReduction(private val now: () -> Long = System::currentTimeMillis) {
             val receipts = session?.sendsMessageReceipts == true
             // Newest first: without receipts, the agent answering after a message says it took it.
             var answered = false
-            messages.values.sortedByDescending { it.sortKey }.mapNotNull { message ->
+            messages.values.sortedWith(reducer.newestFirst).mapNotNull { message ->
                 val shown = withDelivery(message, delivery)
                 val row = row(shown)
                 if (row is ChatRow.AgentText || row is ChatRow.Tool) answered = true
