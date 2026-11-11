@@ -8,13 +8,14 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
-import type { ClaudeAgent, ClaudeAgentStatus } from './types';
+import type { ClaudeAgent, ClaudeAgentState, ClaudeAgentStatus } from './types';
 
 const execFileAsync = promisify(execFile);
 
 const RESOLVE_TIMEOUT_MS = 5_000;
 const AGENTS_TIMEOUT_MS = 10_000;
 const AGENTS_MAX_BUFFER = 8 * 1024 * 1024;
+const AGENT_STATES: readonly ClaudeAgentState[] = ['working', 'blocked', 'done'];
 
 const rawAgentSchema = z.object({
     id: z.string().min(1),
@@ -61,7 +62,7 @@ export function parseClaudeAgents(json: string): ClaudeAgent[] {
             cwd: raw.cwd,
             pid: raw.pid,
             status: normalizeStatus(raw.status),
-            state: raw.state === 'working' || raw.state === 'done' ? raw.state : null,
+            state: AGENT_STATES.includes(raw.state as ClaudeAgentState) ? (raw.state as ClaudeAgentState) : null,
             startedAt: normalizeStartedAt(raw.startedAt),
         }];
     });

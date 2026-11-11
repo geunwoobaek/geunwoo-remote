@@ -38,11 +38,20 @@ val SessionRowData.isBackgroundAgent: Boolean get() = isBackgroundAgentRowId(id)
 /** The last path component of [cwd] (either slash), or [cwd] itself when it has none (`/`). */
 fun folderTail(cwd: String): String = cwd.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').ifEmpty { cwd }
 
-/** A background session's status as a row's state: busy shimmers, waiting shows the orange dot. */
-fun backgroundAgentState(status: String): SessionState = when (status) {
-    "busy" -> SessionState.Thinking
-    "waiting" -> SessionState.PermissionRequired
-    else -> SessionState.Waiting
+/**
+ * A background session as a row's state, grouped the way `claude agents`
+ * groups it: by its [ClaudeAgentEntry.state] when that is one the app knows,
+ * else by its status (busy shimmers, waiting shows the orange dot).
+ */
+fun backgroundAgentState(agent: ClaudeAgentEntry): SessionState = when (agent.state) {
+    "working" -> SessionState.Thinking
+    "blocked" -> SessionState.PermissionRequired
+    "done" -> SessionState.Waiting
+    else -> when (agent.status) {
+        "busy" -> SessionState.Thinking
+        "waiting" -> SessionState.PermissionRequired
+        else -> SessionState.Waiting
+    }
 }
 
 /**
@@ -55,7 +64,7 @@ fun backgroundAgentRow(machineId: String, agent: ClaudeAgentEntry, opening: Bool
     subtitle = agent.cwd,
     avatarId = "$machineId:${agent.cwd}",
     flavor = "claude",
-    state = backgroundAgentState(agent.status),
+    state = backgroundAgentState(agent),
     createdAt = agent.startedAt,
     lastActivityAt = agent.startedAt,
     active = true,

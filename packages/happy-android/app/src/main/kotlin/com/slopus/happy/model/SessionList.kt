@@ -269,7 +269,7 @@ fun buildSessionListViewData(
                         archived = false,
                         activeAt = null,
                         // A mirror whose process is gone says what the Mac session is doing.
-                        state = if (session.active) row.state else backgroundAgentState(liveAgent.status),
+                        state = if (session.active) row.state else backgroundAgentState(liveAgent),
                         opening = source.opening,
                     )
                 },

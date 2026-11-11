@@ -22,6 +22,12 @@ data class ClaudeAgentEntry(
     val startedAt: Long,
     /** The Happy session already mirroring it, once one was opened. */
     val mirrorSessionId: String?,
+    /**
+     * `claude agents`' own grouping (working, blocked, done), null from a
+     * daemon that does not send it. A session done with a shell still open is
+     * busy by [status] yet done here, so this one decides.
+     */
+    val state: String? = null,
 )
 
 /**
@@ -74,6 +80,7 @@ fun parseClaudeAgentsListing(json: JsonElement?): ClaudeAgentsListing {
             status = row.string("status").orEmpty(),
             startedAt = (row["startedAt"] as? JsonPrimitive)?.doubleOrNull?.toLong() ?: 0L,
             mirrorSessionId = row.string("mirrorSessionId")?.takeIf { it.isNotEmpty() },
+            state = row.string("state")?.takeIf { it.isNotEmpty() },
         )
     }
     return ClaudeAgentsListing(

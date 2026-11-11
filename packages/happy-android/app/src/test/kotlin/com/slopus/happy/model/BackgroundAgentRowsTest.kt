@@ -154,6 +154,31 @@ class BackgroundAgentRowsTest {
     }
 
     @Test
+    fun theMacsStateOutranksItsStatus() {
+        val listings = mapOf(
+            "m1" to listing(
+                // Done with a shell still open: `claude agents` lists it under Completed, not Working.
+                claudeAgent("done", status = "busy", state = "done"),
+                claudeAgent("blocked", status = "idle", state = "blocked"),
+                claudeAgent("working", status = "idle", state = "working"),
+                claudeAgent("unknown", status = "busy", state = "later"),
+            ),
+        )
+        val byId = rows(items(emptyList(), listings)).associateBy { it.id }
+        assertEquals(SessionState.Waiting, byId.getValue("agent:m1:done").state)
+        assertEquals(SessionState.PermissionRequired, byId.getValue("agent:m1:blocked").state)
+        assertEquals(SessionState.Thinking, byId.getValue("agent:m1:working").state)
+        assertEquals(SessionState.Thinking, byId.getValue("agent:m1:unknown").state)
+    }
+
+    @Test
+    fun aGoneMirrorOfADoneAgentIsNotWorking() {
+        val sessions = listOf(mirror("s1", "a1", active = false))
+        val listings = mapOf("m1" to listing(claudeAgent("a1", status = "busy", state = "done")))
+        assertEquals(SessionState.Waiting, rows(items(sessions, listings)).single().state)
+    }
+
+    @Test
     fun anUnopenedAgentIsNoWorktreeTab() {
         val sessions = listOf(mirror("s1", "a1"))
         val listings = mapOf("m1" to listing(claudeAgent("a1"), claudeAgent("a2")))

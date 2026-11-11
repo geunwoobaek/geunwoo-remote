@@ -4,6 +4,8 @@
 
 export type ClaudeAgentStatus = 'idle' | 'busy' | 'waiting';
 
+export type ClaudeAgentState = 'working' | 'blocked' | 'done';
+
 export type ClaudeAgent = {
     /** Short agent id (the stable key for a mirror; not the sessionId). */
     id: string;
@@ -12,7 +14,8 @@ export type ClaudeAgent = {
     cwd: string;
     pid: number;
     status: ClaudeAgentStatus;
-    state: 'working' | 'done' | null;
+    /** `claude agents`' grouping; the app prefers it to [status] (done with a shell open is still busy). */
+    state: ClaudeAgentState | null;
     /** Epoch milliseconds. */
     startedAt: number;
 };

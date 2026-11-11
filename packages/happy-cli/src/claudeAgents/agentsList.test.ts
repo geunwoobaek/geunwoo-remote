@@ -73,6 +73,19 @@ describe('parseClaudeAgents', () => {
         expect(agents.map((a) => a.status)).toEqual(['idle', 'idle', 'waiting']);
     });
 
+    it('keeps the working, blocked and done states and nulls any other', () => {
+        const json = JSON.stringify([
+            background({ id: 'a', sessionId: 's-a', state: 'working' }),
+            background({ id: 'b', sessionId: 's-b', state: 'blocked' }),
+            background({ id: 'c', sessionId: 's-c', state: 'done' }),
+            background({ id: 'd', sessionId: 's-d', state: 'later' }),
+        ]);
+
+        const agents = parseClaudeAgents(json);
+
+        expect(agents.map((a) => a.state)).toEqual(['working', 'blocked', 'done', null]);
+    });
+
     it('maps fields and nulls missing name and state', () => {
         const json = JSON.stringify([background({ name: undefined, state: undefined })]);
 
