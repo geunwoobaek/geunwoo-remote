@@ -327,6 +327,19 @@ class HappyStore(@Volatile private var helper: SQLiteOpenHelper) {
             if (c.moveToFirst()) c.getLong(0) else 0L
         }
 
+    /** [ids]' newest stored message seqs; an unknown session is left out. */
+    fun messagesSeqs(ids: Collection<String>): Map<String, Long> {
+        val out = HashMap<String, Long>(ids.size)
+        // SQLite's default bound-parameter limit is 999.
+        for (chunk in ids.distinct().chunked(900)) {
+            val marks = chunk.joinToString(",") { "?" }
+            query("SELECT id, messages_seq FROM sessions WHERE id IN ($marks)", chunk.toTypedArray()) { c ->
+                while (c.moveToNext()) out[c.getString(0)] = c.getLong(1)
+            }
+        }
+        return out
+    }
+
     /** The stored run of a session's messages, or null for an unknown session. */
     fun messageHistory(sessionId: String): MessageHistory? =
         query(
