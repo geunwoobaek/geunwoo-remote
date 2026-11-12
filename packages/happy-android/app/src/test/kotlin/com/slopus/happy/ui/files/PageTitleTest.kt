@@ -35,6 +35,17 @@ class PageTitleTest {
         assertNull(PageTitle.of("<title>never closed"))
     }
 
+    @Test fun aPicturesOwnTitleNeverNamesThePage() {
+        assertNull(PageTitle.of("<html><body><svg><title>Inbound flow</title><rect/></svg></body></html>"))
+        assertEquals("Guide", PageTitle.of("<html><head><title>Guide</title></head><body><svg><title>Chart</title></svg>"))
+    }
+
+    @Test fun aFragmentIsNamedByItsFirstHeading() {
+        assertEquals("FMS inbound guide", PageTitle.of("<svg viewBox=\"0 0 1 1\"><title>Flow</title></svg>\n<h1 class=t>FMS <em>inbound</em>\nguide</h1><h1>Second</h1>"))
+        // A whole page without a title is still nameless: its heading is the page's text, not its name.
+        assertNull(PageTitle.of("<html><body><h1>Hi</h1></body></html>"))
+    }
+
     /** A computer holding one page, with or without slices. */
     private class Computer(val page: String, val chunked: Boolean) : SessionFileOps {
         var asked: Pair<Long, Int>? = null

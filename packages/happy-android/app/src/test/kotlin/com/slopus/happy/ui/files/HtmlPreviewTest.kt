@@ -3,7 +3,11 @@ package com.slopus.happy.ui.files
 import android.content.Context
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.slopus.happy.ui.PHONE
@@ -78,8 +82,48 @@ class HtmlPreviewTest {
         rule.setHappyContent {
             FileScreen(FileLoad.Loaded("<h1>Hi</h1>", null), "$root/docs/report.html", onBack = {}, onMemo = { _, _ -> })
         }
-        rule.onNodeWithTag(FileTags.RENDERED_TAB, useUnmergedTree = true).assertExists()
+        rule.onNodeWithTag(FileTags.RENDERED_TAB, useUnmergedTree = true).assertIsSelected()
         rule.onNodeWithTag(FileTags.RENDERED).assertExists()
         rule.onNodeWithTag(HtmlPreviewTags.MEMO).assertExists()
+        // A fragment's first heading names it in the bar.
+        rule.onNodeWithText("Hi", useUnmergedTree = true).assertExists()
+    }
+
+    private val fragment = "<svg><title>Flow</title></svg>\n<h1>Inbound steps</h1>\n<p>Scan the box.</p>\n"
+
+    @Test fun aFragmentShowsAsTheFinishedPageThatHoldsIt() {
+        val asked = ArrayList<String>()
+        val finished = "<!doctype html><html><head><title>FMS inbound guide</title></head><body>$fragment</body></html>"
+        rule.setHappyContent {
+            FileScreen(
+                FileLoad.Loaded(fragment, null), "$root/fms-guide/body.html", onBack = {},
+                readAsset = { path -> asked += path; finished.toByteArray() },
+                assetRoot = root,
+            )
+        }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("FMS inbound guide", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag(FileTags.RENDERED).assertExists()
+        assertEquals(listOf("$root/fms-guide/fms-guide.html"), asked.distinct())
+    }
+
+    @Test fun aFragmentEditedSinceItsFinishedPageShowsItself() {
+        val stale = "<!doctype html><html><head><title>Old guide</title></head><body><h1>Inbound</h1></body></html>"
+        rule.setHappyContent {
+            FileScreen(FileLoad.Loaded(fragment, null), "$root/fms-guide/body.html", onBack = {}, readAsset = { stale.toByteArray() }, assetRoot = root)
+        }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Inbound steps", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.onAllNodesWithText("Old guide", useUnmergedTree = true).assertCountEquals(0)
+        rule.onNodeWithTag(FileTags.RENDERED).assertExists()
+    }
+
+    @Test fun aFragmentWhoseFinishedPageIsMissingShowsItself() {
+        rule.setHappyContent {
+            FileScreen(FileLoad.Loaded(fragment, null), "$root/fms-guide/body.html", onBack = {}, readAsset = { null }, assetRoot = root)
+        }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Inbound steps", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag(FileTags.RENDERED).assertExists()
+        // Source is the fragment itself, a tap away.
+        rule.onNodeWithTag(FileTags.FILE_TAB, useUnmergedTree = true).performClick()
+        rule.onNodeWithTag(FileTags.CODE, useUnmergedTree = true).assertExists()
     }
 }

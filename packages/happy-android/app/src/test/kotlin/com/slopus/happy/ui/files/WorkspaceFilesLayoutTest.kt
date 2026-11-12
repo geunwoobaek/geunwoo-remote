@@ -119,10 +119,17 @@ class WorkspaceFilesLayoutTest {
         show { FileScreen(FileLoad.Loaded("# Title\n\nSome **bold** text.", null), "docs/README.md", onBack = {}) }
         rule.node(FileTags.RENDERED_TAB).assertIsSelected()
         rule.node(FileTags.RENDERED).assertExists()
-        // Parsed off the main thread; idle doesn't wait for it.
-        rule.waitUntil(5_000) { rule.onAllNodesWithText("Title", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithText("Source", useUnmergedTree = true).performClick()
+        // Parsed off the main thread; idle doesn't wait for it (the bar's title is the heading too).
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Title", useUnmergedTree = true).fetchSemanticsNodes().size == 2 }
+        // Nothing between the bar and the document: its views are icons in the bar.
+        rule.onAllNodesWithTag(FileTags.PATH_BAR, useUnmergedTree = true).assertCountEquals(0)
+        rule.onAllNodesWithTag(FileTags.TOGGLE_BAR, useUnmergedTree = true).assertCountEquals(0)
+        val switch = rule.node(FileTags.MODE_SWITCH).bounds
+        val document = rule.node(FileTags.SCROLL).bounds
+        assertTrue("the switch sits in the bar, above the document", switch.bottom <= document.top)
+        rule.node(FileTags.FILE_TAB).performClick()
         rule.waitForIdle()
+        rule.node(FileTags.FILE_TAB).assertIsSelected()
         rule.node(FileTags.CODE).assertExists()
         rule.onAllNodesWithTag(FileTags.DIFF_TAB, useUnmergedTree = true).assertCountEquals(0)
     }

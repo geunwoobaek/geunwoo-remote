@@ -4,20 +4,28 @@ import kotlinx.coroutines.CancellationException
 import java.util.Base64
 
 /**
- * A page's `<title>`, for the chat's page card. Only the start of the file is
- * read ([HEAD_BYTES], where a title is), so a large page costs one small read.
+ * A page's name, for the chat's page card: its `<title>`, else, for a body
+ * fragment ([ReadablePage.isFragment]), its first `<h1>`. A picture's own
+ * `<title>` (inside `<svg>`) never names the page. Only the start of the file
+ * is read ([HEAD_BYTES], where a title is), so a large page costs one small read.
  */
 object PageTitle {
     /** How much of the file is read: a `<head>` holds its title well within this. */
     const val HEAD_BYTES = 16 * 1024
 
     private val title = Regex("<title\\b[^>]*>([\\s\\S]*?)</title\\s*>", RegexOption.IGNORE_CASE)
+    private val heading = Regex("<h1\\b[^>]*>([\\s\\S]*?)</h1\\s*>", RegexOption.IGNORE_CASE)
+    private val picture = Regex("<svg\\b[\\s\\S]*?(</svg\\s*>|$)", RegexOption.IGNORE_CASE)
+    private val tag = Regex("<[^>]*>")
     private val entity = Regex("&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z]+);")
     private val named = mapOf("amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'", "nbsp" to " ", "middot" to "·", "mdash" to "—", "ndash" to "–")
 
     /** The title [head] (a page's first bytes as text) gives, entities decoded and spaces collapsed; null when it gives none. */
     fun of(head: String): String? {
-        val raw = title.find(head)?.groupValues?.get(1) ?: return null
+        val text = picture.replace(head, "")
+        val raw = title.find(text)?.groupValues?.get(1)
+            ?: heading.find(text)?.takeIf { ReadablePage.isFragment(text) }?.groupValues?.get(1)?.let { tag.replace(it, " ") }
+            ?: return null
         val decoded = entity.replace(raw) { m ->
             val name = m.groupValues[1]
             when {

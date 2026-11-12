@@ -13,6 +13,14 @@ import com.slopus.happy.ui.components.SegmentedTabs
 import com.slopus.happy.ui.conversation.PictureViewer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import com.slopus.happy.ui.components.Icon
+import com.slopus.happy.ui.components.Ionicon
 import com.slopus.happy.text.wordsResource
 import com.slopus.happy.text.Words
 import androidx.compose.foundation.background
@@ -90,6 +98,7 @@ object FileTags {
     const val SPINNER = "file.spinner"
     const val SCROLL = "file.scroll"
     const val RENDERED_TAB = "file.renderedTab"
+    const val MODE_SWITCH = "file.modeSwitch"
     const val RENDERED = "file.rendered"
     const val PICTURE = "file.picture"
     const val VIDEO = "file.video"
@@ -314,6 +323,12 @@ private val codeStyle = happyTextStyle(fontSize = 14, lineHeight = 20, family = 
  * empty" / "No changes to display" 16 italic textSecondary. The diff shows
  * first when there is one, the file when a [line] was asked for, scrolled
  * to 40 above it.
+ *
+ * A page or Markdown file has neither bar, for reading on a phone: the bar's
+ * title is the page's own ([PageTitle], a Markdown file's first `# `
+ * heading), else `folder/name`, and its views are icons in the bar
+ * ([ModeSwitch]). An HTML page shows as [ReadablePage] makes it, its finished
+ * page when it is a fragment of one. A given [title] always wins.
  */
 @Composable
 fun FileScreen(
@@ -342,7 +357,47 @@ fun FileScreen(
     val colors = HappyTheme.colors
     val fileName = filePath.substringAfterLast('/').ifEmpty { filePath }
     var alertShown by remember(load) { mutableStateOf(load is FileLoad.Failed && onRetry == null) }
-    Screen(header = { StackHeader(title ?: stringResource(R.string.common_file_viewer), onBack) { save?.let { FileSaveButton(it) }; actions() } }) {
+    val loaded = load as? FileLoad.Loaded
+    val requested = line?.takeIf { it > 0 }
+    val markdown = loaded != null && isMarkdownPath(filePath) && loaded.content.isNotEmpty()
+    val html = loaded != null && isHtmlPath(filePath) && loaded.content.isNotEmpty()
+    val renderable = markdown || html
+    val hasDiff = loaded?.diff != null
+    var mode by rememberSaveable(hasDiff, requested, renderable, startRendered) {
+        mutableStateOf(
+            when {
+                requested != null -> Mode.File
+                startRendered && renderable -> Mode.Rendered
+                hasDiff -> Mode.Diff
+                renderable -> Mode.Rendered
+                else -> Mode.File
+            },
+        )
+    }
+    val page = HtmlPage(readAsset, assetRoot ?: filePath.substringBeforeLast('/', ""), onMemo)
+    val shown = if (html) rememberShownPage(loaded!!.content, filePath, page) else null
+    val named = remember(html, markdown, shown, loaded?.content, filePath) {
+        when {
+            html -> PageTitle.of((shown ?: loaded!!.content).take(PageTitle.HEAD_BYTES)) ?: ReadablePage.shortName(filePath)
+            markdown -> markdownTitle(loaded!!.content) ?: ReadablePage.shortName(filePath)
+            else -> null
+        }
+    }
+    val heading = title ?: named ?: stringResource(R.string.common_file_viewer)
+    val modes = buildList {
+        if (hasDiff) add(Mode.Diff)
+        if (renderable) add(Mode.Rendered)
+        add(Mode.File)
+    }
+    Screen(
+        header = {
+            StackHeader(heading, onBack) {
+                if (renderable) ModeSwitch(modes, mode) { mode = it }
+                save?.let { FileSaveButton(it) }
+                actions()
+            }
+        },
+    ) {
         when (load) {
             FileLoad.Loading -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(Modifier.size(20.dp).testTag(FileTags.SPINNER), color = colors.textSecondary, strokeWidth = 2.dp)
@@ -358,7 +413,7 @@ fun FileScreen(
                 }
             }
             FileLoad.Binary -> Centered(stringResource(R.string.files_binary_file), colors.textSecondary, stringResource(R.string.files_cannot_display_binary), fileName)
-            is FileLoad.Loaded -> LoadedFile(load, filePath, line, column, HtmlPage(readAsset, assetRoot ?: filePath.substringBeforeLast('/', ""), onMemo), startRendered)
+            is FileLoad.Loaded -> LoadedFile(load, filePath, line, column, page, mode, { mode = it }, shown)
             is FileLoad.Picture -> PictureFile(load, filePath)
             is FileLoad.Receiving -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(Modifier.size(20.dp).testTag(FileTags.SPINNER), color = colors.textSecondary, strokeWidth = 2.dp)
@@ -409,8 +464,87 @@ internal fun offsetOfLine(text: String, line: Int): Int {
     return at
 }
 
+/**
+ * What an HTML file shows as its page ([ReadablePage]): a body fragment's
+ * finished page beside it (`folder/folder.html`) when that page holds the
+ * fragment unchanged, else the file itself; null while the finished page is
+ * being looked for (4 seconds at most). Only a fragment with a finished page
+ * to look for, inside [HtmlPage.root], waits.
+ */
 @Composable
-private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, column: Int?, page: HtmlPage, startRendered: Boolean = false) {
+private fun rememberShownPage(content: String, filePath: String, page: HtmlPage): String? {
+    val read = page.readAsset
+    val finished = ReadablePage.finishedPath(filePath)
+        ?.takeIf { read != null && ReadablePage.isFragment(content) && it.startsWith(page.root.trimEnd('/') + "/") }
+        ?: return content
+    val shown by produceState<String?>(null, content, finished) {
+        val text = try {
+            withTimeoutOrNull(4_000) { read?.invoke(finished) }?.toString(Charsets.UTF_8)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        value = text?.takeIf { ReadablePage.holds(it, content) } ?: content
+    }
+    return shown
+}
+
+/** A Markdown file's name for the bar: its first line when that is a `# ` heading. */
+internal fun markdownTitle(content: String): String? =
+    content.lineSequence().firstOrNull { it.isNotBlank() }?.trim()
+        ?.takeIf { it.startsWith("# ") }?.removePrefix("# ")?.trim()?.trimEnd('#')?.trim()?.takeIf { it.isNotEmpty() }
+
+/**
+ * A page's or Markdown file's views in the bar, as icons: Diff (when there
+ * is one), Rendered, Source. 32 high on the segmented control's grey, each
+ * 36 wide with the picked one on white (#636366 dark), 18 icons.
+ */
+@Composable
+private fun ModeSwitch(modes: List<Mode>, mode: Mode, onPick: (Mode) -> Unit) {
+    val colors = HappyTheme.colors
+    Row(
+        Modifier
+            .testTag(FileTags.MODE_SWITCH)
+            .padding(end = 4.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (colors.dark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA))
+            .padding(2.dp),
+    ) {
+        for (each in modes) {
+            val picked = each == mode
+            val (icon, label, tag) = when (each) {
+                Mode.Diff -> Triple(Ionicon.GitCompareOutline, stringResource(R.string.files_diff), FileTags.DIFF_TAB)
+                Mode.Rendered -> Triple(Ionicon.EyeOutline, stringResource(R.string.workspace_rendered), FileTags.RENDERED_TAB)
+                Mode.File -> Triple(Ionicon.CodeSlashOutline, stringResource(R.string.workspace_source), FileTags.FILE_TAB)
+            }
+            Box(
+                Modifier
+                    .testTag(tag)
+                    .size(width = 36.dp, height = 28.dp)
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(if (picked) { if (colors.dark) Color(0xFF636366) else Color.White } else Color.Transparent)
+                    .clickable(role = Role.Tab) { if (!picked) onPick(each) }
+                    .semantics {
+                        selected = picked
+                        contentDescription = label
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, 18.dp, if (picked) colors.text else colors.textSecondary)
+            }
+        }
+    }
+}
+
+/**
+ * A text file. A page or Markdown file has its views in the bar
+ * ([ModeSwitch]) and the whole screen below for itself; any other file
+ * keeps the path bar, and the Diff / File tabs when it has a diff. An HTML
+ * page shows [shown] ([rememberShownPage]), a spinner while that is null.
+ */
+@Composable
+private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, column: Int?, page: HtmlPage, mode: Mode, onMode: (Mode) -> Unit, shown: String?) {
     val colors = HappyTheme.colors
     var staleShown by remember(load) { mutableStateOf(load.stale != null) }
     if (staleShown && load.stale != null) {
@@ -424,17 +558,6 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
     val markdown = isMarkdownPath(filePath) && load.content.isNotEmpty()
     val html = isHtmlPath(filePath) && load.content.isNotEmpty()
     val renderable = markdown || html
-    var mode by rememberSaveable(load.diff != null, requested, renderable, startRendered) {
-        mutableStateOf(
-            when {
-                requested != null -> Mode.File
-                startRendered && renderable -> Mode.Rendered
-                load.diff != null -> Mode.Diff
-                renderable -> Mode.Rendered
-                else -> Mode.File
-            },
-        )
-    }
     val showPage = html && mode == Mode.Rendered
     val scroll = rememberScrollState()
     val density = LocalDensity.current
@@ -476,20 +599,22 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
         }
     }
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(colors.glass.backgroundStrong)
-                .hairlineBelow(border)
-                .testTag(FileTags.PATH_BAR)
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FileIcon(filePath.substringAfterLast('/').ifEmpty { filePath }, 20.dp)
-            val label = if (requested != null) "$filePath:$requested${column?.takeIf { it > 0 }?.let { ":$it" }.orEmpty()}" else filePath
-            Text(label, style = happyTextStyle(fontSize = 14, family = AppMono), color = colors.textSecondary, modifier = Modifier.padding(start = 8.dp).weight(1f))
+        if (!renderable) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(colors.glass.backgroundStrong)
+                    .hairlineBelow(border)
+                    .testTag(FileTags.PATH_BAR)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FileIcon(filePath.substringAfterLast('/').ifEmpty { filePath }, 20.dp)
+                val label = if (requested != null) "$filePath:$requested${column?.takeIf { it > 0 }?.let { ":$it" }.orEmpty()}" else filePath
+                Text(label, style = happyTextStyle(fontSize = 14, family = AppMono), color = colors.textSecondary, modifier = Modifier.padding(start = 8.dp).weight(1f))
+            }
         }
-        if (load.diff != null || renderable) {
+        if (load.diff != null && !renderable) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -498,16 +623,21 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
                     .testTag(FileTags.TOGGLE_BAR)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
-                val tabs = buildList {
-                    if (load.diff != null) add(Mode.Diff to Segment(stringResource(R.string.files_diff), FileTags.DIFF_TAB))
-                    if (renderable) add(Mode.Rendered to Segment(stringResource(R.string.workspace_rendered), FileTags.RENDERED_TAB))
-                    add(Mode.File to Segment(stringResource(if (renderable) R.string.workspace_source else R.string.files_file), FileTags.FILE_TAB))
-                }
-                SegmentedTabs(tabs.map { it.second }, tabs.indexOfFirst { it.first == mode }, onPick = { mode = tabs[it].first })
+                val tabs = listOf(
+                    Mode.Diff to Segment(stringResource(R.string.files_diff), FileTags.DIFF_TAB),
+                    Mode.File to Segment(stringResource(R.string.files_file), FileTags.FILE_TAB),
+                )
+                SegmentedTabs(tabs.map { it.second }, tabs.indexOfFirst { it.first == mode }, onPick = { onMode(tabs[it].first) })
             }
         }
         if (showPage) {
-            HtmlFilePage(load.content, filePath, page.root, page.readAsset, page.onMemo, Modifier.weight(1f).fillMaxWidth().testTag(FileTags.RENDERED))
+            if (shown == null) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(20.dp), color = colors.textSecondary, strokeWidth = 2.dp)
+                }
+            } else {
+                HtmlFilePage(shown, filePath, page.root, page.readAsset, page.onMemo, Modifier.weight(1f).fillMaxWidth().testTag(FileTags.RENDERED))
+            }
             return@Column
         }
         // The bars span the screen; the body is held to layout.maxWidth.

@@ -150,14 +150,14 @@ internal fun HtmlFilePage(
                     overScrollMode = View.OVER_SCROLL_NEVER
                     addJavascriptInterface(MemoSelection { text -> post { selection = text.takeIf { it.isNotBlank() } } }, MEMO_BRIDGE)
                     webViewClient = HtmlFileClient(root) { path -> read?.invoke(path) }
-                    loadDataWithBaseURL(htmlBaseUrl(filePath), html, "text/html", "utf-8", null)
+                    loadDataWithBaseURL(htmlBaseUrl(filePath), ReadablePage.forPhone(html), "text/html", "utf-8", null)
                     tag = html
                 }
             },
             update = { view ->
                 if (view.tag != html) {
                     view.tag = html
-                    view.loadDataWithBaseURL(htmlBaseUrl(filePath), html, "text/html", "utf-8", null)
+                    view.loadDataWithBaseURL(htmlBaseUrl(filePath), ReadablePage.forPhone(html), "text/html", "utf-8", null)
                 }
             },
             onRelease = { view ->

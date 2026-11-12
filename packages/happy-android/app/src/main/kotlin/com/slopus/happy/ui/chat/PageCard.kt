@@ -55,7 +55,8 @@ object PageCardTags {
  * A page the agent wrote, as the Claude app shows an artifact it made: a
  * full-width card under the turn naming the page by its `<title>` (read once
  * from the file's first bytes, [SessionMediaHost.title]; its file name until
- * then and when it has none), "Page · on your computer" under it, and a tap
+ * then and when it has none), its folder and file name under it
+ * (`fms-guide/body.html`), and a tap
  * opens it in the file viewer already rendered, its source a tab away. Kept
  * cheap: text and a glyph, never a WebView in the list.
  *
@@ -95,7 +96,7 @@ fun PageCard(host: SessionMediaHost, item: MediaItem, modifier: Modifier = Modif
         }
         Column(Modifier.weight(1f)) {
             Text(shown, style = PageCardSpec.title, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag(PageCardTags.TITLE))
-            Text(stringResource(R.string.page_card_subtitle), style = PageCardSpec.subtitle, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(com.slopus.happy.ui.files.ReadablePage.shortName(item.path), style = PageCardSpec.subtitle, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Icon(Ionicon.ChevronForward, PageCardSpec.chevron, colors.textSecondary)
     }
