@@ -2,11 +2,11 @@ import { InvalidateSync } from "@/utils/sync";
 import { RawJSONLines, RawJSONLinesSchema } from "../types";
 import { parseClaudeGoalStatusTranscriptEvent, type ClaudeGoalStatusTranscriptEvent } from "../claudeGoalStatus";
 import { join } from "node:path";
-import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { logger } from "@/ui/logger";
 import { startFileWatcher } from "@/modules/watcher/startFileWatcher";
 import { findSessionProjectDir, getProjectPath } from "./path";
+import { openJsonlTail, type JsonlTail } from "./jsonlTail";
 
 /**
  * Known internal Claude Code event types that should be silently skipped.
@@ -58,10 +58,23 @@ export async function createSessionScanner(opts: {
     // up, so do not keep re-creating it on every sync. A merely absent file is
     // watched through its parent directory and never enters this set.
     let deadSessions = new Set<string>();
+    // One tail per transcript file: each sync reads only what was appended since the last one.
+    // Every entry the scanner hands out is keyed, so re-reading a file from the start is harmless.
+    const tails = new Map<string, JsonlTail>();
+    const readNewEntries = (sessionId: string): SessionLogEntry[] => {
+        const file = join(projectDirFor(sessionId), `${sessionId}.jsonl`);
+        let tail = tails.get(file);
+        if (tail === undefined) {
+            logger.debug(`[SESSION_SCANNER] Reading session file: ${file}`);
+            tail = openJsonlTail(file);
+            tails.set(file, tail);
+        }
+        return parseSessionEntries(tail.readNew().lines);
+    };
 
     // Mark existing entries as processed and start watching the initial session
     if (opts.sessionId) {
-        let entries = await readSessionEntries(projectDirFor(opts.sessionId), opts.sessionId);
+        let entries = readNewEntries(opts.sessionId);
         logger.debug(`[SESSION_SCANNER] Marking ${entries.length} existing entries as processed from session ${opts.sessionId}`);
         for (let entry of entries) {
             processedEntryKeys.add(entry.key);
@@ -95,7 +108,7 @@ export async function createSessionScanner(opts: {
 
         // Process sessions
         for (let session of sessions) {
-            const sessionEntries = await readSessionEntries(projectDirFor(session), session);
+            const sessionEntries = readNewEntries(session);
             let skipped = 0;
             let sentMessages = 0;
             let sentTranscriptEvents = 0;
@@ -211,7 +224,7 @@ export async function createSessionScanner(opts: {
             // file as fresh user prompts. Without this, every previous
             // user message re-appears in the chat after reconnect.
             if (options?.treatExistingAsProcessed) {
-                const existing = await readSessionEntries(projectDirFor(sessionId), sessionId);
+                const existing = readNewEntries(sessionId);
                 logger.debug(`[SESSION_SCANNER] Pre-marking ${existing.length} existing entries as processed for new session ${sessionId}`);
                 for (const entry of existing) {
                     processedEntryKeys.add(entry.key);
@@ -253,21 +266,10 @@ function transcriptEventKey(event: ScannerTranscriptEvent): string {
 }
 
 /**
- * Read and parse session log file
- * Returns only valid conversation messages and recognized side-channel events,
- * silently skipping internal events.
+ * Parses transcript lines into the scanner's entries: valid conversation messages and recognized
+ * side-channel events, silently skipping internal events.
  */
-async function readSessionEntries(projectDir: string, sessionId: string): Promise<SessionLogEntry[]> {
-    const expectedSessionFile = join(projectDir, `${sessionId}.jsonl`);
-    logger.debug(`[SESSION_SCANNER] Reading session file: ${expectedSessionFile}`);
-    let file: string;
-    try {
-        file = await readFile(expectedSessionFile, 'utf-8');
-    } catch (error) {
-        logger.debug(`[SESSION_SCANNER] Session file not found: ${expectedSessionFile}`);
-        return [];
-    }
-    let lines = file.split('\n');
+function parseSessionEntries(lines: string[]): SessionLogEntry[] {
     let entries: SessionLogEntry[] = [];
     for (let l of lines) {
         try {

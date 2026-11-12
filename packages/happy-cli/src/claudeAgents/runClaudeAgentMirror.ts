@@ -17,7 +17,7 @@
  * bridge share one terminal at a time (see `serializeTerminalOpens`).
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { z } from 'zod';
@@ -29,6 +29,7 @@ import { findSessionProjectDir } from '@/claude/utils/path';
 import { createAgentCwdTracker } from '@/claude/utils/agentCwd';
 import { registerKillSessionHandler } from '@/claude/registerKillSessionHandler';
 import type { PermissionResponse } from '@/claude/utils/permissionHandler';
+import { openJsonlTail, type JsonlTail } from '@/claude/utils/jsonlTail';
 import { createSessionScanner } from '@/claude/utils/sessionScanner';
 import { RawJSONLinesSchema, type RawJSONLines } from '@/claude/types';
 import { configuration } from '@/configuration';
@@ -46,7 +47,7 @@ import { findAgentSurface, guardUserPane, openCmuxTerminal, paneShowsAgent, user
 import { screenSessionName } from './dialogs';
 import { createEchoFilter, createInputDelivery, type DeliveryResult } from './inputDelivery';
 import { createPermissionBridge } from './permissionBridge';
-import { findToolUseOutcome, readSessionStatus, readTranscriptEntries } from './transcript';
+import { findToolUseOutcome, parseTranscriptLines, readSessionStatus } from './transcript';
 import type { ClaudeAgent, ClaudeAgentStatus } from './types';
 
 /** Exit code when no background agent has the given id. */
@@ -390,20 +391,24 @@ function writeMirrorState(agentId: string, state: MirrorState): void {
 }
 
 /**
- * Reads a transcript for the bridge once a second without parsing it again while the file is
- * unchanged (same size and mtime): long sessions have multi-megabyte transcripts.
+ * Reads a transcript for the bridge (once a second) and the mirror's own checks, parsing only the
+ * lines appended since the last read: long sessions have transcripts of hundreds of megabytes.
+ * The returned array is never changed afterwards; new lines come in a new array.
  */
 function createTranscriptReader(cwd: string): { read(sessionId: string): unknown[] } {
-    let cached: { file: string; size: number; mtimeMs: number; entries: unknown[] } | null = null;
+    let cached: { file: string; tail: JsonlTail; entries: unknown[] } | null = null;
     return {
         read(sessionId) {
             const file = join(findSessionProjectDir(cwd, sessionId), `${sessionId}.jsonl`);
-            if (!existsSync(file)) {
-                return [];
+            if (cached === null || cached.file !== file) {
+                cached = { file, tail: openJsonlTail(file), entries: [] };
             }
-            const { size, mtimeMs } = statSync(file);
-            if (cached === null || cached.file !== file || cached.size !== size || cached.mtimeMs !== mtimeMs) {
-                cached = { file, size, mtimeMs, entries: readTranscriptEntries(cwd, sessionId) };
+            const { lines, reset } = cached.tail.readNew();
+            if (reset) {
+                cached.entries = [];
+            }
+            if (lines.length > 0) {
+                cached.entries = cached.entries.concat(parseTranscriptLines(lines));
             }
             return cached.entries;
         },
@@ -546,10 +551,12 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     session.uploadOldestFirst();
     const notice =(message: string): void => session.sendSessionEvent({ type: 'message', message });
 
+    // One parse of the transcript serves the start-up checks below and the bridge after them.
+    const transcripts = createTranscriptReader(agent.cwd);
     // Whatever the phone sent before this process started must never be typed into the Mac session.
     // The phone showed it as sent, so say once that it did not reach the Mac.
     session.skipExistingMessages((texts) => {
-        if (anyUndelivered(texts, readTranscriptEntries(agent.cwd, currentSessionId))) {
+        if (anyUndelivered(texts, transcripts.read(currentSessionId))) {
             logger.debug(`[claude-agent] ${texts.length} phone message(s) sent while no mirror ran were not typed on the Mac`);
             notice(NOTICE_FAILED);
         }
@@ -559,7 +566,7 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     }
     session.updateMetadata((meta) => resetMirrorMetadata(meta, agent, Date.now()));
     // Cards left open by a previous mirror process can never be answered (the bridge starts empty).
-    const entriesAtStart = readTranscriptEntries(agent.cwd, currentSessionId);
+    const entriesAtStart = transcripts.read(currentSessionId);
     session.updateAgentState((state) => ({ ...settleStaleRequests(state, entriesAtStart, Date.now()), controlledByUser: false }));
 
     let stopping = false;
@@ -601,7 +608,6 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     const echo = createEchoFilter();
     const delivery = createInputDelivery({ openTerminal, openUserTerminal, onRoute, echo });
 
-    const transcripts = createTranscriptReader(agent.cwd);
     let lastStatus: ClaudeAgentStatus | null = null;
     const bridge = createPermissionBridge({
         readStatus: () => readSessionStatus(agent.pid),
@@ -627,7 +633,7 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     let lastUuid: string | null = saved?.happySessionId === response.id ? saved.lastUuid : null;
     const alreadyUploaded = new Set<string>();
     const skipBeforeUploadStart = (sessionId: string, after: string | null): void => {
-        const entries = readTranscriptEntries(agent.cwd, sessionId);
+        const entries = transcripts.read(sessionId);
         for (const entry of entries.slice(0, uploadStart(entries, after))) {
             const uuid = uuidOf(entry);
             if (uuid !== null) {

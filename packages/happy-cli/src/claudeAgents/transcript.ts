@@ -109,15 +109,18 @@ export function readTranscriptEntries(cwd: string, sessionId: string): unknown[]
     if (!existsSync(file)) {
         return [];
     }
-    return readFileSync(file, 'utf8')
-        .split('\n')
-        .flatMap((line): unknown[] => {
-            try {
-                return line.trim() === '' ? [] : [JSON.parse(line)];
-            } catch {
-                return [];
-            }
-        });
+    return parseTranscriptLines(readFileSync(file, 'utf8').split('\n'));
+}
+
+/** Parsed transcript lines; blank and broken lines are skipped. */
+export function parseTranscriptLines(lines: string[]): unknown[] {
+    return lines.flatMap((line): unknown[] => {
+        try {
+            return line.trim() === '' ? [] : [JSON.parse(line)];
+        } catch {
+            return [];
+        }
+    });
 }
 
 /** How much of a transcript's end [readLastLine] reads; tool results can be long, answers rarely are. */
