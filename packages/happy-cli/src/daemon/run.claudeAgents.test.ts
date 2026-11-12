@@ -57,6 +57,7 @@ vi.mock('./controlServer', () => ({ startDaemonControlServer: async (options: an
 } }));
 vi.mock('@/api/api', () => ({ ApiClient: { create: async () => ({
   getOrCreateMachine: async () => ({ id: 'machine-1' }),
+  sessionAccess: async () => 'owned',
   machineSyncClient: () => ({
     setRPCHandlers: (handlers: any) => { mocks.handlers = handlers; },
     connect: () => { throw new Error('test boot complete'); },

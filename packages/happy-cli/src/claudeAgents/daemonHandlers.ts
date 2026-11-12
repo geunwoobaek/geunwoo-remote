@@ -78,6 +78,11 @@ export type ClaudeAgentHandlerDeps = {
     /** agentId → the stored keys of its most recent mirror session. */
     persistedMirrors(): Map<string, PersistedMirror>;
     /**
+     * Whether this account can open a Happy session (`ApiClient.sessionAccess`): 'missing' for a
+     * persisted session of an account the CLI was signed in to before.
+     */
+    sessionAccess(happySessionId: string): Promise<'owned' | 'missing' | 'unknown'>;
+    /**
      * Starts `happy claude-agent-mirror <agentId>` in `cwd` and resolves once the mirror has
      * reported its Happy session. With `reconnect` the mirror reuses that session and its keys.
      * (`cwd` is the agent's directory; the brief's two-argument form had no way to carry it.)
@@ -301,8 +306,10 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
             return { type: 'success', sessionId: liveNow };
         }
 
+        // A record kept from before the CLI signed in to another account names a session this
+        // account cannot open: reconnecting would hand the phone that session id, shown as deleted.
         const persisted = deps.persistedMirrors().get(agentId);
-        if (persisted !== undefined) {
+        if (persisted !== undefined && (await deps.sessionAccess(persisted.happySessionId)) !== 'missing') {
             const reconnected = await awaitLateMirror(agentId, await deps.spawnMirror(
                 agentId,
                 { happySessionId: persisted.happySessionId, env: reconnectEnv(persisted) },

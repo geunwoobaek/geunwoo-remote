@@ -1016,6 +1016,7 @@ export async function startDaemon(): Promise<void> {
           && pidToTrackedSession.has(pid) && pidToTrackedSession.get(pid)!.happySessionId === undefined;
       },
       persistedMirrors: () => pickPersistedMirrors(readPersistedSessions()),
+      sessionAccess: async (happySessionId) => (await ApiClient.create(credentials)).sessionAccess(happySessionId),
       // The mirror never asks to create a directory (the agent's own cwd exists), but the shared result type allows it.
       spawnMirror: async (agentId, reconnect, cwd, handoff) => {
         const result = await spawnMirror(agentId, reconnect, cwd, handoff);

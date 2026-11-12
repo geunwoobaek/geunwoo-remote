@@ -48,6 +48,7 @@ function makeDeps(overrides: Partial<ClaudeAgentHandlerDeps> = {}): { deps: Clau
         lastLine: () => null,
         mirrorStarting: () => false,
         persistedMirrors: () => new Map(),
+        sessionAccess: async () => 'owned',
         spawnMirror: async (agentId, reconnect, cwd) => {
             spawns.push({ agentId, reconnect, cwd });
             return { type: 'success', sessionId: 'happy-new' };
@@ -403,6 +404,26 @@ describe('open-claude-agent', () => {
                 },
             },
         }]);
+    });
+
+    it('open spawns fresh when the persisted session is not this account\'s', async () => {
+        const asked: string[] = [];
+        const { deps, spawns } = makeDeps({
+            persistedMirrors: () => new Map([['abc12345', persisted]]),
+            sessionAccess: async (id) => { asked.push(id); return 'missing'; },
+        });
+        expect(await createClaudeAgentHandlers(deps).open('abc12345')).toEqual({ type: 'success', sessionId: 'happy-new' });
+        expect(asked).toEqual(['happy-old']);
+        expect(spawns).toEqual([{ agentId: 'abc12345', reconnect: undefined, cwd: '/Users/tester/project' }]);
+    });
+
+    it('open still reconnects when the server cannot say whose the persisted session is', async () => {
+        const { deps, spawns } = makeDeps({
+            persistedMirrors: () => new Map([['abc12345', persisted]]),
+            sessionAccess: async () => 'unknown',
+        });
+        await createClaudeAgentHandlers(deps).open('abc12345');
+        expect(spawns.map((spawn) => spawn.reconnect?.happySessionId)).toEqual(['happy-old']);
     });
 
     it('open spawns fresh when nothing is known', async () => {
