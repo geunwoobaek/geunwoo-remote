@@ -296,8 +296,11 @@ class MachineOps internal constructor(
         when (answer?.string("type")) {
             "success" -> answer.string("sessionId")?.takeIf { it.isNotEmpty() }?.let { sessionId ->
                 try {
+                    // A reopened mirror keeps its session, which the app already has: no wait then.
                     // Bounded: an offline sync never ends, and the open must not hang on it.
-                    awaitSyncBriefly(syncWaitMs, refreshSessions)
+                    if (withContext(io) { store.session(sessionId) } == null) {
+                        awaitSyncBriefly(syncWaitMs, refreshSessions)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {

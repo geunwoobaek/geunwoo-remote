@@ -506,6 +506,18 @@ class MachineOpsTest {
     }
 
     @Test
+    fun openClaudeAgentDoesNotWaitOnASyncForASessionTheAppAlreadyHas() = runBlocking {
+        h.server.addSession("mirror-1", updatedAt = 200)
+        h.startAndSync()
+        assertNotNull(h.store.session("mirror-1"))
+        respond("open-claude-agent") { success("mirror-1") }
+        var syncs = 0
+        val counting = MachineOps(h.account.rpc, h.account.api, h.store, h.account.decoder, refreshSessions = { syncs++ })
+        assertEquals(OpenClaudeAgentResult.Success("mirror-1"), counting.openClaudeAgent("m1", "demo-agent"))
+        assertEquals(0, syncs)
+    }
+
+    @Test
     fun openClaudeAgentStillSucceedsWhenTheSyncNeverEnds() = runBlocking {
         h.startAndSync()
         respond("open-claude-agent") { success("mirror-1") }
