@@ -1,5 +1,6 @@
 package com.slopus.happy.connection
 
+import com.slopus.happy.net.withServerHeaders
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
@@ -124,6 +125,7 @@ internal class WebSocketTunnel private constructor(override val authority: Strin
                 .followSslRedirects(false)
                 .connectTimeout(20, TimeUnit.SECONDS)
                 .pingInterval(PING_SECONDS, TimeUnit.SECONDS)
+                .withServerHeaders()
                 .build()
         }
 

@@ -55,6 +55,7 @@ import com.slopus.happy.ui.connection.AgentHome
 import com.slopus.happy.ui.surfaces.openSurface
 import com.slopus.happy.ui.connect.LocalAddFlow
 import com.slopus.happy.ui.connect.LocalAgentPairing
+import com.slopus.happy.ui.connect.ServerLink
 import com.slopus.happy.ui.connection.LocalServerSignIn
 import com.slopus.happy.ui.connection.LocalHappyLinks
 import com.slopus.happy.ui.connection.rememberHappyLinks
@@ -101,7 +102,14 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 @Serializable data object StartRoute
-@Serializable data object ServerRoute
+/**
+ * The Server screen, filled in from a server link ([com.slopus.happy.ui.connect.ServerLink])
+ * but not saved: [url] and [headers] (one `Name: value` per line). The
+ * headers are secrets, so the route never prints them.
+ */
+@Serializable data class ServerRoute(val url: String? = null, val headers: String? = null) {
+    override fun toString(): String = "ServerRoute(url=$url, headers=${if (headers == null) "none" else "…"})"
+}
 @Serializable data object RestoreRoute
 @Serializable data object RestoreManualRoute
 @Serializable data object HomeRoute
@@ -162,7 +170,7 @@ fun HappyApp(graph: AppGraph, onNavigationReady: (NavHostController) -> Unit = {
               val add = rememberAddFlow(
                   graph,
                   onRestore = { nav.navigate(RestoreRoute) },
-                  onServer = { nav.navigate(ServerRoute) },
+                  onServer = { nav.navigate(ServerRoute()) },
                   serverLabel = rememberCustomServerLabel(graph),
                   onCloud = cloud,
               )
@@ -218,7 +226,7 @@ fun HappyApp(graph: AppGraph, onNavigationReady: (NavHostController) -> Unit = {
                         page<SettingsRoute> { entry ->
                             ProvideRowReveal(entry.toRoute<SettingsRoute>().reveal) { AccountSettings(graph, nav, open) }
                         }
-                        page<ServerRoute> { Server(graph, nav) }
+                        page<ServerRoute> { entry -> Server(graph, nav, entry.toRoute<ServerRoute>()) }
                         page<RestoreManualRoute> { RestoreManual(graph, nav) }
                         homeRoutes(graph, nav, onOpenSession = openSession)
                         settingsRoutes(graph, nav)
@@ -297,10 +305,12 @@ private fun rememberLinks(graph: AppGraph, nav: NavHostController, agent: String
 }
 
 @Composable
-private fun Server(graph: AppGraph, nav: NavHostController) {
-    val serverUrl by graph.serverConfig.url.collectAsStateWithLifecycle()
+private fun Server(graph: AppGraph, nav: NavHostController, route: ServerRoute) {
+    val current by graph.serverConfig.current.collectAsStateWithLifecycle()
     ServerScreen(
-        customUrl = serverUrl.takeIf { graph.serverConfig.isCustom },
+        customUrl = current.url.takeIf { it != graph.serverConfig.defaultUrl },
+        customHeaders = current.headers,
+        prefill = ServerLink(route.url, route.headers?.lines().orEmpty()).takeIf { it.fillsIn },
         probe = graph.authApi::probeServer,
         onSave = graph.serverConfig::set,
         onReset = { graph.serverConfig.set(null) },

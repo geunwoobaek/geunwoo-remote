@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_headers_label">Capçaleres de sol·licitud (opcional)</string>
+    <string name="server_header_malformed">La línia %1$d no és una capçalera. Escriu-la com a Name: value.</string>
+    <string name="server_header_bad_name">Línia %1$d: el nom d\'una capçalera no pot tenir espais ni caràcters així.</string>
+    <string name="server_header_bad_value">Línia %1$d: el valor té caràcters que una capçalera no admet.</string>
+    <string name="server_header_forbidden">Línia %1$d: l\'aplicació ja envia aquesta capçalera.</string>
+    <string name="server_header_too_many">Com a màxim %1$d capçaleres.</string>
+    <string name="server_scan_qr">Escaneja el codi QR</string>
+</resources>

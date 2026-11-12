@@ -1,5 +1,6 @@
 package com.slopus.happy.ui.documents
 
+import com.slopus.happy.net.withServerHeaders
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
@@ -26,7 +27,7 @@ object DocumentPictures {
         override fun sizeOf(key: String, value: DocumentPicture) = value.bitmap.allocationByteCount
     }
 
-    private val http by lazy { OkHttpClient() }
+    private val http by lazy { OkHttpClient.Builder().withServerHeaders().build() }
 
     fun cached(url: String): DocumentPicture? = kept.get(url)
 

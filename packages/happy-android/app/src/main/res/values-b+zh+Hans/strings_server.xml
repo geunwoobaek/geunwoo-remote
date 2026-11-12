@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_headers_label">请求标头（可选）</string>
+    <string name="server_header_malformed">第 %1$d 行不是标头。请写成 Name: value。</string>
+    <string name="server_header_bad_name">第 %1$d 行：标头名称不能包含空格或此类字符。</string>
+    <string name="server_header_bad_value">第 %1$d 行：值中有标头不能包含的字符。</string>
+    <string name="server_header_forbidden">第 %1$d 行：此标头由应用自行设置。</string>
+    <string name="server_header_too_many">最多 %1$d 个标头。</string>
+    <string name="server_scan_qr">扫描二维码</string>
+</resources>

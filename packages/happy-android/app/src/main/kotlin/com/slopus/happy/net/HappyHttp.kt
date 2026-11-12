@@ -82,8 +82,12 @@ class HappyHttp(
     }
 
     /** GET an absolute URL as text (server probe). */
-    suspend fun getText(url: String): String =
-        execute(Request.Builder().url(url).header("Accept", "text/plain").get().build())
+    /** [headers]: the ones to send instead of the saved server's ([ServerHeaders.explicit]); null sends the saved ones as any request does. */
+    suspend fun getText(url: String, headers: List<com.slopus.happy.config.ServerHeader>? = null): String {
+        val request = Request.Builder().url(url).header("Accept", "text/plain").get()
+        if (headers != null) ServerHeaders.explicit(request, headers)
+        return execute(request.build())
+    }
 
     private fun request(token: String?): Request.Builder = Request.Builder()
         .header("X-Happy-Client", clientId)

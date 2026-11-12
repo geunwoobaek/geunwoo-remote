@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_headers_label">Encabezados de solicitud (opcional)</string>
+    <string name="server_header_malformed">La línea %1$d no es un encabezado. Escríbela como Name: value.</string>
+    <string name="server_header_bad_name">Línea %1$d: el nombre de un encabezado no puede tener espacios ni caracteres así.</string>
+    <string name="server_header_bad_value">Línea %1$d: el valor tiene caracteres que un encabezado no admite.</string>
+    <string name="server_header_forbidden">Línea %1$d: la app ya envía este encabezado.</string>
+    <string name="server_header_too_many">Como máximo %1$d encabezados.</string>
+    <string name="server_scan_qr">Escanear código QR</string>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_headers_label">Intestazioni delle richieste (facoltative)</string>
+    <string name="server_header_malformed">La riga %1$d non è un\'intestazione. Scrivila come Name: value.</string>
+    <string name="server_header_bad_name">Riga %1$d: il nome di un\'intestazione non può contenere spazi o caratteri simili.</string>
+    <string name="server_header_bad_value">Riga %1$d: il valore contiene caratteri non ammessi in un\'intestazione.</string>
+    <string name="server_header_forbidden">Riga %1$d: questa intestazione la imposta già l\'app.</string>
+    <string name="server_header_too_many">Al massimo %1$d intestazioni.</string>
+    <string name="server_scan_qr">Scansiona codice QR</string>
+</resources>

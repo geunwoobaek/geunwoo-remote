@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Server screen's extra request headers and its QR scan (ui/server/ServerScreen.kt,
+  config/ServerHeader.kt). Not in happy-app's catalogs.
+  Translated in values-*/ (AndroidStringsTranslatedTest).
+-->
+<resources>
+    <string name="server_headers_label">Request headers (optional)</string>
+    <string name="server_header_malformed">Line %1$d isn\'t a header. Write it as Name: value.</string>
+    <string name="server_header_bad_name">Line %1$d: a header name can\'t have spaces or characters like that.</string>
+    <string name="server_header_bad_value">Line %1$d: the value has characters a header can\'t carry.</string>
+    <string name="server_header_forbidden">Line %1$d: the app sets this header itself.</string>
+    <string name="server_header_too_many">At most %1$d headers.</string>
+    <string name="server_scan_qr">Scan QR code</string>
+    <string name="server_headers_placeholder" translatable="false">Name: value</string>
+</resources>

@@ -3,7 +3,6 @@ package com.slopus.happy.attachments
 import com.slopus.happy.AppGraph
 import com.slopus.happy.auth.AuthState
 import com.slopus.happy.media.MediaLibrary
-import okhttp3.OkHttpClient
 import java.util.WeakHashMap
 import java.util.concurrent.TimeUnit
 
@@ -13,7 +12,7 @@ import java.util.concurrent.TimeUnit
  * call, and the decrypted-blob cache is dropped when the account changes.
  */
 class AttachmentServices private constructor(private val graph: AppGraph) {
-    private val client = OkHttpClient.Builder()
+    private val client = graph.okHttp.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)

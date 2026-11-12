@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_headers_label">請求標頭（選填）</string>
+    <string name="server_header_malformed">第 %1$d 行不是標頭。請寫成 Name: value。</string>
+    <string name="server_header_bad_name">第 %1$d 行：標頭名稱不能包含空格或這類字元。</string>
+    <string name="server_header_bad_value">第 %1$d 行：值中有標頭不能包含的字元。</string>
+    <string name="server_header_forbidden">第 %1$d 行：此標頭由應用程式自行設定。</string>
+    <string name="server_header_too_many">最多 %1$d 個標頭。</string>
+    <string name="server_scan_qr">掃描 QR 碼</string>
+</resources>

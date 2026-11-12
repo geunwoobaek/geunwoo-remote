@@ -12,7 +12,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
 /** The push objects, one per process, built from the app's graph on first use. */
@@ -22,7 +21,7 @@ class PushServices(context: Context, graph: AppGraph) {
     val registrar = PushRegistrar(
         deviceTokens = fcm,
         expo = ExpoPushTokenClient(
-            OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build(),
+            graph.okHttp.newBuilder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build(),
         ),
         api = PushApi(graph.http),
         store = store,

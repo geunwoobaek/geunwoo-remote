@@ -47,6 +47,8 @@ import com.slopus.happy.model.settings.LanguageController
 import com.slopus.happy.model.settings.SettingsRepository
 import com.slopus.happy.net.ConnectionStatus
 import com.slopus.happy.net.HappyHttp
+import com.slopus.happy.net.ServerHeaders
+import com.slopus.happy.net.withServerHeaders
 import com.slopus.happy.payments.PlayBilling
 import com.slopus.happy.payments.RevenueCatApi
 import com.slopus.happy.payments.CallIntro
@@ -133,7 +135,7 @@ class AppGraph(
     val serverConfig = ServerConfig(
         context.getSharedPreferences(ServerConfig.PREFS_NAME, Context.MODE_PRIVATE),
         defaultServerUrl,
-    )
+    ).also(ServerHeaders::use)
     val localSettings = LocalSettings(context.getSharedPreferences(LocalSettings.PREFS_NAME, Context.MODE_PRIVATE))
 
     /** Animated Avatars, kept on this phone for every account (not cleared with local settings). */
@@ -146,9 +148,14 @@ class AppGraph(
     /** Data and Storage's Automatic Media Download, kept on this phone for every account. */
     val mediaAutoDownload = com.slopus.happy.media.MediaAutoDownloadSetting(context.getSharedPreferences(com.slopus.happy.media.MediaAutoDownloadSetting.PREFS_NAME, Context.MODE_PRIVATE))
 
-    private val okHttp = OkHttpClient.Builder()
+    /**
+     * The client every Happy server call derives from (`newBuilder()`), so
+     * each sends the custom server's headers ([ServerHeaders]).
+     */
+    val okHttp: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        .withServerHeaders()
         .build()
     /**
      * The Happy accounts signed in here. The first keeps the React Native

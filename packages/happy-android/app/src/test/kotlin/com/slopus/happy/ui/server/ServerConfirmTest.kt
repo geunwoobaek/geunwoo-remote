@@ -40,7 +40,7 @@ class ServerConfirmTest {
     @Test
     fun serverScreenAndConfirmReadForTalkBack() {
         rule.setHappyContent {
-            ServerScreen(customUrl = null, probe = { ServerProbe.HappyServer }, onSave = {}, onReset = {}, onBack = {})
+            ServerScreen(customUrl = null, probe = { _, _ -> ServerProbe.HappyServer }, onSave = { _, _ -> }, onReset = {}, onBack = {})
         }
         rule.onNode(isHeading(), useUnmergedTree = true).assertExists()
         rule.assertActionsLabelled()
@@ -55,7 +55,7 @@ class ServerConfirmTest {
     fun changeServerOutlastsBack() {
         var saved: String? = null
         rule.setHappyContent {
-            ServerScreen(customUrl = null, probe = { ServerProbe.HappyServer }, onSave = { saved = it }, onReset = {}, onBack = {})
+            ServerScreen(customUrl = null, probe = { _, _ -> ServerProbe.HappyServer }, onSave = { url, _ -> saved = url }, onReset = {}, onBack = {})
         }
         rule.node(ServerTags.INPUT).performTextReplacement("https://happy.example.com")
         rule.node(ServerTags.SAVE).performClick()
@@ -71,7 +71,7 @@ class ServerConfirmTest {
     fun resetToDefaultOutlastsBack() {
         var reset = 0
         rule.setHappyContent {
-            ServerScreen(customUrl = "https://happy.example.com", probe = { ServerProbe.HappyServer }, onSave = {}, onReset = { reset++ }, onBack = {})
+            ServerScreen(customUrl = "https://happy.example.com", probe = { _, _ -> ServerProbe.HappyServer }, onSave = { _, _ -> }, onReset = { reset++ }, onBack = {})
         }
         rule.node(ServerTags.RESET).performClick()
         rule.onNodeWithText("Reset server to default?").assertExists()

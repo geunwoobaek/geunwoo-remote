@@ -36,7 +36,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.WeakHashMap
 import java.util.concurrent.TimeUnit
@@ -135,7 +134,7 @@ class SessionAvatarHydrator(
 /** The signed-in account's session avatars, by session id. */
 class SessionAvatarServices private constructor(graph: AppGraph) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).followRedirects(false).build()
+    private val client = graph.okHttp.newBuilder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).followRedirects(false).build()
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val avatars: StateFlow<Map<String, ProjectAvatar>> = graph.account

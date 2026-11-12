@@ -108,6 +108,8 @@ fun parseDeepLink(link: String): DeepLink? {
         val url = HappyUrls.parse(link.trim()) ?: return null
         return url.instanceId?.let { DeepLink.Instance(it, url.link) }
     }
+    // `happy://server?url=…&header=…` fills the Server screen in; it never saves anything.
+    ServerLink.parse(link)?.let { return DeepLink.Screen(ServerRoute(it.url, it.headerText), signedOut = true) }
     val uri = try {
         URI(link.trim())
     } catch (_: URISyntaxException) {
@@ -141,7 +143,7 @@ private fun route(segments: List<String>, rawQuery: String?): DeepLink? {
         listOf("settings", "voice") -> screen(VoiceSettingsRoute())
         listOf("settings", "voice", "language") -> screen(VoiceLanguageRoute)
         listOf("settings", "connect", "claude") -> screen(ConnectClaudeRoute)
-        listOf("server") -> signedOut(ServerRoute)
+        listOf("server") -> signedOut(ServerRoute())
         listOf("restore") -> signedOut(RestoreRoute)
         listOf("restore", "manual") -> signedOut(RestoreManualRoute)
         listOf("troubleshoot") -> signedOut(TroubleshootRoute)

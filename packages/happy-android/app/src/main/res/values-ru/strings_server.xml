@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_headers_label">Заголовки запросов (необязательно)</string>
+    <string name="server_header_malformed">Строка %1$d — не заголовок. Запишите её как Name: value.</string>
+    <string name="server_header_bad_name">Строка %1$d: в имени заголовка не может быть пробелов или таких символов.</string>
+    <string name="server_header_bad_value">Строка %1$d: в значении есть символы, недопустимые в заголовке.</string>
+    <string name="server_header_forbidden">Строка %1$d: этот заголовок приложение задаёт само.</string>
+    <string name="server_header_too_many">Не больше %1$d заголовков.</string>
+    <string name="server_scan_qr">Сканировать QR-код</string>
+</resources>

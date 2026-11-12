@@ -1,5 +1,6 @@
 package com.slopus.happy.guest
 
+import com.slopus.happy.net.withServerHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -28,7 +29,7 @@ import kotlin.coroutines.resumeWithException
  * recovery key, account or agent connection anywhere near it. A request
  * waits up to 35 s for the bridge's 25 s poll.
  */
-class GuestClient(private val origin: String, client: OkHttpClient = OkHttpClient()) {
+class GuestClient(private val origin: String, client: OkHttpClient = OkHttpClient.Builder().withServerHeaders().build()) {
     private val http = client.newBuilder()
         .cache(null)
         .cookieJar(okhttp3.CookieJar.NO_COOKIES)

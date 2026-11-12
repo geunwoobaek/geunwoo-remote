@@ -1080,6 +1080,30 @@ signed with only the upload key won't. Signed out, only the screens that need
 no account (server, restore, troubleshoot, changelog, onboarding settings)
 open; other links are dropped rather than pushed onto empty signed-in screens.
 
+`happy://server?url=<percent-encoded URL>&header=<percent-encoded "Name: value">`
+(`header` repeats; `+` reads as a space, as in every query here) opens the
+Server screen with its URL and request headers filled in, signed in or out.
+It never saves: the person still taps Save and confirms. The Server screen's
+Scan QR code reads the same link, through the same parse (`ServerLink`);
+the general scanners leave it an unknown Happy code. A team server's
+`happy://<instanceId>/server?url=` is a different code (`ServerInvite`).
+
+### Custom server request headers
+
+A self-hosted server behind a private relay may need extra request headers
+(a secret, Cloudflare Access service-token headers). `ServerConfig` keeps
+them beside the custom URL in the same preferences (they survive sign-out,
+and go with a reset to the default); `ServerHeader` validates them (an RFC
+7230 token name, a visible-ASCII value, never Host, Content-Length or
+Authorization) and never prints a value. `net/ServerHeaders` adds them to
+requests whose scheme, host and port are the custom URL's, read live per
+request, and takes them off a redirect to another origin. Every OkHttp
+client that may reach the server has it: `AppGraph.okHttp` and the clients
+derived from it with `newBuilder()`, and with `withServerHeaders()` the
+ones built without the graph (`HappyImageLoader`, `DocumentPictures`,
+`WebSocketTunnel.client`, `GuestClient`). The Server screen's banner check
+sends the headers being saved instead (`ServerHeaders.explicit`).
+
 ### Team servers behind SSO (edge SSO)
 
 A Happy Agent server behind an HTTPS load balancer that enforces SSO is an
@@ -1760,8 +1784,9 @@ it is Compose-first and coroutine-based, sizes decodes to the view,
 brings the memory and disk caches expo-image gives happy-app, and plugs
 into our OkHttp; Glide is View-first with an annotation processor, and a
 hand-rolled loader would re-implement caching and downsampling. The
-loader uses its own OkHttp client without Happy headers (these URLs are
-third-party). Tests swap it through `LocalImageLoader` with coil-test's
+loader uses its own OkHttp client without Happy's headers (these URLs are
+mostly third-party); it sends a custom server's request headers only to
+that server (`withServerHeaders()`). Tests swap it through `LocalImageLoader` with coil-test's
 `FakeImageLoaderEngine`.
 
 A picture with a thumbhash shows it from its first frame (iOS 5ebfc1c0b).

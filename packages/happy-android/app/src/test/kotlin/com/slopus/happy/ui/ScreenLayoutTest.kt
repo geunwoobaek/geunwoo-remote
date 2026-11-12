@@ -33,7 +33,7 @@ class ScreenLayoutTest {
     @Test
     fun serverFormSpec() {
         rule.setHappyContent {
-            ServerScreen(customUrl = "https://happy.example.com", probe = { ServerProbe.HappyServer }, onSave = {}, onReset = {}, onBack = {})
+            ServerScreen(customUrl = "https://happy.example.com", probe = { _, _ -> ServerProbe.HappyServer }, onSave = { _, _ -> }, onReset = {}, onBack = {})
         }
         val card = rule.node(ItemGroupTags.CARD).bounds
         assertDp("card left", 16, card.left)
@@ -47,10 +47,19 @@ class ScreenLayoutTest {
         assertDp("input left", form.left, input.left)
         assertDp("input width", form.right - form.left, input.right - input.left)
         assertTrue("input at least 44 high", input.bottom - input.top >= 44.dp)
+        val headersLabel = rule.node(ServerTags.HEADERS_LABEL).bounds
+        assertDp("headers label under the input", input.bottom + 8.dp, headersLabel.top)
+        val headers = rule.node(ServerTags.HEADERS).bounds
+        assertDp("headers top", headersLabel.bottom + 8.dp, headers.top)
+        assertDp("headers left", form.left, headers.left)
+        assertDp("headers width", form.right - form.left, headers.right - headers.left)
+        assertTrue("headers at least 44 high", headers.bottom - headers.top >= 44.dp)
         val save = rule.node(ServerTags.SAVE).bounds
-        assertBox("save", save, form.left, input.bottom + 8.dp + 4.dp, form.right - form.left, 44.dp)
+        assertBox("save", save, form.left, headers.bottom + 8.dp + 4.dp, form.right - form.left, 44.dp)
+        val scan = rule.node(ServerTags.SCAN).bounds
+        assertBox("scan", scan, form.left, save.bottom + 4.dp, form.right - form.left, 44.dp)
         val reset = rule.node(ServerTags.RESET).bounds
-        assertBox("reset", reset, form.left, save.bottom + 4.dp, form.right - form.left, 44.dp)
+        assertBox("reset", reset, form.left, scan.bottom + 4.dp, form.right - form.left, 44.dp)
         val status = rule.node(ServerTags.STATUS).bounds
         assertDp("status top", reset.bottom + 12.dp, status.top)
         assertDp("form bottom", status.bottom, form.bottom)
@@ -60,7 +69,7 @@ class ScreenLayoutTest {
     fun serverRejectsANonHttpUrlInline() {
         var saved: String? = null
         rule.setHappyContent {
-            ServerScreen(customUrl = null, probe = { ServerProbe.HappyServer }, onSave = { saved = it }, onReset = {}, onBack = {})
+            ServerScreen(customUrl = null, probe = { _, _ -> ServerProbe.HappyServer }, onSave = { url, _ -> saved = url }, onReset = {}, onBack = {})
         }
         rule.onAllNodesWithTag(ServerTags.RESET, useUnmergedTree = true).assertCountEquals(0)
         rule.node(ServerTags.INPUT).performTextReplacement("ftp://happy.example.com")
@@ -70,7 +79,7 @@ class ScreenLayoutTest {
         val input = rule.node(ServerTags.INPUT).bounds
         val error = rule.node(ServerTags.ERROR).bounds
         assertDp("error under the input", input.bottom + 8.dp, error.top)
-        assertDp("save under the error", error.bottom + 12.dp + 4.dp, rule.node(ServerTags.SAVE).bounds.top)
+        assertDp("headers label under the error", error.bottom + 12.dp, rule.node(ServerTags.HEADERS_LABEL).bounds.top)
         assertEquals(null, saved)
     }
 
@@ -78,7 +87,7 @@ class ScreenLayoutTest {
     fun serverSavesAfterTheProbeAndConfirmation() {
         var saved: String? = null
         rule.setHappyContent {
-            ServerScreen(customUrl = null, probe = { ServerProbe.HappyServer }, onSave = { saved = it }, onReset = {}, onBack = {})
+            ServerScreen(customUrl = null, probe = { _, _ -> ServerProbe.HappyServer }, onSave = { url, _ -> saved = url }, onReset = {}, onBack = {})
         }
         rule.node(ServerTags.INPUT).performTextReplacement("https://happy.example.com")
         rule.node(ServerTags.SAVE).performClick()

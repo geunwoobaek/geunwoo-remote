@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_headers_label">Nagłówki żądań (opcjonalnie)</string>
+    <string name="server_header_malformed">Wiersz %1$d nie jest nagłówkiem. Wpisz go jako Name: value.</string>
+    <string name="server_header_bad_name">Wiersz %1$d: nazwa nagłówka nie może zawierać spacji ani takich znaków.</string>
+    <string name="server_header_bad_value">Wiersz %1$d: wartość zawiera znaki niedozwolone w nagłówku.</string>
+    <string name="server_header_forbidden">Wiersz %1$d: aplikacja ustawia ten nagłówek sama.</string>
+    <string name="server_header_too_many">Najwyżej %1$d nagłówków.</string>
+    <string name="server_scan_qr">Zeskanuj kod QR</string>
+</resources>

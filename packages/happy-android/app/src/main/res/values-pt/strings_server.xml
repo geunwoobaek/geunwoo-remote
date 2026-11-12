@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_headers_label">Cabeçalhos de pedido (opcional)</string>
+    <string name="server_header_malformed">A linha %1$d não é um cabeçalho. Escreva-a como Name: value.</string>
+    <string name="server_header_bad_name">Linha %1$d: o nome de um cabeçalho não pode ter espaços nem caracteres assim.</string>
+    <string name="server_header_bad_value">Linha %1$d: o valor tem caracteres que um cabeçalho não aceita.</string>
+    <string name="server_header_forbidden">Linha %1$d: a app já define este cabeçalho.</string>
+    <string name="server_header_too_many">No máximo %1$d cabeçalhos.</string>
+    <string name="server_scan_qr">Ler código QR</string>
+</resources>

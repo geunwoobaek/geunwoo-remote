@@ -36,7 +36,7 @@ fun Start(graph: AppGraph, nav: NavHostController, add: ConnectFlow) {
         onStart = { nav.navigate(InstallDesktopRoute) },
         onEnterLink = { add.enteringLink = true },
         onRestore = { nav.navigate(RestoreRoute) },
-        onServer = { nav.navigate(ServerRoute) },
+        onServer = { nav.navigate(ServerRoute()) },
         onCloud = LocalCloudConnect.current,
     )
 }
@@ -59,7 +59,7 @@ fun InstallDesktop(graph: AppGraph, nav: NavHostController, add: ConnectFlow) {
         onOpenSite = { uriHandler.openUri(DESKTOP_URL) },
         onEnterLink = { add.enteringLink = true },
         onRestore = { nav.navigate(RestoreRoute) },
-        onServer = { nav.navigate(ServerRoute) },
+        onServer = { nav.navigate(ServerRoute()) },
         onCloud = LocalCloudConnect.current,
     )
 }

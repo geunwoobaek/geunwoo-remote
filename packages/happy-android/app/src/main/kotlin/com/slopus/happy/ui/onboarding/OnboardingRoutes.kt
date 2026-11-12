@@ -58,7 +58,7 @@ fun NavGraphBuilder.onboardingRoutes(
         val serverUrl by graph.serverConfig.url.collectAsStateWithLifecycle()
         OnboardingSettingsScreen(
             customServerLabel = remember(serverUrl) { graph.serverConfig.customHostLabel },
-            onServer = { nav.navigate(ServerRoute) },
+            onServer = { nav.navigate(ServerRoute()) },
             onLogout = { graph.logout() },
             onBack = { nav.popBackStack() },
         )

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_headers_label">リクエストヘッダー（任意）</string>
+    <string name="server_header_malformed">%1$d 行目はヘッダーではありません。Name: value の形で書いてください。</string>
+    <string name="server_header_bad_name">%1$d 行目：ヘッダー名にスペースやそのような文字は使えません。</string>
+    <string name="server_header_bad_value">%1$d 行目：値にヘッダーで使えない文字が含まれています。</string>
+    <string name="server_header_forbidden">%1$d 行目：このヘッダーはアプリが自動で設定します。</string>
+    <string name="server_header_too_many">ヘッダーは %1$d 個までです。</string>
+    <string name="server_scan_qr">QR コードをスキャン</string>
+</resources>

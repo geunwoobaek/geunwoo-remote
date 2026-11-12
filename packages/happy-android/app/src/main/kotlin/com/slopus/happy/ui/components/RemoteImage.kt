@@ -1,5 +1,6 @@
 package com.slopus.happy.ui.components
 
+import com.slopus.happy.net.withServerHeaders
 import android.content.Context
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -55,9 +56,11 @@ object HappyImageLoader {
     }
 
     private fun build(context: Context): ImageLoader {
+        // Pictures by URL are mostly third-party; one on the custom server gets its headers.
         val client = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .withServerHeaders()
             .build()
         return ImageLoader.Builder(context)
             // Only the components named here: coil-gif would otherwise animate every GIF and WebP,

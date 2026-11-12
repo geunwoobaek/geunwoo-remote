@@ -149,7 +149,7 @@ class DeepLinksTest {
             "happy://settings/voice" to screen(VoiceSettingsRoute()),
             "happy://settings/voice/language" to screen(VoiceLanguageRoute),
             "https://app.happy.engineering/settings/connect/claude" to screen(ConnectClaudeRoute),
-            "happy://server" to signedOut(ServerRoute),
+            "happy://server" to signedOut(ServerRoute()),
             "happy://restore" to signedOut(RestoreRoute),
             "happy://restore/manual" to signedOut(RestoreManualRoute),
             "happy://troubleshoot" to signedOut(TroubleshootRoute),

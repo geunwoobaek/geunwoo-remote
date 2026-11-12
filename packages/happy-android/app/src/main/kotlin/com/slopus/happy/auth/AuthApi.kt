@@ -83,8 +83,9 @@ class AuthApi(private val http: HappyHttp) {
     enum class ServerProbe { HappyServer, NotHappyServer, ServerError, Unreachable }
 
     /** server.tsx validateServer: GET / must answer 2xx with the server banner. */
-    suspend fun probeServer(url: String): ServerProbe = try {
-        val text = http.getText(url.trim().trimEnd('/') + "/")
+    /** [headers]: the server's extra headers as the Server screen has them, not yet saved. */
+    suspend fun probeServer(url: String, headers: List<com.slopus.happy.config.ServerHeader> = emptyList()): ServerProbe = try {
+        val text = http.getText(url.trim().trimEnd('/') + "/", headers)
         if (text.contains("Welcome to Happy Server!")) ServerProbe.HappyServer else ServerProbe.NotHappyServer
     } catch (_: HttpStatusException) {
         ServerProbe.ServerError
