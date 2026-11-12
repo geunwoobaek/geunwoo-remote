@@ -21,6 +21,14 @@ class ServerLink(val url: String?, val headers: List<String>) {
     /** The headers as the Server screen's field shows them. */
     val headerText: String? get() = headers.takeIf { it.isNotEmpty() }?.joinToString("\n")
 
+    /**
+     * The headers field once this link fills it in over [current]. A link
+     * with a URL brings exactly its own headers, none if it has none, so a
+     * saved secret never rides along to another server; a link with only
+     * headers keeps the URL and replaces the headers.
+     */
+    fun headersReplacing(current: String): String = headerText ?: if (url != null) "" else current
+
     override fun equals(other: Any?): Boolean = other is ServerLink && other.url == url && other.headers == headers
 
     override fun hashCode(): Int = url.hashCode() * 31 + headers.hashCode()

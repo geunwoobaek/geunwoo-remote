@@ -75,6 +75,15 @@ class ServerLinkTest {
     }
 
     @Test
+    fun aLinkWithAUrlBringsExactlyItsOwnHeaders() {
+        val saved = "X-Old: secret"
+        assertEquals("", ServerLink("https://other.example.com", emptyList()).headersReplacing(saved))
+        assertEquals("X-A: 1", ServerLink("https://other.example.com", listOf("X-A: 1")).headersReplacing(saved))
+        assertEquals("X-A: 1", ServerLink(null, listOf("X-A: 1")).headersReplacing(saved))
+        assertEquals(saved, ServerLink(null, emptyList()).headersReplacing(saved))
+    }
+
+    @Test
     fun theTripleSlashFormIsTheSame() {
         assertEquals(ServerLink("https://happy.example.com", emptyList()), ServerLink.parse("happy:///server?url=https%3A%2F%2Fhappy.example.com"))
     }

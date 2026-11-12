@@ -172,4 +172,33 @@ class ServerHeadersScreenTest {
         assertEquals("X-Example-Key: abc123", headersText())
         assertFalse(saved.isNotEmpty())
     }
+
+    /** A saved secret must never ride along to the server a link or code names. */
+    @Test
+    fun aLinkWithAUrlButNoHeadersClearsTheSavedOnes() {
+        show(customUrl = "https://old.example.com", customHeaders = listOf(key), prefill = ServerLink("https://other.example.com", emptyList()))
+        rule.node(ServerTags.INPUT).assertTextEquals("https://other.example.com")
+        assertEquals("", headersText())
+        saveAndConfirm()
+        assertEquals(listOf("https://other.example.com" to emptyList<ServerHeader>()), probed)
+        assertEquals(listOf("https://other.example.com" to emptyList<ServerHeader>()), saved)
+    }
+
+    @Test
+    fun aScannedCodeWithAUrlButNoHeadersClearsTheSavedOnes() {
+        show(customUrl = "https://old.example.com", customHeaders = listOf(key))
+        scanned = ScanResult.Scanned("happy://server?url=https%3A%2F%2Fother.example.com")
+        rule.node(ServerTags.SCAN).performClick()
+        rule.waitForIdle()
+        rule.node(ServerTags.INPUT).assertTextEquals("https://other.example.com")
+        assertEquals("", headersText())
+        // A code with only headers keeps the URL.
+        scanned = ScanResult.Scanned("happy://server?header=X-Example-Key%3A%20abc123")
+        rule.node(ServerTags.SCAN).performClick()
+        rule.waitForIdle()
+        rule.node(ServerTags.INPUT).assertTextEquals("https://other.example.com")
+        assertEquals("X-Example-Key: abc123", headersText())
+        saveAndConfirm()
+        assertEquals(listOf("https://other.example.com" to listOf(key)), probed)
+    }
 }

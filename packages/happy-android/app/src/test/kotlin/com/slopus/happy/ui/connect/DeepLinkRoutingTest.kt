@@ -110,6 +110,24 @@ class DeepLinkRoutingTest {
         assertNull(DeepLinks.pending.value)
     }
 
+    /** A server link's prefill survives the route's encoding: two headers, and values with `%`, `+`, `&`, `=` and `#`. */
+    @Test
+    fun aServerLinkReachesTheServerScreenFilledInSignedOut() {
+        setHost(signedIn = false)
+        val value = "a%b+c&d=e#f"
+        val encoded = java.net.URLEncoder.encode("X-Example-Key: $value", "UTF-8")
+        DeepLinks.offer(parseDeepLink("happy://server?url=https%3A%2F%2Fhappy.example.com%3A8443&header=$encoded&header=CF-Access-Client-Id%3A%20id.example")!!)
+        assertAt<ServerRoute>()
+        assertEquals(
+            ServerRoute("https://happy.example.com:8443", "X-Example-Key: $value\nCF-Access-Client-Id: id.example"),
+            nav.currentBackStackEntry!!.toRoute<ServerRoute>(),
+        )
+        // A second link while the screen is up opens it again with its own values.
+        DeepLinks.offer(parseDeepLink("happy://server?url=https%3A%2F%2Fother.example.com")!!)
+        rule.waitForIdle()
+        assertEquals(ServerRoute("https://other.example.com", null), nav.currentBackStackEntry!!.toRoute<ServerRoute>())
+    }
+
     @Test
     fun instanceLinksGoToHappyLinksSignedInOrOut() {
         setHost(signedIn = false, openConnection = "c1")

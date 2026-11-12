@@ -117,7 +117,7 @@ fun ServerScreen(
     val scope = rememberCoroutineScope()
     val scanner = rememberQrScanner()
     var input by rememberSaveable { mutableStateOf(prefill?.url ?: customUrl.orEmpty()) }
-    var headerInput by rememberSaveable { mutableStateOf(prefill?.headerText ?: ServerHeader.format(customHeaders)) }
+    var headerInput by rememberSaveable { mutableStateOf(ServerHeader.format(customHeaders).let { saved -> prefill?.headersReplacing(saved) ?: saved }) }
     var error by remember { mutableStateOf<String?>(null) }
     var headerError by remember { mutableStateOf<String?>(null) }
     var validating by remember { mutableStateOf(false) }
@@ -222,8 +222,8 @@ fun ServerScreen(
                             alert = Alert(strings.error, strings.notServerCode, listOf(AlertButton(strings.ok)))
                         } else {
                             // Fills in, never saves: Save and its confirm still decide.
+                            headerInput = link.headersReplacing(headerInput)
                             link.url?.let { input = it }
-                            link.headerText?.let { headerInput = it }
                             error = null
                             headerError = null
                         }
