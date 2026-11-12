@@ -404,6 +404,31 @@ export class ApiClient {
   }
 
   /**
+   * Whether this account can open `sessionId`, asked by reading at most one of its messages:
+   * 'missing' when the server answers 404 (no such session for this account, e.g. one recorded
+   * while the CLI was signed in to another account), 'unknown' when it answers anything else or
+   * cannot be reached.
+   */
+  async sessionAccess(sessionId: string): Promise<'owned' | 'missing' | 'unknown'> {
+    try {
+      const response = await axios.get(
+        `${configuration.serverUrl}/v3/sessions/${encodeURIComponent(sessionId)}/messages`,
+        {
+          params: { limit: 1 },
+          headers: { 'Authorization': `Bearer ${this.credential.token}` },
+          timeout: 10000,
+          validateStatus: () => true,
+        },
+      );
+      if (response.status >= 200 && response.status < 300) return 'owned';
+      return response.status === 404 ? 'missing' : 'unknown';
+    } catch (error) {
+      logger.debug('[API] sessionAccess failed:', error);
+      return 'unknown';
+    }
+  }
+
+  /**
    * Mark a session as inactive on the server (active=false). Does NOT
    * change `lifecycleState`, so the session remains visible in the app
    * and resumable — same effect as the in-app "Archive" button hitting

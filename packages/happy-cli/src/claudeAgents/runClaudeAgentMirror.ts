@@ -440,13 +440,20 @@ const sleep = (ms: number): Promise<void> => new Promise((resolveSleep) => setTi
 
 /**
  * Connects to the Happy session of `agentId`: the one named by `HAPPY_RECONNECT_*` (the daemon
- * reopening a known mirror), else the one for `mirrorTag`.
+ * reopening a known mirror), else the one for `mirrorTag`. A named session the server says this
+ * account does not have (a record kept from before the CLI signed in to another account) is
+ * skipped: reusing it would hand the phone a session id its account cannot open.
  */
 async function connectSession(api: ApiClient, metadata: Metadata, agentId: string): Promise<{ response: ApiSession | null; reconnected: boolean }> {
     const reconnectSessionId = process.env.HAPPY_RECONNECT_SESSION_ID;
     const reconnectKeyBase64 = process.env.HAPPY_RECONNECT_ENCRYPTION_KEY;
     const reconnectVariant = process.env.HAPPY_RECONNECT_ENCRYPTION_VARIANT as 'legacy' | 'dataKey' | undefined;
-    if (reconnectSessionId && reconnectKeyBase64 && reconnectVariant) {
+    const reconnect = reconnectSessionId && reconnectKeyBase64 && reconnectVariant
+        && (await api.sessionAccess(reconnectSessionId)) !== 'missing';
+    if (reconnectSessionId && !reconnect) {
+        logger.debug(`[MIRROR] Happy session ${reconnectSessionId} is not this account's; opening the agent's own session`);
+    }
+    if (reconnect) {
         logger.debug(`[MIRROR] Reconnecting to Happy session ${reconnectSessionId}`);
         return {
             reconnected: true,

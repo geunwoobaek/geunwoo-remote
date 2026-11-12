@@ -4,14 +4,16 @@ import axios from 'axios';
 import { connectionState } from '@/utils/serverConnectionErrors';
 
 // Use vi.hoisted to ensure mock functions are available when vi.mock factory runs
-const { mockPost, mockIsAxiosError } = vi.hoisted(() => ({
+const { mockPost, mockGet, mockIsAxiosError } = vi.hoisted(() => ({
     mockPost: vi.fn(),
+    mockGet: vi.fn(),
     mockIsAxiosError: vi.fn(() => true)
 }));
 
 vi.mock('axios', () => ({
     default: {
         post: mockPost,
+        get: mockGet,
         isAxiosError: mockIsAxiosError
     },
     isAxiosError: mockIsAxiosError
@@ -79,6 +81,27 @@ describe('Api server error handling', () => {
         };
 
         api = await ApiClient.create(mockCredential);
+    });
+
+    describe('sessionAccess', () => {
+        it('is owned when the server returns the session', async () => {
+            mockGet.mockResolvedValue({ status: 200, data: { messages: [], hasMore: false } });
+            expect(await api.sessionAccess('s1')).toBe('owned');
+            expect(mockGet.mock.calls[0][0]).toMatch(/\/v3\/sessions\/s1\/messages$/);
+            expect(mockGet.mock.calls[0][1].params).toEqual({ limit: 1 });
+        });
+
+        it('is missing when the server says the session is not this account\'s (404)', async () => {
+            mockGet.mockResolvedValue({ status: 404, data: { error: 'Session not found' } });
+            expect(await api.sessionAccess('s1')).toBe('missing');
+        });
+
+        it('is unknown when the server answers otherwise or cannot be reached', async () => {
+            mockGet.mockResolvedValueOnce({ status: 500, data: {} });
+            expect(await api.sessionAccess('s1')).toBe('unknown');
+            mockGet.mockRejectedValueOnce(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+            expect(await api.sessionAccess('s1')).toBe('unknown');
+        });
     });
 
     describe('getOrCreateSession', () => {
