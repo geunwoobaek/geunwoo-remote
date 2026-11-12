@@ -11,6 +11,7 @@
  */
 
 import type { Metadata } from '@/api/types';
+import type { MirrorHandoff } from './agentsList';
 import { agentNameFrom, buildBgArgs, isUntrustedOutput, parseBackgroundedId } from './startAgent';
 import type {
     ClaudeAgent,
@@ -46,6 +47,13 @@ export const START_POLL_INTERVAL_MS = 500;
 export const LATE_MIRROR_WAIT_MS = 15_000;
 /** How long a successful start is answered again for a repeated `clientRequestId`. */
 export const START_RESULT_REUSE_MS = 5 * 60_000;
+/**
+ * How old a listing an open may use instead of running `claude agents` again. The app lists every
+ * few seconds while its home screen shows, so the row the user taps was listed moments before.
+ */
+export const OPEN_LISTING_REUSE_MS = 15_000;
+/** How long `claude` found in the login shell and tmux found stay checked (a failed check is never reused). */
+export const TOOLS_REUSE_MS = 60_000;
 
 export type PersistedMirror = {
     happySessionId: string;
@@ -78,6 +86,7 @@ export type ClaudeAgentHandlerDeps = {
         agentId: string,
         reconnect: { happySessionId: string; env: Record<string, string> } | undefined,
         cwd: string,
+        handoff: MirrorHandoff,
     ): Promise<OpenClaudeAgentResult>;
     /** Runs `claude <args>` in `cwd`; resolves with its output whatever the exit code. */
     runClaudeBg(claudePath: string, cwd: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number | null }>;
@@ -88,6 +97,8 @@ export type ClaudeAgentHandlerDeps = {
     /** Uses `directory` when it exists, otherwise creates it once `approved` (the `spawn-happy-session` rules). */
     ensureDirectory(directory: string, approved: boolean): Promise<EnsureDirectoryResult>;
     sleep(ms: number): Promise<void>;
+    /** Epoch milliseconds; `Date.now` when absent. */
+    now?(): number;
 };
 
 /** True when the session is the mirror of a Claude background agent. */
@@ -158,17 +169,63 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
     // Two phone taps (or a retry) on the same agent must not start two mirrors: each mirror
     // opens its own attach client and would type every phone message into the Mac session twice.
     const opensInFlight = new Map<string, Promise<OpenClaudeAgentResult>>();
+    const now = deps.now ?? Date.now;
+
+    // Locating `claude` (a login shell), checking tmux and running `claude agents` take a few
+    // hundred milliseconds each, more on a busy Mac, and the app lists from several places at once
+    // and then opens a row it has just listed. Successful checks are reused for a while, callers at
+    // the same moment share one `claude agents` run, and an open reuses a recent listing.
+    type ToolsCheck = { type: 'ok'; claudePath: string } | { type: 'claude-missing' | 'tmux-missing' };
+    async function runToolsCheck(): Promise<ToolsCheck> {
+        const claudePath = await deps.resolveClaude();
+        if (claudePath === null) {
+            return { type: 'claude-missing' };
+        }
+        return (await deps.tmuxInstalled()) ? { type: 'ok', claudePath } : { type: 'tmux-missing' };
+    }
+    let tools: { at: number; check: Promise<ToolsCheck> } | null = null;
+    function checkTools(): Promise<ToolsCheck> {
+        if (tools === null || now() - tools.at > TOOLS_REUSE_MS) {
+            const check = runToolsCheck();
+            const entry = { at: now(), check };
+            tools = entry;
+            // Only a successful check is kept: Claude Code or tmux may be installed a moment later.
+            const forget = (): void => {
+                if (tools === entry) {
+                    tools = null;
+                }
+            };
+            check.then((result) => {
+                if (result.type !== 'ok') {
+                    forget();
+                }
+            }, forget);
+        }
+        return tools.check;
+    }
+    let listed: { claudePath: string; at: number; agents: ClaudeAgent[] } | null = null;
+    let listing: Promise<ClaudeAgent[]> | null = null;
+    function fetchShared(claudePath: string): Promise<ClaudeAgent[]> {
+        if (listing === null) {
+            listing = deps.fetchAgents(claudePath)
+                .then((agents) => {
+                    listed = { claudePath, at: now(), agents };
+                    return agents;
+                })
+                .finally(() => {
+                    listing = null;
+                });
+        }
+        return listing;
+    }
 
     async function list(): Promise<ClaudeAgentsListing> {
         try {
-            const claudePath = await deps.resolveClaude();
-            if (claudePath === null) {
-                return { agents: [], unavailable: 'claude-missing', startSupported: true };
+            const checked = await checkTools();
+            if (checked.type !== 'ok') {
+                return { agents: [], unavailable: checked.type, startSupported: true };
             }
-            if (!(await deps.tmuxInstalled())) {
-                return { agents: [], unavailable: 'tmux-missing', startSupported: true };
-            }
-            const agents = await deps.fetchAgents(claudePath);
+            const agents = await fetchShared(checked.claudePath);
             const live = deps.liveMirrors();
             return {
                 // The last line keeps the app's row current while no mirror streams the chat.
@@ -214,18 +271,29 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
             return { type: 'success', sessionId: liveSessionId };
         }
 
-        const claudePath = await deps.resolveClaude();
-        if (claudePath === null) {
-            return { type: 'error', errorMessage: 'claude was not found in the login shell. Install Claude Code first.' };
+        const checked = await checkTools();
+        if (checked.type !== 'ok') {
+            return {
+                type: 'error',
+                errorMessage: checked.type === 'claude-missing'
+                    ? 'claude was not found in the login shell. Install Claude Code first.'
+                    : 'tmux is required to mirror a background session.',
+            };
         }
-        if (!(await deps.tmuxInstalled())) {
-            return { type: 'error', errorMessage: 'tmux is required to mirror a background session.' };
+        const { claudePath } = checked;
+        const recent = listed !== null && listed.claudePath === claudePath && now() - listed.at <= OPEN_LISTING_REUSE_MS
+            ? listed.agents
+            : null;
+        let agents = recent ?? await fetchShared(claudePath);
+        if (recent !== null && !recent.some((candidate) => candidate.id === agentId)) {
+            // Started after that listing, or already gone: ask again before refusing.
+            agents = await fetchShared(claudePath);
         }
-        const agents = await deps.fetchAgents(claudePath);
         const agent = agents.find((candidate) => candidate.id === agentId);
         if (agent === undefined) {
             return { type: 'error', errorMessage: `No background agent with id ${agentId}.` };
         }
+        const handoff: MirrorHandoff = { claudePath, agents };
 
         // The listing above took a moment: a mirror may have come up in the meantime.
         const liveNow = deps.liveMirrors().get(agentId);
@@ -239,6 +307,7 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
                 agentId,
                 { happySessionId: persisted.happySessionId, env: reconnectEnv(persisted) },
                 agent.cwd,
+                handoff,
             ));
             if (reconnected.type === 'success' || deps.mirrorStarting(agentId)) {
                 return reconnected;
@@ -246,7 +315,7 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
             // The stored keys may no longer open the session (the mirror exited before it reported).
             // Start one fresh instead.
         }
-        return awaitLateMirror(agentId, await deps.spawnMirror(agentId, undefined, agent.cwd));
+        return awaitLateMirror(agentId, await deps.spawnMirror(agentId, undefined, agent.cwd, handoff));
     }
 
     function open(agentId: string): Promise<OpenClaudeAgentResult> {

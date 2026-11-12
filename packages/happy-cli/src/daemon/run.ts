@@ -39,10 +39,12 @@ import { appendDaemonSpawnModeArgs, shouldForwardDaemonPermissionMode } from './
 import { hasPersistedProcessConflict, isPidAlive, machineBootTimeMs } from './sessionLiveness';
 import {
   fetchClaudeAgents,
+  mirrorHandoffEnv,
   removeClaudeAgent,
   resolveClaudeBinary,
   runClaudeBackground,
   stopClaudeAgent,
+  type MirrorHandoff,
 } from '@/claudeAgents/agentsList';
 import { claudeBgEnvironment } from '@/claudeAgents/startAgent';
 import type { EnsureDirectoryResult } from '@/claudeAgents/types';
@@ -953,6 +955,7 @@ export async function startDaemon(): Promise<void> {
       agentId: string,
       reconnect: { happySessionId: string; env: Record<string, string> } | undefined,
       cwd: string,
+      handoff: MirrorHandoff,
     ): Promise<SpawnSessionResult> => {
       const knownPid = mirrorPids.get(agentId);
       if (knownPid !== undefined) {
@@ -994,7 +997,7 @@ export async function startDaemon(): Promise<void> {
       return spawnTrackedHappyProcess({
         args: ['claude-agent-mirror', agentId],
         cwd,
-        env: buildSessionChildEnvironment(ambientEnvironment, reconnect?.env),
+        env: buildSessionChildEnvironment(ambientEnvironment, { ...reconnect?.env, ...mirrorHandoffEnv(handoff) }),
         reconnect: tracking,
         onSpawned: (pid) => mirrorPids.set(agentId, pid),
       });
@@ -1014,8 +1017,8 @@ export async function startDaemon(): Promise<void> {
       },
       persistedMirrors: () => pickPersistedMirrors(readPersistedSessions()),
       // The mirror never asks to create a directory (the agent's own cwd exists), but the shared result type allows it.
-      spawnMirror: async (agentId, reconnect, cwd) => {
-        const result = await spawnMirror(agentId, reconnect, cwd);
+      spawnMirror: async (agentId, reconnect, cwd, handoff) => {
+        const result = await spawnMirror(agentId, reconnect, cwd, handoff);
         return result.type === 'requestToApproveDirectoryCreation'
           ? { type: 'error', errorMessage: `Directory ${result.directory} does not exist.` }
           : result;

@@ -2,7 +2,31 @@ import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { fetchClaudeAgents, parseClaudeAgents, removeClaudeAgent, runClaudeBackground, stopClaudeAgent } from './agentsList';
+import {
+    fetchClaudeAgents,
+    mirrorHandoffEnv,
+    parseClaudeAgents,
+    removeClaudeAgent,
+    runClaudeBackground,
+    stopClaudeAgent,
+    takeMirrorHandoff,
+} from './agentsList';
+
+describe('mirror handoff', () => {
+    it('carries the claude path and the listing to the mirror and leaves nothing for its children', () => {
+        const agents = [{
+            id: 'abc12345', sessionId: 'session-abc', name: null, cwd: '/Users/tester/project',
+            pid: 7, status: 'busy' as const, state: 'working' as const, startedAt: 5,
+        }];
+        const env: NodeJS.ProcessEnv = { KEEP: '1', ...mirrorHandoffEnv({ claudePath: '/usr/local/bin/claude', agents }) };
+        expect(takeMirrorHandoff(env)).toEqual({ claudePath: '/usr/local/bin/claude', agents });
+        expect(env).toEqual({ KEEP: '1' });
+    });
+
+    it('is absent when the mirror was started by hand', () => {
+        expect(takeMirrorHandoff({ PATH: '/bin' })).toBeNull();
+    });
+});
 
 const background = (overrides: Record<string, unknown> = {}) => ({
     pid: 1001,

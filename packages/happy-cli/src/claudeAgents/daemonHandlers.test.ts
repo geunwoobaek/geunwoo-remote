@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Metadata } from '@/api/types';
 import {
     LATE_MIRROR_WAIT_MS,
+    OPEN_LISTING_REUSE_MS,
     MIRROR_RESUME_REFUSAL,
     createClaudeAgentHandlers,
     isClaudeAgentMirror,
@@ -430,6 +431,69 @@ describe('open-claude-agent', () => {
         const result = await createClaudeAgentHandlers(deps).open('abc12345');
         expect(result).toMatchObject({ type: 'error' });
         expect(spawns).toEqual([]);
+    });
+
+    it('lists running at the same moment share one claude agents run and one tool check', async () => {
+        let fetches = 0;
+        let resolves = 0;
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const { deps } = makeDeps({
+            resolveClaude: async () => { resolves++; return '/usr/local/bin/claude'; },
+            fetchAgents: async () => { fetches++; await gate; return [agent('abc12345')]; },
+        });
+        const handlers = createClaudeAgentHandlers(deps);
+        const first = handlers.list();
+        const second = handlers.list();
+        release();
+        expect((await first).agents.map((row) => row.id)).toEqual(['abc12345']);
+        expect((await second).agents.map((row) => row.id)).toEqual(['abc12345']);
+        expect(fetches).toBe(1);
+        // A later list runs claude agents again (rows must stay current) but reuses the tool check.
+        await handlers.list();
+        expect(fetches).toBe(2);
+        expect(resolves).toBe(1);
+    });
+
+    it('open reuses a listing made moments before and hands it to the mirror', async () => {
+        let fetches = 0;
+        let clock = 1_000;
+        const spawned: unknown[] = [];
+        const { deps } = makeDeps({
+            now: () => clock,
+            fetchAgents: async () => { fetches++; return [agent('abc12345'), agent('def67890')]; },
+            spawnMirror: async (_agentId, _reconnect, _cwd, handoff) => {
+                spawned.push(handoff);
+                return { type: 'success', sessionId: 'happy-new' };
+            },
+        });
+        const handlers = createClaudeAgentHandlers(deps);
+        await handlers.list();
+        clock += OPEN_LISTING_REUSE_MS;
+        expect(await handlers.open('abc12345')).toEqual({ type: 'success', sessionId: 'happy-new' });
+        expect(fetches).toBe(1);
+        expect(spawned).toEqual([{ claudePath: '/usr/local/bin/claude', agents: [agent('abc12345'), agent('def67890')] }]);
+
+        // Too old: listed again.
+        clock += OPEN_LISTING_REUSE_MS + 1;
+        await handlers.open('def67890');
+        expect(fetches).toBe(2);
+    });
+
+    it('open lists again before refusing an agent the recent listing does not have', async () => {
+        let listings = [[agent('abc12345')], [agent('abc12345'), agent('new00001')]];
+        const { deps, spawns } = makeDeps({
+            now: () => 1_000,
+            fetchAgents: async () => {
+                const [next, ...rest] = listings;
+                listings = rest.length > 0 ? rest : [next];
+                return next;
+            },
+        });
+        const handlers = createClaudeAgentHandlers(deps);
+        await handlers.list();
+        expect(await handlers.open('new00001')).toEqual({ type: 'success', sessionId: 'happy-new' });
+        expect(spawns.map((spawn) => spawn.agentId)).toEqual(['new00001']);
     });
 
     it('open falls back to one fresh spawn when the reconnect spawn fails', async () => {

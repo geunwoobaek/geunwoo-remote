@@ -29,7 +29,8 @@ vi.mock('@/utils/detectCLI', () => ({ detectCLIAvailability: () => ({}) }));
 vi.mock('@/utils/spawnHappyCLI', () => ({ spawnHappyCLI: mocks.spawn }));
 vi.mock('@/utils/tmux', () => ({ isTmuxAvailable: async () => false }));
 vi.mock('@/resume/localHappyAgentAuth', () => ({ detectResumeSupport: () => ({}), hasLocalHappyAgentAuth: () => false }));
-vi.mock('@/claudeAgents/agentsList', () => ({
+vi.mock('@/claudeAgents/agentsList', async (importOriginal) => ({
+  mirrorHandoffEnv: (await importOriginal<typeof import('@/claudeAgents/agentsList')>()).mirrorHandoffEnv,
   resolveClaudeBinary: async () => '/fake/claude',
   fetchClaudeAgents: async () => [{
     id: 'abc12345', sessionId: 'session-abc', name: 'demo-agent', cwd: '/Users/tester/project',
@@ -107,6 +108,9 @@ describe('daemon Claude background agents', () => {
       expect.objectContaining({ cwd: '/Users/tester/project' }),
     );
     expect(mocks.spawn.mock.calls[0][1].env.HAPPY_RECONNECT_SESSION_ID).toBeUndefined();
+    // The mirror is handed what the daemon just found out instead of asking again.
+    expect(mocks.spawn.mock.calls[0][1].env.HAPPY_MIRROR_CLAUDE_PATH).toBe('/fake/claude');
+    expect(JSON.parse(mocks.spawn.mock.calls[0][1].env.HAPPY_MIRROR_AGENTS)).toMatchObject([{ id: 'abc12345', kind: 'background' }]);
 
     const listing = await mocks.handlers.claudeAgents.list();
     expect(listing.agents[0]).toMatchObject({ id: 'abc12345', mirrorSessionId: 'happy-new' });

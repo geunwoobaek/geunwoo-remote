@@ -41,7 +41,7 @@ import { authAndSetupMachineIfNeeded } from '@/ui/auth';
 import { logger } from '@/ui/logger';
 import { projectPath } from '../projectPath';
 import packageJson from '../../package.json';
-import { fetchClaudeAgents, resolveClaudeBinary } from './agentsList';
+import { fetchClaudeAgents, resolveClaudeBinary, takeMirrorHandoff } from './agentsList';
 import { isTmuxInstalled, openAttachTerminal, type AttachTerminal } from './attachTerminal';
 import { findAgentSurface, guardUserPane, openCmuxTerminal, paneShowsAgent, userPaneSize } from './cmuxTerminal';
 import { screenSessionName } from './dialogs';
@@ -473,17 +473,22 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     const { agentId } = opts;
     logger.debug(`[MIRROR] Starting mirror for agent ${agentId}`);
 
-    const claudePath = await resolveClaudeBinary();
+    // Spawned by the daemon, the mirror is handed what the daemon just found out (the `claude`
+    // binary, tmux present, the listing, the daemon itself running and its machine registered),
+    // so the phone's open does not wait for all of it a second time. Run by hand, it asks itself.
+    const handoff = takeMirrorHandoff(process.env);
+    const fromDaemon = handoff !== null && handoff.agents.some((candidate) => candidate.id === agentId) ? handoff : null;
+    const claudePath = fromDaemon?.claudePath ?? (await resolveClaudeBinary());
     if (claudePath === null) {
         console.error('claude was not found in the login shell. Install Claude Code first.');
         process.exit(1);
     }
-    if (!(await isTmuxInstalled())) {
+    if (fromDaemon === null && !(await isTmuxInstalled())) {
         console.error('tmux is required to mirror a background session.');
         process.exit(1);
     }
 
-    const initialAgents = await fetchClaudeAgents(claudePath).catch((error: unknown): ClaudeAgent[] => {
+    const initialAgents = fromDaemon?.agents ?? await fetchClaudeAgents(claudePath).catch((error: unknown): ClaudeAgent[] => {
         logger.debug('[MIRROR] claude agents failed at startup', error);
         return [];
     });
@@ -498,7 +503,9 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     let currentSessionId = agent.sessionId;
 
     const { credentials } = await authAndSetupMachineIfNeeded();
-    await ensureDaemonRunning();
+    if (fromDaemon === null) {
+        await ensureDaemonRunning();
+    }
     const api = await ApiClient.create(credentials);
     const settings = await readSettings();
     const machineId = settings?.machineId;
@@ -506,7 +513,9 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         console.error('No machine ID found in settings. Run `happy auth login` first.');
         process.exit(1);
     }
-    await api.getOrCreateMachine({ machineId, metadata: initialMachineMetadata });
+    if (fromDaemon === null) {
+        await api.getOrCreateMachine({ machineId, metadata: initialMachineMetadata });
+    }
 
     const metadata = buildMirrorMetadata(agent, {
         host: os.hostname(),

@@ -38,6 +38,32 @@ function normalizeStartedAt(startedAt: number | string | null | undefined): numb
     return typeof ms === 'number' && Number.isFinite(ms) ? ms : 0;
 }
 
+const MIRROR_CLAUDE_PATH_ENV = 'HAPPY_MIRROR_CLAUDE_PATH';
+const MIRROR_AGENTS_ENV = 'HAPPY_MIRROR_AGENTS';
+
+/** What the daemon already found out when it spawns a mirror: the `claude` binary and the listing. */
+export type MirrorHandoff = { claudePath: string; agents: ClaudeAgent[] };
+
+/**
+ * The environment that hands [handoff] to a mirror, so it starts without locating `claude`,
+ * checking tmux and listing the agents again (about a second on a busy Mac).
+ */
+export function mirrorHandoffEnv(handoff: MirrorHandoff): Record<string, string> {
+    return {
+        [MIRROR_CLAUDE_PATH_ENV]: handoff.claudePath,
+        [MIRROR_AGENTS_ENV]: JSON.stringify(handoff.agents.map((agent) => ({ ...agent, kind: 'background' }))),
+    };
+}
+
+/** The handoff in `env`, removed from it so the mirror's own children do not inherit it; null when absent. */
+export function takeMirrorHandoff(env: NodeJS.ProcessEnv): MirrorHandoff | null {
+    const claudePath = env[MIRROR_CLAUDE_PATH_ENV];
+    const agents = env[MIRROR_AGENTS_ENV];
+    delete env[MIRROR_CLAUDE_PATH_ENV];
+    delete env[MIRROR_AGENTS_ENV];
+    return claudePath && agents ? { claudePath, agents: parseClaudeAgents(agents) } : null;
+}
+
 /** Parses `claude agents --json` output into background agents; returns [] on any malformed input. */
 export function parseClaudeAgents(json: string): ClaudeAgent[] {
     let parsed: unknown;
