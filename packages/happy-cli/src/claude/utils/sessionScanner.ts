@@ -118,14 +118,20 @@ export async function createSessionScanner(opts: {
                     continue;
                 }
                 processedEntryKeys.add(entry.key);
-                if (entry.kind === 'message') {
-                    logger.debug(`[SESSION_SCANNER] Sending new message: type=${entry.message.type}, uuid=${entry.message.type === 'summary' ? entry.message.leafUuid : entry.message.uuid}`);
-                    opts.onMessage(entry.message);
-                    sentMessages++;
-                } else {
-                    logger.debug(`[SESSION_SCANNER] Sending new transcript event: type=${entry.event.type}, uuid=${entry.event.uuid}`);
-                    opts.onTranscriptEvent?.(entry.event);
-                    sentTranscriptEvents++;
+                // The file is not read again from the start, so one failing entry must not
+                // cost the ones after it.
+                try {
+                    if (entry.kind === 'message') {
+                        logger.debug(`[SESSION_SCANNER] Sending new message: type=${entry.message.type}, uuid=${entry.message.type === 'summary' ? entry.message.leafUuid : entry.message.uuid}`);
+                        opts.onMessage(entry.message);
+                        sentMessages++;
+                    } else {
+                        logger.debug(`[SESSION_SCANNER] Sending new transcript event: type=${entry.event.type}, uuid=${entry.event.uuid}`);
+                        opts.onTranscriptEvent?.(entry.event);
+                        sentTranscriptEvents++;
+                    }
+                } catch (error) {
+                    logger.debug(`[SESSION_SCANNER] Handling entry ${entry.key} failed`, error);
                 }
             }
             if (sessionEntries.length > 0) {
