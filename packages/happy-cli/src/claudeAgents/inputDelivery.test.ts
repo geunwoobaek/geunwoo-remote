@@ -1153,6 +1153,32 @@ describe('createInputDelivery that never drops a phone message', () => {
         expect(echo.shouldSkip('a')).toBe(false);
     });
 
+    it('leaves a try early over a dialog, so the terminal is free for the answer', async () => {
+        let answered = false;
+        const blockers: string[] = [];
+        const { log, openTerminal } = createHarness(echoing(() => answered, () => PERMISSION));
+        const delivery = createInputDelivery({
+            openTerminal, echo: createEchoFilter(), ...patient, waitInputMs: 10_000,
+            onRetry: (_tries, blocker) => blockers.push(blocker),
+        });
+        const sending = delivery.send('hi');
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        // Several short tries, not one try holding the terminal for 10s.
+        expect(log.filter((line) => line.startsWith('close')).length).toBeGreaterThanOrEqual(2);
+        expect(new Set(blockers)).toEqual(new Set(['dialog']));
+        answered = true;
+        expect(await sending).toBe('sent');
+    });
+
+    it('keeps waiting in the same try while the attach screen has not drawn an input box yet', async () => {
+        let reads = 0;
+        const blank = 'loading…\n';
+        const { log, openTerminal } = createHarness(echoing(() => ++reads > 15, () => blank));
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...patient, waitInputMs: 2_000 });
+        expect(await delivery.send('slow mac')).toBe('sent');
+        expect(log.filter((line) => line.startsWith('open'))).toHaveLength(1);
+    });
+
     it('still reports a send that typing broke as failed instead of trying it again', async () => {
         const { log, openTerminal } = createHarness([EMPTY]);
         let opened = 0;

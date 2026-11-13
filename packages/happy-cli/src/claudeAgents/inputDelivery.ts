@@ -129,14 +129,21 @@ export type InputDeliveryDeps = {
     waitInputMs?: number;
     /**
      * Never give up on a send for want of an input box: wait this long and try again, until it goes
-     * or [InputDelivery.abandon] is called. Each try then waits at most [retryWaitInputMs] for the
-     * box, so the terminal is free for other work between tries. Unset: one try of [waitInputMs].
+     * or [InputDelivery.abandon] is called. The pause doubles after each try, up to
+     * [retryBusyMaxMs]. A try still waits up to [waitInputMs] for the box (a fresh `claude attach`
+     * may take a while to draw it), but leaves after [retryWaitInputMs] when it sees what is in the
+     * way, a dialog or a line being typed, so the terminal is free for other work between tries.
+     * Unset: one try of [waitInputMs], then `busy-input`.
      */
     retryBusyMs?: number;
-    /** With [retryBusyMs]: how long one try waits for the input box. Default 1500. */
+    /** With [retryBusyMs]: the longest pause between two tries. Default 3000. */
+    retryBusyMaxMs?: number;
+    /** With [retryBusyMs]: how long a try that sees a dialog or typing keeps waiting. Default 1500. */
     retryWaitInputMs?: number;
     /** With [retryBusyMs]: told once per send that has waited [waitInputMs] and is still waiting. */
     onWaiting?: () => void;
+    /** With [retryBusyMs]: told after each try that found no usable box, with what was in the way. */
+    onRetry?: (tries: number, blocker: Blocker) => void;
     /** Pause after Enter before the terminal is closed. Default 400. */
     closeDelayMs?: number;
     /** Pause between two screen reads. Default 200. */
@@ -153,11 +160,27 @@ const DEFAULT_POLL_INTERVAL_MS = 200;
 const DEFAULT_SUBMIT_WAIT_MS = 1_500;
 const DEFAULT_DRAFT_SETTLE_MS = 800;
 const DEFAULT_RETRY_WAIT_INPUT_MS = 1_500;
+const DEFAULT_RETRY_BUSY_MAX_MS = 3_000;
 
 /** What the hidden terminal found in the input box before typing. */
 type InputBox = { kind: 'empty' } | { kind: 'blocked' } | { kind: 'draft'; text: string };
-/** One send across its tries: the survey is answered with `0` once per send, never once per try. */
-type SendTries = { surveyDismissed: boolean };
+/**
+ * What kept a try from typing: a dialog (permission, question, plan), the Mac user typing, a draft
+ * the stash key would not move, a survey that will not go away, or no input box drawn at all.
+ */
+export type Blocker = 'dialog' | 'typing' | 'draft' | 'survey' | 'no-box';
+/**
+ * One send across its tries: the survey is answered with `0` once per send, never once per try.
+ * `leaveEarlyMs` lets a try give up early on a dialog or typing (patient sends only); `blocker`
+ * is what the last try saw.
+ */
+type SendTries = { surveyDismissed: boolean; leaveEarlyMs?: number; blocker?: Blocker };
+
+/** Dialogs that stay until someone answers them; an `unknown` screen may still be drawing. */
+function showsDialog(screen: string): boolean {
+    const kind = classifyScreen(screen);
+    return kind === 'permission' || kind === 'question' || kind === 'plan';
+}
 /** Extra Enters after the first one before the send is given up. */
 const ENTER_RETRIES = 2;
 /** Backspaces sent per key batch when deleting a text that would not submit. */
@@ -276,7 +299,10 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
             if (held !== null && now - held.since >= draftSettleMs) {
                 return { kind: 'draft', text: held.text };
             }
-            if (now - started >= waitMs) {
+            const blocker: Blocker = survey && empty ? 'survey' : held !== null ? 'typing' : showsDialog(screen) ? 'dialog' : 'no-box';
+            tries.blocker = blocker;
+            const seen = blocker === 'typing' || blocker === 'dialog';
+            if (now - started >= waitMs || (seen && tries.leaveEarlyMs !== undefined && now - started >= tries.leaveEarlyMs)) {
                 return { kind: 'blocked' };
             }
             await sleep(pollIntervalMs);
@@ -451,6 +477,7 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
             const resubmit = box.kind === 'draft' && box.text === text.replace(/\s+/g, '');
             const draft = box.kind === 'draft' && !resubmit ? box.text : null;
             if (draft !== null && !(await setDraftAside(terminal))) {
+                tries.blocker = 'draft';
                 return 'busy-input';
             }
             deps.echo.remember(text);
@@ -702,21 +729,26 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
      */
     async function deliverPatiently(text: string, retryBusyMs: number): Promise<DeliveryResult> {
         const started = Date.now();
-        const tries: SendTries = { surveyDismissed: false };
+        const maxPause = Math.max(retryBusyMs, deps.retryBusyMaxMs ?? DEFAULT_RETRY_BUSY_MAX_MS);
+        const tries: SendTries = { surveyDismissed: false, leaveEarlyMs: retryWaitInputMs };
+        let pause = retryBusyMs;
         let told = false;
-        for (;;) {
+        for (let count = 1; ; count++) {
             if (abandoned) {
                 return 'failed';
             }
-            const result = await enqueue(() => deliver(text, retryWaitInputMs, tries).catch((): DeliveryResult => 'failed'));
+            tries.blocker = undefined;
+            const result = await enqueue(() => (abandoned ? Promise.resolve<DeliveryResult>('failed') : deliver(text, waitInputMs, tries)).catch((): DeliveryResult => 'failed'));
             if (result !== 'busy-input') {
                 return result;
             }
+            deps.onRetry?.(count, tries.blocker ?? 'no-box');
             if (!told && Date.now() - started >= waitInputMs) {
                 told = true;
                 deps.onWaiting?.();
             }
-            await sleep(retryBusyMs);
+            await sleep(pause);
+            pause = Math.min(pause * 2, maxPause);
         }
     }
 
