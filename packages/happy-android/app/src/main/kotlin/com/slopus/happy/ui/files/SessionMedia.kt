@@ -31,6 +31,16 @@ object SessionMedia {
     const val MAX_PICTURE_BYTES = 40L * 1024 * 1024
     const val MAX_VIDEO_BYTES = 300L * 1024 * 1024
 
+    /**
+     * A text file read to show: more than one relay message holds (a whole
+     * readFile over ~4.5 MB drops the session's connection), so it too comes
+     * a slice at a time; past this it is too large for the phone.
+     */
+    const val MAX_TEXT_BYTES = 8L * 1024 * 1024
+
+    /** A page shown whole: one file with its pictures and scripts inside. */
+    const val MAX_PAGE_BYTES = 16L * 1024 * 1024
+
     /** Under the cache, and the one other folder conversation_media_paths.xml shares. */
     const val DIRECTORY = "session-media"
 

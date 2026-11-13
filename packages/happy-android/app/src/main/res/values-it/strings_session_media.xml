@@ -8,4 +8,5 @@
     <string name="session_capture_failed">Impossibile catturare lo schermo. Sul Mac, consenti la registrazione dello schermo all’app che esegue happy (Impostazioni di Sistema → Privacy e sicurezza).</string>
     <string name="session_capture_ask">Chiedi a Claude</string>
     <string name="session_capture_ask_message">Guarda questa cattura del mio schermo: %1$s</string>
+    <string name="files_shown_start">File lungo: è mostrato solo l\'inizio.</string>
 </resources>

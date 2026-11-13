@@ -72,6 +72,13 @@ internal fun countLines(text: String): Int {
     return if (text.endsWith('\n')) parts - 1 else parts
 }
 
+/** Why a file read a slice at a time didn't come. */
+internal fun readFailure(failure: MediaRead?): Words = when (failure) {
+    MediaRead.TooLarge -> Words.ours(R.string.session_media_too_large)
+    is MediaRead.Failed -> Words.said(failure.reason, R.string.files_failed_to_read)
+    else -> Words.ours(R.string.files_failed_to_read)
+}
+
 /** Strict base64 to UTF-8 (TextDecoder's replacement on bad bytes); null when it isn't base64. */
 internal fun decodeBase64Text(content: String): String? = try {
     String(Base64.getMimeDecoder().decode(content), Charsets.UTF_8)
@@ -232,11 +239,12 @@ class LegacyChanges(
                 // Images diff as pictures: both sides, not a patch git can't produce.
                 ImageFiles.isImage(file.fullPath) -> coroutineScopeImages(file, relative, resolved.absolutePath, root)
                 file.status == GitFileStatusKind.Untracked -> {
-                    val read = ops.readFile(sessionId, resolved.absolutePath)
-                    val content = read.content
-                    if (!read.success || content.isNullOrEmpty()) return Result(file, null, Words.said(read.error, R.string.files_failed_to_read))
-                    val text = decodeBase64Text(content) ?: return Result(file, null, Words.ours(R.string.files_decode_failed))
-                    Result(file, Content.NewFile(text), null)
+                    // A slice at a time: a large untracked log read whole would drop the session's connection.
+                    var failure: MediaRead? = null
+                    val bytes = ops.readMediaBytes(sessionId, resolved.absolutePath, SessionMedia.MAX_TEXT_BYTES) { failure = it }
+                        ?: return Result(file, null, readFailure(failure))
+                    if (bytes.isEmpty()) return Result(file, null, Words.ours(R.string.files_failed_to_read))
+                    Result(file, Content.NewFile(String(bytes, Charsets.UTF_8)), null)
                 }
                 else -> {
                     val command = GitStatusParser.diffCommand(
@@ -264,7 +272,7 @@ class LegacyChanges(
             }
             val working = async {
                 if (file.status == GitFileStatusKind.Deleted) null
-                else runCatching { ops.readFile(sessionId, absolute) }.getOrNull()?.takeIf { it.success }?.content
+                else runCatching { ops.readMediaBytes(sessionId, absolute) }.getOrNull()?.let { Base64.getEncoder().encodeToString(it) }
             }
             val before = head.await()?.let { ImageFiles.dataUri(file.fullPath, it) }
             val after = working.await()?.let { ImageFiles.dataUri(file.fullPath, it) }

@@ -150,6 +150,41 @@ class SessionMediaTest {
         assertEquals(1, older.wholeReads)
     }
 
+    @Test fun aTextFileComesInSlicesNotOneReply() = runTest {
+        // One readFile reply over ~4.5 MB outgrows the relay's message and drops the connection.
+        val text = (1..400).joinToString("") { "line $it of a long log\n" }
+        val computer = Computer(text.toByteArray(), slice = 1024)
+        assertEquals(FileLoad.Loaded(text, null), computer.loadFile("s", "/w/run.log", null, null))
+        assertEquals(0, computer.wholeReads)
+        assertEquals(true, computer.offsets.size >= 3)
+        val page = Computer("<html><title>t</title></html>".toByteArray(), slice = 8)
+        assertEquals(FileLoad.Loaded("<html><title>t</title></html>", null), page.loadFile("s", "/tmp/a.html", null, null))
+    }
+
+    @Test fun aTextFileOverTheCapIsTooLargeAndAnOlderCliIsReadWhole() = runTest {
+        val big = object : SessionFileOps by Computer(ByteArray(0), 1) {
+            override suspend fun readFileChunk(sessionId: String, path: String, offset: Long, length: Int) =
+                ReadFileChunkResult(true, Base64.getEncoder().encodeToString("x".toByteArray()), SessionMedia.MAX_TEXT_BYTES + 1, eof = false)
+        }
+        assertEquals(FileLoad.Failed(com.slopus.happy.text.Words.ours(com.slopus.happy.R.string.session_media_too_large)), big.loadFile("s", "/w/huge.txt", null, null))
+        // A page may be larger than text: its pictures and scripts are inside.
+        val page = object : SessionFileOps by Computer(ByteArray(0), 1) {
+            override suspend fun readFileChunk(sessionId: String, path: String, offset: Long, length: Int) =
+                ReadFileChunkResult(true, Base64.getEncoder().encodeToString("<p>".toByteArray()), 3, eof = true)
+        }
+        assertEquals(FileLoad.Loaded("<p>", null), page.loadFile("s", "/w/big.html", null, null))
+        val older = Computer("hello\n".toByteArray(), 4, chunked = false)
+        assertEquals(FileLoad.Loaded("hello\n", null), older.loadFile("s", "/w/a.txt", null, null))
+        assertEquals(1, older.wholeReads)
+    }
+
+    @Test fun aLongFileShowsItsStartCutAtALineEnd() {
+        assertNull(shownStart("short\ntext", max = 100))
+        assertEquals("aaaa\nbbbb", shownStart("aaaa\nbbbb\ncccc", max = 12))
+        // No line end within reach: cut at the limit, never inside a surrogate pair.
+        assertEquals("abc", shownStart("abc\uD83D\uDE00def", max = 4))
+    }
+
     @Test fun aFileIsWrittenInPlaceOnlyWhenWhole() = runTest {
         val dir = kotlin.io.path.createTempDirectory("media").toFile()
         val target = SessionMedia.cacheFile(dir, "s", "/tmp/rec.mov")

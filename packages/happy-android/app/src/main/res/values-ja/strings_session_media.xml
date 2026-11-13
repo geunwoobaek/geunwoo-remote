@@ -8,4 +8,5 @@
     <string name="session_capture_failed">画面を取り込めませんでした。Mac で happy を動かしているアプリに画面収録を許可してください（システム設定 → プライバシーとセキュリティ）。</string>
     <string name="session_capture_ask">Claude に聞く</string>
     <string name="session_capture_ask_message">私の画面のこのキャプチャを見て: %1$s</string>
+    <string name="files_shown_start">長いファイルのため、先頭部分のみ表示しています。</string>
 </resources>

@@ -11,6 +11,7 @@ import com.slopus.happy.sync.GitFacts
 import com.slopus.happy.sync.GitFile
 import com.slopus.happy.sync.GitFileContent
 import com.slopus.happy.sync.GitState
+import com.slopus.happy.sync.ReadFileChunkResult
 import com.slopus.happy.sync.ReadFileResult
 import com.slopus.happy.sync.SessionFileCache
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -51,8 +52,23 @@ class SessionChangesTest {
             }
         }
 
-        override suspend fun readFile(sessionId: String, path: String): ReadFileResult =
-            files[path]?.let { ReadFileResult(true, Base64.getEncoder().encodeToString(it.toByteArray())) } ?: ReadFileResult(false, error = "missing")
+        /** With a [slice], the computer reads a slice at a time (happy-cli readFileChunk), reporting [reportedSize] when set. */
+        var slice: Int? = null
+        var reportedSize: Long? = null
+        var wholeReads = 0
+
+        override suspend fun readFile(sessionId: String, path: String): ReadFileResult {
+            wholeReads++
+            return files[path]?.let { ReadFileResult(true, Base64.getEncoder().encodeToString(it.toByteArray())) } ?: ReadFileResult(false, error = "missing")
+        }
+
+        override suspend fun readFileChunk(sessionId: String, path: String, offset: Long, length: Int): ReadFileChunkResult {
+            val slice = slice ?: return super.readFileChunk(sessionId, path, offset, length)
+            val bytes = files[path]?.toByteArray() ?: return ReadFileChunkResult(false, error = "missing")
+            val end = minOf(bytes.size.toLong(), offset + minOf(length, slice)).toInt()
+            val part = bytes.copyOfRange(offset.toInt(), end)
+            return ReadFileChunkResult(true, Base64.getEncoder().encodeToString(part), reportedSize ?: bytes.size.toLong(), eof = end >= bytes.size)
+        }
 
         override suspend fun gitState(sessionId: String): GitState = state ?: error("no state")
 
@@ -98,6 +114,41 @@ class SessionChangesTest {
         changes.expandContext("src/a.kt")
         advanceUntilIdle()
         assertTrue(ops.commands.any { it.contains("-U${GitStatusParser.FULL_FILE_CONTEXT}") })
+    }
+
+    @Test
+    fun legacyReadsUntrackedFilesAndPicturesInSlices() = runTest(StandardTestDispatcher()) {
+        // A large untracked log read whole would drop the session's connection.
+        val ops = FakeOps().apply {
+            slice = 3
+            status = "# branch.head main\n? new.txt\n1 .M N... 100644 100644 100644 abc def logo.png\n"
+            numstat = "---STAGED---\n"
+            files["/repo/new.txt"] = "one\ntwo\nthree\n"
+            files["/repo/logo.png"] = "pngbytes"
+        }
+        val changes = LegacyChanges(this as TestScope, ops, "s", "/repo")
+        changes.refresh()
+        advanceUntilIdle()
+        val items = changes.state.value.items.associateBy { it.path }
+        assertEquals(DiffSource.Contents("new.txt", "", "one\ntwo\nthree\n"), items.getValue("new.txt").source)
+        assertEquals("data:image/png;base64," + Base64.getEncoder().encodeToString("pngbytes".toByteArray()), items.getValue("logo.png").image!!.after)
+        assertEquals(0, ops.wholeReads)
+    }
+
+    @Test
+    fun legacyUntrackedFileTooLargeForThePhoneSaysSo() = runTest(StandardTestDispatcher()) {
+        val ops = FakeOps().apply {
+            slice = 3
+            reportedSize = SessionMedia.MAX_TEXT_BYTES + 1
+            status = "# branch.head main\n? huge.log\n"
+            numstat = "---STAGED---\n"
+            files["/repo/huge.log"] = "lots"
+        }
+        val changes = LegacyChanges(this as TestScope, ops, "s", "/repo")
+        changes.refresh()
+        advanceUntilIdle()
+        assertEquals(Words.ours(R.string.session_media_too_large), changes.state.value.items.single().error)
+        assertEquals(0, ops.wholeReads)
     }
 
     @Test

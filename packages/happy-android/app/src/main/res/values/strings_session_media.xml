@@ -11,4 +11,5 @@
     <!-- Fork-only: English only (AndroidStringsTranslatedTest skips translatable="false"). -->
     <string name="files_in_worktrees_title" translatable="false">In these worktrees</string>
     <string name="files_in_worktrees_footer" translatable="false">The file isn’t in the session’s folder; the agent wrote it in a worktree. Most recently changed first.</string>
+    <string name="files_shown_start">Long file: only its start is shown.</string>
 </resources>

@@ -8,4 +8,5 @@
     <string name="session_capture_failed">Nie udało się przechwycić ekranu. Na Macu zezwól na nagrywanie ekranu aplikacji, w której działa happy (Ustawienia systemowe → Prywatność i ochrona).</string>
     <string name="session_capture_ask">Zapytaj Claude</string>
     <string name="session_capture_ask_message">Spójrz na to nagranie mojego ekranu: %1$s</string>
+    <string name="files_shown_start">Długi plik: pokazano tylko początek.</string>
 </resources>

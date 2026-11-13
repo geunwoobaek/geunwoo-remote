@@ -8,4 +8,5 @@
     <string name="session_capture_failed">无法截取屏幕。请在 Mac 上为运行 happy 的应用开启屏幕录制权限（系统设置 → 隐私与安全性）。</string>
     <string name="session_capture_ask">问问 Claude</string>
     <string name="session_capture_ask_message">看看我屏幕的这段截取：%1$s</string>
+    <string name="files_shown_start">文件很长，只显示开头部分。</string>
 </resources>

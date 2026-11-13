@@ -8,4 +8,5 @@
     <string name="session_capture_failed">Não foi possível capturar o ecrã. No Mac, permita a gravação de ecrã à app que executa o happy (Definições do Sistema → Privacidade e segurança).</string>
     <string name="session_capture_ask">Perguntar ao Claude</string>
     <string name="session_capture_ask_message">Vê esta captura do meu ecrã: %1$s</string>
+    <string name="files_shown_start">Arquivo longo: só o início é mostrado.</string>
 </resources>

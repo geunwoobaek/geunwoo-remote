@@ -8,4 +8,5 @@
     <string name="session_capture_failed">No se pudo capturar la pantalla. En el Mac, permite la grabación de pantalla a la app que ejecuta happy (Ajustes del Sistema → Privacidad y seguridad).</string>
     <string name="session_capture_ask">Preguntar a Claude</string>
     <string name="session_capture_ask_message">Mira esta captura de mi pantalla: %1$s</string>
+    <string name="files_shown_start">Archivo largo: solo se muestra el principio.</string>
 </resources>

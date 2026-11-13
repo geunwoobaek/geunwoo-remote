@@ -86,6 +86,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.withStyle
 import kotlin.math.roundToInt
 
 object FileTags {
@@ -101,6 +102,7 @@ object FileTags {
     const val MODE_SWITCH = "file.modeSwitch"
     const val RENDERED = "file.rendered"
     const val PICTURE = "file.picture"
+    const val SHOWN_START = "file.shownStart"
     const val VIDEO = "file.video"
     const val SAVE = "file.save"
     const val RETRY = "file.retry"
@@ -206,21 +208,14 @@ suspend fun SessionFileOps.loadFile(sessionId: String, filePath: String, session
             val response = runCatching { bash(sessionId, "git diff --no-ext-diff -- \"$gitDiffPath\"", sessionPath, 5_000) }.getOrNull()
             if (response != null && response.success && response.stdout.isNotBlank()) diff = response.stdout
         }
-        var response = readFile(sessionId, filePath)
-        // A page outside the session's folder (Claude's scratch HTML in /tmp) only the chunked read reaches.
-        if (!response.success && SessionMedia.kindOf(filePath) == MediaKind.Page) {
-            withContext(Dispatchers.IO) { readMediaBytes(sessionId, filePath) }?.let { bytes ->
-                response = com.slopus.happy.sync.ReadFileResult(true, java.util.Base64.getEncoder().encodeToString(bytes))
-            }
-        }
-        val content = response.content
-        if (!response.success || content.isNullOrEmpty()) return FileLoad.Failed(Words.said(response.error, R.string.files_failed_to_read))
-        val bytes = try {
-            java.util.Base64.getMimeDecoder().decode(content)
-        } catch (_: IllegalArgumentException) {
-            return FileLoad.Binary
-        }
-        val text = String(bytes, Charsets.UTF_8)
+        // A slice at a time, as a picture: one readFile reply over ~4.5 MB outgrows the relay's
+        // message and drops the session's connection. The chunked read also reaches a page
+        // outside the session's folder (Claude's scratch HTML in /tmp).
+        val cap = if (SessionMedia.kindOf(filePath) == MediaKind.Page) SessionMedia.MAX_PAGE_BYTES else SessionMedia.MAX_TEXT_BYTES
+        var failure: MediaRead? = null
+        val bytes = withContext(Dispatchers.IO) { readMediaBytes(sessionId, filePath, cap) { failure = it } } ?: return mediaFailure(failure)
+        if (bytes.isEmpty()) return FileLoad.Failed(Words.ours(R.string.files_failed_to_read))
+        val text = withContext(Dispatchers.Default) { String(bytes, Charsets.UTF_8) }
         val controls = text.count { it.code < 32 && it != '\t' && it != '\n' && it != '\r' }
         val binary = bytes.any { it == 0.toByte() } || (text.isNotEmpty() && controls.toDouble() / text.length > 0.1)
         if (binary) FileLoad.Binary else FileLoad.Loaded(text, diff)
@@ -252,11 +247,7 @@ fun SessionFileOps.fileLoads(
     if (cacheDir != null && SessionMedia.kindOf(filePath) == MediaKind.Video) videoLoads(sessionId, filePath, cacheDir) else textLoads(cache, sessionId, filePath, sessionPath, gitDiffPath)
 
 /** Why a picture or recording didn't come. */
-private fun mediaFailure(failure: MediaRead?): FileLoad = when (failure) {
-    MediaRead.TooLarge -> FileLoad.Failed(Words.ours(R.string.session_media_too_large))
-    is MediaRead.Failed -> FileLoad.Failed(Words.said(failure.reason, R.string.files_failed_to_read))
-    else -> FileLoad.Failed(Words.ours(R.string.files_failed_to_read))
-}
+private fun mediaFailure(failure: MediaRead?): FileLoad = FileLoad.Failed(readFailure(failure))
 
 /** A recording read into the cache, with how far it has come, then the file to play. */
 private fun SessionFileOps.videoLoads(sessionId: String, filePath: String, cacheDir: java.io.File): Flow<FileLoad> = kotlinx.coroutines.flow.channelFlow {
@@ -456,6 +447,37 @@ private class HtmlPage(
     val memo: PageMemo,
 )
 
+/** The most of a file's text the source and Markdown views lay out at once. */
+internal const val SHOWN_TEXT_CHARS = 200_000
+
+/**
+ * [text]'s start, cut at the last line end within [max], when it is longer
+ * (a multi-megabyte log laid out whole would freeze the screen); null when
+ * it is shown whole.
+ */
+internal fun shownStart(text: String, max: Int = SHOWN_TEXT_CHARS): String? {
+    if (text.length <= max) return null
+    var end = text.lastIndexOf('\n', max - 1).takeIf { it > 0 } ?: max
+    if (Character.isHighSurrogate(text[end - 1])) end--
+    return text.substring(0, end)
+}
+
+/** How much of a file's source is coloured; past it, plain (each coloured token costs its layout). */
+internal const val HIGHLIGHT_CHARS = 20_000
+
+/**
+ * [code] coloured for [language] up to the last line end within
+ * [HIGHLIGHT_CHARS], the rest plain: a minified page's thousands of tags,
+ * each a styled span, held the screen still for seconds.
+ */
+internal fun highlightStart(code: String, language: String?, colors: com.slopus.happy.ui.chat.ChatColors, max: Int = HIGHLIGHT_CHARS): androidx.compose.ui.text.AnnotatedString {
+    val head = shownStart(code, max) ?: return highlight(code, language, colors)
+    return androidx.compose.ui.text.buildAnnotatedString {
+        append(highlight(head, language, colors))
+        withStyle(androidx.compose.ui.text.SpanStyle(color = colors.syntaxDefault)) { append(code.substring(head.length)) }
+    }
+}
+
 /** Where 1-based [line] of [text] starts; past its last line, its end. */
 internal fun offsetOfLine(text: String, line: Int): Int {
     var at = 0
@@ -558,6 +580,9 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
     }
     val border = glassBorder(colors.dark)
     val requested = line?.takeIf { it > 0 }
+    // A long file's start: what the source and Markdown views lay out, and where places in them count.
+    val cut = remember(load.content) { shownStart(load.content) }
+    val body = cut ?: load.content
     val markdown = isMarkdownPath(filePath) && load.content.isNotEmpty()
     val html = isHtmlPath(filePath) && load.content.isNotEmpty()
     val renderable = markdown || html
@@ -588,8 +613,8 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
                 .first { (max, layout) -> max in 1 until Int.MAX_VALUE && (!source || layout != null) }
             val y = when {
                 asked && layout != null && requested != null ->
-                    layout.getLineTop(layout.getLineForOffset(offsetOfLine(load.content, requested))) - with(density) { 40.dp.toPx() }
-                source && layout != null -> inset + layout.getLineTop(layout.getLineForOffset(topChar.coerceAtMost(load.content.length)))
+                    layout.getLineTop(layout.getLineForOffset(offsetOfLine(body, requested))) - with(density) { 40.dp.toPx() }
+                source && layout != null -> inset + layout.getLineTop(layout.getLineForOffset(topChar.coerceAtMost(body.length)))
                 else -> topFraction * max
             }
             scroll.scrollTo(y.roundToInt().coerceIn(0, max))
@@ -649,8 +674,8 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
             when {
                 mode == Mode.Diff && load.diff != null -> DiffDisplay(load.diff)
                 mode == Mode.Rendered && markdown -> {
-                    val blocks by produceState(emptyList<MarkdownBlock>(), load.content) {
-                        value = withContext(Dispatchers.Default) { parseMarkdown(load.content) }
+                    val blocks by produceState(emptyList<MarkdownBlock>(), body) {
+                        value = withContext(Dispatchers.Default) { parseMarkdown(body) }
                     }
                     // A file is a document: iOS's document heading ramp, h1 the largest.
                     androidx.compose.runtime.CompositionLocalProvider(com.slopus.happy.ui.chat.LocalMarkdownHeadings provides com.slopus.happy.ui.chat.MarkdownSpec.documentHeaders) {
@@ -659,11 +684,14 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
                 }
                 mode == Mode.File && load.content.isNotEmpty() -> {
                     val chat = ChatTheme.colors
-                    val text = remember(load.content, chat) { highlight(load.content, fileLanguage(filePath), chat) }
+                    val text = remember(body, chat) { highlightStart(body, fileLanguage(filePath), chat) }
                     SelectionContainer { Text(text, style = codeStyle, onTextLayout = { code = it }, modifier = Modifier.testTag(FileTags.CODE)) }
                 }
                 mode == Mode.File -> Text(stringResource(R.string.files_file_empty), style = empty, color = colors.textSecondary)
                 else -> Text(stringResource(R.string.files_no_changes), style = empty, color = colors.textSecondary)
+            }
+            if (cut != null && mode != Mode.Diff) {
+                Text(stringResource(R.string.files_shown_start), style = empty, color = colors.textSecondary, modifier = Modifier.padding(top = 16.dp).testTag(FileTags.SHOWN_START))
             }
         }
     }
