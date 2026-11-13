@@ -56,6 +56,8 @@ function makeDeps(overrides: Partial<ClaudeAgentHandlerDeps> = {}): { deps: Clau
         runClaudeBg: async () => { throw new Error('runClaudeBg not expected'); },
         stopAgent: async () => { throw new Error('stopAgent not expected'); },
         removeAgent: async () => { throw new Error('removeAgent not expected'); },
+        respawnAgent: async () => { throw new Error('respawnAgent not expected'); },
+        directoryExists: () => true,
         ensureDirectory: async () => ({ type: 'ok', created: false }),
         sleep: async () => undefined,
         ...overrides,
@@ -66,17 +68,17 @@ function makeDeps(overrides: Partial<ClaudeAgentHandlerDeps> = {}): { deps: Clau
 describe('list-claude-agents', () => {
     it('list reports claude-missing when claude cannot be found', async () => {
         const { deps } = makeDeps({ resolveClaude: async () => null });
-        expect(await createClaudeAgentHandlers(deps).list()).toEqual({ agents: [], unavailable: 'claude-missing', startSupported: true });
+        expect(await createClaudeAgentHandlers(deps).list()).toEqual({ agents: [], unavailable: 'claude-missing', startSupported: true, reviveSupported: true });
     });
 
     it('list reports tmux-missing when tmux is absent', async () => {
         const { deps } = makeDeps({ tmuxInstalled: async () => false });
-        expect(await createClaudeAgentHandlers(deps).list()).toEqual({ agents: [], unavailable: 'tmux-missing', startSupported: true });
+        expect(await createClaudeAgentHandlers(deps).list()).toEqual({ agents: [], unavailable: 'tmux-missing', startSupported: true, reviveSupported: true });
     });
 
     it('list reports agents-command-failed instead of throwing when claude agents fails', async () => {
         const { deps } = makeDeps({ fetchAgents: async () => { throw new Error('boom'); } });
-        expect(await createClaudeAgentHandlers(deps).list()).toEqual({ agents: [], unavailable: 'agents-command-failed', startSupported: true });
+        expect(await createClaudeAgentHandlers(deps).list()).toEqual({ agents: [], unavailable: 'agents-command-failed', startSupported: true, reviveSupported: true });
     });
 
     it('list attaches mirrorSessionId for live mirrors', async () => {
@@ -624,5 +626,71 @@ describe('mirror recognition and persistence', () => {
         });
         expect([...picked.keys()].sort()).toEqual(['abc12345', 'def67890']);
         expect(picked.get('abc12345')).toMatchObject({ happySessionId: 'newer', seq: 9 });
+    });
+});
+
+describe('revive-claude-agent', () => {
+    /** `claude agents --json [--all]` answers: before the respawn the agent is only in --all, with no pid. */
+    function reviveDeps(opts: { listings: ClaudeAgent[][]; all?: ClaudeAgent[] } & Partial<ClaudeAgentHandlerDeps>) {
+        const respawned: string[] = [];
+        const listings = [...opts.listings];
+        const { deps } = makeDeps({
+            fetchAgents: async (_path, fetchOpts) => {
+                if (fetchOpts?.all) return opts.all ?? [agent('abc12345', { pid: 0, state: 'done' })];
+                return listings.length > 1 ? listings.shift()! : listings[0] ?? [];
+            },
+            respawnAgent: async (_path, id) => { respawned.push(id); },
+            ...opts,
+        });
+        return { deps, respawned };
+    }
+
+    it('respawns an agent whose process has exited and waits until it is idle', async () => {
+        const { deps, respawned } = reviveDeps({
+            listings: [[], [agent('abc12345', { status: 'busy' })], [agent('abc12345', { status: 'idle' })]],
+        });
+        expect(await createClaudeAgentHandlers(deps).revive('abc12345')).toEqual({ type: 'success', revived: true });
+        expect(respawned).toEqual(['abc12345']);
+    });
+
+    it('never respawns an agent that is running', async () => {
+        const { deps, respawned } = reviveDeps({ listings: [[agent('abc12345')]], all: [agent('abc12345', { pid: 321 })] });
+        expect(await createClaudeAgentHandlers(deps).revive('abc12345')).toEqual({ type: 'success', revived: false });
+        expect(respawned).toEqual([]);
+    });
+
+    it('reports a removed agent as not-found', async () => {
+        const { deps, respawned } = reviveDeps({ listings: [[]], all: [] });
+        expect(await createClaudeAgentHandlers(deps).revive('abc12345')).toMatchObject({ type: 'error', code: 'not-found' });
+        expect(respawned).toEqual([]);
+    });
+
+    it('reports a deleted folder instead of respawning', async () => {
+        const { deps, respawned } = reviveDeps({ listings: [[]], directoryExists: () => false });
+        expect(await createClaudeAgentHandlers(deps).revive('abc12345')).toMatchObject({ type: 'error', code: 'folder-missing' });
+        expect(respawned).toEqual([]);
+    });
+
+    it('reports a failed respawn', async () => {
+        const { deps } = reviveDeps({ listings: [[]], respawnAgent: async () => { throw new Error('no such session'); } });
+        expect(await createClaudeAgentHandlers(deps).revive('abc12345')).toMatchObject({ type: 'error', code: 'revive-failed' });
+    });
+
+    it('fails when the agent never shows up running', async () => {
+        const { deps } = reviveDeps({ listings: [[]] });
+        expect(await createClaudeAgentHandlers(deps).revive('abc12345')).toMatchObject({ type: 'error', code: 'revive-failed' });
+    });
+
+    it('still succeeds when the agent runs but stays busy past the wait', async () => {
+        const { deps } = reviveDeps({ listings: [[agent('abc12345', { status: 'busy' })]] });
+        expect(await createClaudeAgentHandlers(deps).revive('abc12345')).toEqual({ type: 'success', revived: true });
+    });
+
+    it('shares one respawn between two taps', async () => {
+        const { deps, respawned } = reviveDeps({ listings: [[], [agent('abc12345')]] });
+        const handlers = createClaudeAgentHandlers(deps);
+        const [a, b] = await Promise.all([handlers.revive('abc12345'), handlers.revive('abc12345')]);
+        expect(a).toEqual(b);
+        expect(respawned).toEqual(['abc12345']);
     });
 });

@@ -108,6 +108,8 @@ const BG_TIMEOUT_MS = 30_000;
 /** How long to keep reading output after `claude --bg` exited (a detached child may hold the pipes). */
 const BG_OUTPUT_GRACE_MS = 1_000;
 const AGENT_COMMAND_TIMEOUT_MS = 15_000;
+/** `claude respawn` loads the session again before it returns. */
+const RESPAWN_TIMEOUT_MS = 30_000;
 
 /**
  * Runs `claude <args>` (for `claude --bg`) in `cwd` and resolves with its output and exit code,
@@ -170,13 +172,19 @@ export async function removeClaudeAgent(claudePath: string, id: string, env: Nod
     await execFileAsync(claudePath, ['rm', id], { env, timeout: AGENT_COMMAND_TIMEOUT_MS });
 }
 
+/** `claude respawn <id>`: restarts a background session whose process has exited, under the same id and sessionId. */
+export async function respawnClaudeAgent(claudePath: string, id: string, env: NodeJS.ProcessEnv): Promise<void> {
+    await execFileAsync(claudePath, ['respawn', id], { env, timeout: RESPAWN_TIMEOUT_MS });
+}
+
 /**
  * Runs `claude agents --json` (10s limit) and returns the background agents.
+ * With `all`, sessions whose process has exited are listed too (`pid` 0).
  * Throws on command failure and when stdout is not a JSON array, so garbage output
  * from a zero-exit run is never mistaken for "no agents".
  */
-export async function fetchClaudeAgents(claudePath: string): Promise<ClaudeAgent[]> {
-    const { stdout } = await execFileAsync(claudePath, ['agents', '--json'], {
+export async function fetchClaudeAgents(claudePath: string, opts: { all?: boolean } = {}): Promise<ClaudeAgent[]> {
+    const { stdout } = await execFileAsync(claudePath, ['agents', '--json', ...(opts.all ? ['--all'] : [])], {
         timeout: AGENTS_TIMEOUT_MS,
         maxBuffer: AGENTS_MAX_BUFFER,
     });

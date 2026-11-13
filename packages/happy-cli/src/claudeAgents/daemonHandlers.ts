@@ -3,7 +3,8 @@
  * `list-claude-agents` lists them, `open-claude-agent` opens the mirror session of one
  * (the daemon spawns, or reconnects, `happy claude-agent-mirror <agentId>`),
  * `start-claude-agent` starts a new one with `claude --bg` and opens its mirror, and
- * `discard-claude-agent` stops and removes one that this daemon started.
+ * `discard-claude-agent` stops and removes one that this daemon started, and `revive-claude-agent`
+ * restarts one whose process has exited (`claude respawn`) so a phone message can reach it.
  *
  * Everything the daemon owns (tracked processes, persisted keys, spawning, running `claude`)
  * comes in through `deps`, so this module's own state is limited to in-flight calls, recent
@@ -18,6 +19,7 @@ import type {
     ClaudeAgentsListing,
     DiscardClaudeAgentResult,
     EnsureDirectoryResult,
+    ReviveClaudeAgentResult,
     StartClaudeAgentRequest,
     StartClaudeAgentResult,
 } from './types';
@@ -34,6 +36,7 @@ export type ClaudeAgentHandlers = {
     open(agentId: string): Promise<OpenClaudeAgentResult>;
     start(request: StartClaudeAgentRequest): Promise<StartClaudeAgentResult>;
     discard(agentId: string): Promise<DiscardClaudeAgentResult>;
+    revive(agentId: string): Promise<ReviveClaudeAgentResult>;
 };
 
 /** How long a started agent may take to show up in `claude agents --json`. */
@@ -54,6 +57,11 @@ export const START_RESULT_REUSE_MS = 5 * 60_000;
 export const OPEN_LISTING_REUSE_MS = 15_000;
 /** How long `claude` found in the login shell and tmux found stay checked (a failed check is never reused). */
 export const TOOLS_REUSE_MS = 60_000;
+/**
+ * How long a revived agent may take to be listed with a process again and to stop loading. The
+ * revive and the open after it are two calls, so each stays inside the app's RPC timeout.
+ */
+export const REVIVE_READY_TIMEOUT_MS = 20_000;
 
 export type PersistedMirror = {
     happySessionId: string;
@@ -68,7 +76,8 @@ export type PersistedMirror = {
 export type ClaudeAgentHandlerDeps = {
     resolveClaude(): Promise<string | null>;
     tmuxInstalled(): Promise<boolean>;
-    fetchAgents(claudePath: string): Promise<ClaudeAgent[]>;
+    /** `claude agents --json`; with `all`, also the sessions whose process has exited (pid 0). */
+    fetchAgents(claudePath: string, opts?: { all?: boolean }): Promise<ClaudeAgent[]>;
     /** agentId → happySessionId of the mirror processes that are running right now. */
     liveMirrors(): Map<string, string>;
     /** What the agent's session said last, from the end of its transcript; null when there is nothing to show. */
@@ -99,6 +108,10 @@ export type ClaudeAgentHandlerDeps = {
     stopAgent(claudePath: string, id: string): Promise<void>;
     /** `claude rm <id>`. */
     removeAgent(claudePath: string, id: string): Promise<void>;
+    /** `claude respawn <id>`. */
+    respawnAgent(claudePath: string, id: string): Promise<void>;
+    /** True when `path` is an existing directory. */
+    directoryExists(path: string): boolean;
     /** Uses `directory` when it exists, otherwise creates it once `approved` (the `spawn-happy-session` rules). */
     ensureDirectory(directory: string, approved: boolean): Promise<EnsureDirectoryResult>;
     sleep(ms: number): Promise<void>;
@@ -228,7 +241,7 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
         try {
             const checked = await checkTools();
             if (checked.type !== 'ok') {
-                return { agents: [], unavailable: checked.type, startSupported: true };
+                return { agents: [], unavailable: checked.type, startSupported: true, reviveSupported: true };
             }
             const agents = await fetchShared(checked.claudePath);
             const live = deps.liveMirrors();
@@ -243,10 +256,10 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
                         ...(lastLine === null ? {} : { lastLine }),
                     };
                 }),
-                startSupported: true,
+                startSupported: true, reviveSupported: true,
             };
         } catch {
-            return { agents: [], unavailable: 'agents-command-failed', startSupported: true };
+            return { agents: [], unavailable: 'agents-command-failed', startSupported: true, reviveSupported: true };
         }
     }
 
@@ -339,6 +352,74 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
                 opensInFlight.delete(agentId);
             });
         opensInFlight.set(agentId, attempt);
+        return attempt;
+    }
+
+    // A phone message to a session whose process has exited (finished, stopped, or killed with the
+    // Mac's Claude Code) brings it back first. Only an agent with no process is respawned: a running
+    // one would be restarted mid-turn.
+    const revivesInFlight = new Map<string, Promise<ReviveClaudeAgentResult>>();
+    async function reviveUncached(agentId: string): Promise<ReviveClaudeAgentResult> {
+        const checked = await checkTools();
+        if (checked.type !== 'ok') {
+            return {
+                type: 'error',
+                code: checked.type,
+                errorMessage: checked.type === 'claude-missing'
+                    ? 'claude was not found in the login shell. Install Claude Code first.'
+                    : 'tmux is required to mirror a background session.',
+            };
+        }
+        const { claudePath } = checked;
+        const everyAgent = await deps.fetchAgents(claudePath, { all: true });
+        const agent = everyAgent.find((candidate) => candidate.id === agentId);
+        if (agent === undefined) {
+            return { type: 'error', code: 'not-found', errorMessage: `The Mac background session ${agentId} was removed.` };
+        }
+        if (agent.pid > 0) {
+            return { type: 'success', revived: false };
+        }
+        if (!deps.directoryExists(agent.cwd)) {
+            return { type: 'error', code: 'folder-missing', errorMessage: `The session's folder ${agent.cwd} no longer exists.` };
+        }
+        try {
+            await deps.respawnAgent(claudePath, agentId);
+        } catch (error) {
+            return { type: 'error', code: 'revive-failed', errorMessage: `Could not restart the background session: ${describeError(error)}` };
+        }
+        // Listed with a process means it runs; idle means it has loaded and its input box takes text.
+        let listedRunning = false;
+        for (let waited = 0; waited <= REVIVE_READY_TIMEOUT_MS; waited += START_POLL_INTERVAL_MS) {
+            const agents = await fetchShared(claudePath).catch((): ClaudeAgent[] => []);
+            const running = agents.find((candidate) => candidate.id === agentId && candidate.pid > 0);
+            if (running !== undefined) {
+                listedRunning = true;
+                if (running.status !== 'busy') {
+                    return { type: 'success', revived: true };
+                }
+            }
+            await deps.sleep(START_POLL_INTERVAL_MS);
+        }
+        return listedRunning
+            ? { type: 'success', revived: true }
+            : { type: 'error', code: 'revive-failed', errorMessage: 'The background session did not start again.' };
+    }
+
+    function revive(agentId: string): Promise<ReviveClaudeAgentResult> {
+        const running = revivesInFlight.get(agentId);
+        if (running !== undefined) {
+            return running;
+        }
+        const attempt = reviveUncached(agentId)
+            .catch((error: unknown): ReviveClaudeAgentResult => ({
+                type: 'error',
+                code: 'revive-failed',
+                errorMessage: `Could not restart the background session: ${describeError(error)}`,
+            }))
+            .finally(() => {
+                revivesInFlight.delete(agentId);
+            });
+        revivesInFlight.set(agentId, attempt);
         return attempt;
     }
 
@@ -522,5 +603,5 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
         }
     }
 
-    return { list, open, start, discard };
+    return { list, open, start, discard, revive };
 }

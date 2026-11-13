@@ -41,6 +41,7 @@ import {
   fetchClaudeAgents,
   mirrorHandoffEnv,
   removeClaudeAgent,
+  respawnClaudeAgent,
   resolveClaudeBinary,
   runClaudeBackground,
   stopClaudeAgent,
@@ -1032,6 +1033,15 @@ export async function startDaemon(): Promise<void> {
         stopClaudeAgent(claudePath, id, claudeBgEnvironment(buildSessionChildEnvironment(ambientEnvironment))),
       removeAgent: (claudePath, id) =>
         removeClaudeAgent(claudePath, id, claudeBgEnvironment(buildSessionChildEnvironment(ambientEnvironment))),
+      respawnAgent: (claudePath, id) =>
+        respawnClaudeAgent(claudePath, id, claudeBgEnvironment(buildSessionChildEnvironment(ambientEnvironment))),
+      directoryExists: (path) => {
+        try {
+          return statSync(path).isDirectory();
+        } catch {
+          return false;
+        }
+      },
       ensureDirectory,
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     });

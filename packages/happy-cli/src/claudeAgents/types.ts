@@ -28,7 +28,19 @@ export type ClaudeAgentsListing = {
     unavailable?: ClaudeAgentsUnavailable;
     /** This daemon answers `start-claude-agent`; the app checks it before choosing that path. */
     startSupported: true;
+    /** This daemon answers `revive-claude-agent`. */
+    reviveSupported: true;
 };
+
+export type ReviveClaudeAgentErrorCode = 'not-found' | 'folder-missing' | 'claude-missing' | 'tmux-missing' | 'revive-failed';
+
+/**
+ * `revive-claude-agent`: brings back a background session whose process has exited
+ * (`claude respawn`), so a phone message can reach it. `revived` is false when it was running.
+ */
+export type ReviveClaudeAgentResult =
+    | { type: 'success'; revived: boolean }
+    | { type: 'error'; code: ReviveClaudeAgentErrorCode; errorMessage: string };
 
 /** `start-claude-agent`: starts `claude --bg` (no prompt) in `directory` and opens its mirror. */
 export type StartClaudeAgentRequest = {

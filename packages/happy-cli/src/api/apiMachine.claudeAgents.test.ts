@@ -65,6 +65,7 @@ describe('Claude background agent RPCs', () => {
             open: vi.fn(async () => ({ type: 'success', sessionId: 'happy-1' })),
             start: vi.fn(async () => ({ type: 'success', sessionId: 'happy-1', agentId: '35d81094' })),
             discard: vi.fn(async () => ({ type: 'success' })),
+            revive: vi.fn(async () => ({ type: 'success', revived: true })),
         };
         new ApiMachineClient('fake-token', makeMachine()).setRPCHandlers({
             spawnSession: vi.fn(),
@@ -111,5 +112,11 @@ describe('Claude background agent RPCs', () => {
         expect(await handlers.get('discard-claude-agent')!({ id: '35d81094' })).toEqual({ type: 'success' });
         expect(claudeAgents.discard).toHaveBeenCalledWith('35d81094');
         expect(() => handlers.get('discard-claude-agent')!({})).toThrow('id is required');
+    });
+
+    it('registers revive-claude-agent with the id', async () => {
+        expect(await handlers.get('revive-claude-agent')!({ id: '35d81094' })).toEqual({ type: 'success', revived: true });
+        expect(claudeAgents.revive).toHaveBeenCalledWith('35d81094');
+        expect(() => handlers.get('revive-claude-agent')!({})).toThrow('id is required');
     });
 });
