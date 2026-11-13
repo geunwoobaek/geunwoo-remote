@@ -725,12 +725,35 @@ describe('claude-agent-tasks', () => {
         });
         const handlers = createClaudeAgentHandlers(deps);
         await handlers.tasks('abc12345');
-        clock += 3_000;
+        clock += 12_000;
         await handlers.tasks('abc12345');
         expect(listings).toBe(1);
         clock += 6_000;
         await handlers.tasks('abc12345');
         expect(listings).toBe(2);
+    });
+
+    it('reuses an ended agent found among every session', async () => {
+        let everyListings = 0;
+        let clock = 1_000;
+        const { deps } = makeDeps({
+            fetchAgents: async (_path, opts) => {
+                if (!opts?.all) {
+                    return [];
+                }
+                everyListings += 1;
+                return [agent('dead0001', { pid: 0 })];
+            },
+            now: () => clock,
+        });
+        const handlers = createClaudeAgentHandlers(deps);
+        await handlers.tasks('dead0001');
+        clock += 30_000;
+        expect(await handlers.tasks('dead0001')).toMatchObject({ type: 'success' });
+        expect(everyListings).toBe(1);
+        clock += 40_000;
+        await handlers.tasks('dead0001');
+        expect(everyListings).toBe(2);
     });
 
     it('reports a removed agent as not-found', async () => {

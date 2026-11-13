@@ -65,8 +65,13 @@ export const TOOLS_REUSE_MS = 60_000;
  * revive and the open after it are two calls, so each stays inside the app's RPC timeout.
  */
 export const REVIVE_READY_TIMEOUT_MS = 20_000;
-/** The phone asks for a session's tasks every few seconds while it shows them; one listing serves that long. */
-export const TASKS_LISTING_REUSE_MS = 5_000;
+/**
+ * The phone asks for a session's tasks every 5 seconds (plus the call's own time) while it shows
+ * them; one listing serves three asks, so a chat left open spawns `claude agents` every 15 seconds.
+ */
+export const TASKS_LISTING_REUSE_MS = 15_000;
+/** How long an ended session found among every session is reused for its tasks (it does not change until revived, which lists it as running again). */
+export const ENDED_LOOKUP_REUSE_MS = 60_000;
 
 export type PersistedMirror = {
     happySessionId: string;
@@ -612,6 +617,20 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
 
     // The phone's list of what a session runs under itself. A session no longer listed as running
     // is looked up among the ended ones: its finished work is still worth showing.
+    const ended = new Map<string, { at: number; agent: ClaudeAgent }>();
+    async function findEnded(claudePath: string, agentId: string): Promise<ClaudeAgent | undefined> {
+        const hit = ended.get(agentId);
+        if (hit !== undefined && now() - hit.at <= ENDED_LOOKUP_REUSE_MS) {
+            return hit.agent;
+        }
+        const agent = (await deps.fetchAgents(claudePath, { all: true })).find((candidate) => candidate.id === agentId);
+        if (agent === undefined) {
+            ended.delete(agentId);
+        } else {
+            ended.set(agentId, { at: now(), agent });
+        }
+        return agent;
+    }
     async function tasks(agentId: string): Promise<ClaudeAgentTasksResult> {
         const checked = await checkTools();
         if (checked.type !== 'ok') {
@@ -628,8 +647,7 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
             const running = listed !== null && listed.claudePath === claudePath && now() - listed.at <= TASKS_LISTING_REUSE_MS
                 ? listed.agents
                 : await fetchShared(claudePath);
-            const agent = running.find((candidate) => candidate.id === agentId)
-                ?? (await deps.fetchAgents(claudePath, { all: true })).find((candidate) => candidate.id === agentId);
+            const agent = running.find((candidate) => candidate.id === agentId) ?? (await findEnded(claudePath, agentId));
             if (agent === undefined) {
                 return { type: 'error', code: 'not-found', errorMessage: `The Mac background session ${agentId} was removed.` };
             }

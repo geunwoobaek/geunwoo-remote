@@ -1007,7 +1007,6 @@ export async function startDaemon(): Promise<void> {
     };
 
     const agentTasksCache = createAgentTasksCache();
-    const claudeHome = process.env.CLAUDE_CONFIG_DIR || join(os.homedir(), '.claude');
     const claudeAgents = createClaudeAgentHandlers({
       resolveClaude: resolveClaudeBinary,
       tmuxInstalled: isTmuxInstalled,
@@ -1042,7 +1041,7 @@ export async function startDaemon(): Promise<void> {
       readTasks: (agent) => readAgentTasks({
         projectDir: findSessionProjectDir(agent.cwd, agent.sessionId),
         sessionId: agent.sessionId,
-        jobStatePath: join(claudeHome, 'jobs', agent.id, 'state.json'),
+        jobStatePath: join(process.env.CLAUDE_CONFIG_DIR || join(os.homedir(), '.claude'), 'jobs', agent.id, 'state.json'),
         parentAlive: agent.pid > 0,
         parentStartedAt: agent.startedAt,
       }, agentTasksCache),

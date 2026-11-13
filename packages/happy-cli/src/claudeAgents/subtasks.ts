@@ -7,7 +7,8 @@
  *   `finished: true` once it has reported back.
  * - `<project dir>/<sessionId>/subagents/workflows/wf_*` : the agents of one workflow run, and
  *   `<project dir>/<sessionId>/workflows/wf_*.json`: that run's record, written when it ends.
- * - `<claude home>/jobs/<agentId>/state.json` `inFlight.tasks`: how many tasks the session runs now.
+ * - `<claude home>/jobs/<agentId>/state.json` `inFlight`: how many tasks the session runs now
+ *   (`tasks`, every kind together) and of which kinds (`kinds`: `local_agent`, `local_workflow`, …).
  * - the session's transcript `queue-operation` lines: messages typed while it works wait there
  *   until its current step (often a long command) ends.
  *
@@ -143,11 +144,20 @@ export function countQueuedInputs(transcriptTail: string): number {
     return queue.filter(Boolean).length;
 }
 
-/** `inFlight.tasks` of the job's state, or null when the file or field is missing. */
-function inFlightTasks(cache: AgentTasksCache, jobStatePath: string): number | null {
+/** The `inFlight` task kinds of sub-agents and workflow runs. */
+const AGENT_KIND = 'local_agent';
+const WORKFLOW_KIND = 'local_workflow';
+
+/**
+ * The job state's `inFlight`: how many tasks run (null when unknown) and whether a kind runs
+ * (always true when the kinds are unknown).
+ */
+function readInFlight(cache: AgentTasksCache, jobStatePath: string): { tasks: number | null; runs: (kind: string) => boolean } {
     const state = readJson(cache, jobStatePath);
     const inFlight = isRecord(state) ? state.inFlight : undefined;
-    return isRecord(inFlight) && typeof inFlight.tasks === 'number' ? inFlight.tasks : null;
+    const tasks = isRecord(inFlight) && typeof inFlight.tasks === 'number' ? inFlight.tasks : null;
+    const kinds = isRecord(inFlight) && Array.isArray(inFlight.kinds) ? inFlight.kinds : null;
+    return { tasks, runs: (kind) => kinds === null || kinds.includes(kind) };
 }
 
 /**
@@ -211,14 +221,36 @@ export function readAgentTasks(input: AgentTasksInput, cache: AgentTasksCache): 
     const ofThisProcess = (mtimeMs: number): boolean => input.parentAlive && mtimeMs >= input.parentStartedAt;
     const tasks: ClaudeAgentTask[] = [];
 
-    // Sub-agents. A session reports how many tasks it runs; an unfinished agent beyond that count
-    // (the oldest written ones) was cut off without a `finished` mark.
+    // A session reports how many tasks it runs and of which kinds. Unfinished sub-agents and
+    // record-less workflow runs written in this process's lifetime may be running; beyond that
+    // count (the oldest written first) or of a kind not running, they were cut off unmarked.
+    const inFlight = readInFlight(cache, input.jobStatePath);
     const subAgents = readSubAgents(cache, subagentsDir);
-    const capacity = inFlightTasks(cache, input.jobStatePath);
-    const candidates = subAgents
-        .filter((agent) => agent.meta.finished !== true && ofThisProcess(agent.jsonl.mtimeMs))
-        .sort((a, b) => b.jsonl.mtimeMs - a.jsonl.mtimeMs);
-    const running = new Set(candidates.slice(0, capacity ?? candidates.length).map((agent) => agent.id));
+    const workflowsDir = join(subagentsDir, 'workflows');
+    const runs = listOrEmpty(workflowsDir)
+        .filter((wfId) => wfId.startsWith('wf_'))
+        .flatMap((wfId) => {
+            const runDir = join(workflowsDir, wfId);
+            const runStats = statOrNull(runDir);
+            if (runStats === null || !runStats.isDirectory()) {
+                return [];
+            }
+            const agents = readSubAgents(cache, runDir);
+            const record = readJson(cache, join(sessionDir, 'workflows', `${wfId}.json`));
+            const newest = agents.reduce<SubAgentFile | null>((latest, agent) => (latest === null || agent.jsonl.mtimeMs > latest.jsonl.mtimeMs ? agent : latest), null);
+            const lastWrite = Math.max(runStats.mtimeMs, newest?.jsonl.mtimeMs ?? 0);
+            return [{ wfId, runStats, agents, record, newest, lastWrite }];
+        });
+    const candidates = [
+        ...(inFlight.runs(AGENT_KIND) ? subAgents : [])
+            .filter((agent) => agent.meta.finished !== true && ofThisProcess(agent.jsonl.mtimeMs))
+            .map((agent) => ({ id: agent.id, lastWrite: agent.jsonl.mtimeMs })),
+        ...(inFlight.runs(WORKFLOW_KIND) ? runs : [])
+            .filter((run) => !isRecord(run.record) && ofThisProcess(run.lastWrite))
+            .map((run) => ({ id: run.wfId, lastWrite: run.lastWrite })),
+    ].sort((a, b) => b.lastWrite - a.lastWrite);
+    const running = new Set(candidates.slice(0, inFlight.tasks ?? candidates.length).map((candidate) => candidate.id));
+
     for (const agent of subAgents) {
         const status: ClaudeAgentTaskStatus = running.has(agent.id) ? 'running' : agent.meta.finished === true ? 'done' : 'stopped';
         const agentType = text(agent.meta.agentType);
@@ -236,21 +268,9 @@ export function readAgentTasks(input: AgentTasksInput, cache: AgentTasksCache): 
         });
     }
 
-    // Workflows: a run with a record has ended; one without is running while its agents write in
-    // this process's lifetime, and was cut off otherwise.
-    const workflowsDir = join(subagentsDir, 'workflows');
+    // Workflows: a run with a record has ended; one without runs or was cut off (above).
     let launchTail: string | null = null;
-    for (const wfId of listOrEmpty(workflowsDir)) {
-        if (!wfId.startsWith('wf_')) {
-            continue;
-        }
-        const runDir = join(workflowsDir, wfId);
-        const runStats = statOrNull(runDir);
-        if (runStats === null || !runStats.isDirectory()) {
-            continue;
-        }
-        const agents = readSubAgents(cache, runDir);
-        const record = readJson(cache, join(sessionDir, 'workflows', `${wfId}.json`));
+    for (const { wfId, runStats, agents, record, newest, lastWrite } of runs) {
         if (isRecord(record)) {
             const startedAt = typeof record.startTime === 'number' ? record.startTime : Math.round(runStats.birthtimeMs);
             tasks.push({
@@ -267,9 +287,7 @@ export function readAgentTasks(input: AgentTasksInput, cache: AgentTasksCache): 
             });
             continue;
         }
-        const newest = agents.reduce<SubAgentFile | null>((latest, agent) => (latest === null || agent.jsonl.mtimeMs > latest.jsonl.mtimeMs ? agent : latest), null);
-        const lastWrite = Math.max(runStats.mtimeMs, newest?.jsonl.mtimeMs ?? 0);
-        const status: ClaudeAgentTaskStatus = ofThisProcess(lastWrite) ? 'running' : 'stopped';
+        const status: ClaudeAgentTaskStatus = running.has(wfId) ? 'running' : 'stopped';
         if (!cache.launches.has(wfId) || (cache.launches.get(wfId) === null && status === 'running')) {
             launchTail ??= readTail(transcriptPath, LAUNCH_TAIL_BYTES);
             cache.launches.set(wfId, findWorkflowLaunch(launchTail, wfId));

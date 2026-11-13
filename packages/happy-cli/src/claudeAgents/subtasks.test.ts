@@ -135,6 +135,31 @@ describe('readAgentTasks', () => {
         ]);
     });
 
+    it('shares the running count between sub-agents and workflow runs, newest written first', () => {
+        const runs = join(root, SESSION, 'subagents', 'workflows');
+        subAgent(join(root, SESSION, 'subagents'), 'agent-a', { description: 'a' }, '2026-11-14T06:00:00Z');
+        subAgent(join(runs, 'wf_new'), 'agent-w', { agentType: 'workflow-subagent' }, '2026-11-14T06:10:00Z');
+        subAgent(join(runs, 'wf_cut'), 'agent-c', { agentType: 'workflow-subagent' }, '2026-11-14T05:30:00Z');
+        jobState({ tasks: 2, kinds: ['local_agent', 'local_workflow'] });
+        const statuses = () => Object.fromEntries(readAgentTasks(input, createAgentTasksCache()).tasks.map((task) => [task.id, task.status]));
+        expect(statuses()).toEqual({ wf_new: 'running', 'agent-a': 'running', wf_cut: 'stopped' });
+        jobState({ tasks: 1, kinds: ['local_agent', 'local_workflow'] });
+        expect(statuses()).toEqual({ wf_new: 'running', 'agent-a': 'stopped', wf_cut: 'stopped' });
+    });
+
+    it('shows no workflow running while the session runs none, record or not', () => {
+        const runs = join(root, SESSION, 'subagents', 'workflows');
+        subAgent(join(runs, 'wf_lost'), 'agent-w', { agentType: 'workflow-subagent' }, '2026-11-14T06:10:00Z');
+        subAgent(join(root, SESSION, 'subagents'), 'agent-a', { description: 'a' }, '2026-11-14T06:00:00Z');
+        jobState({ tasks: 1, kinds: ['local_agent'] });
+        expect(readAgentTasks(input, createAgentTasksCache()).tasks.map((task) => [task.id, task.status])).toEqual([
+            ['agent-a', 'running'],
+            ['wf_lost', 'stopped'],
+        ]);
+        jobState({ tasks: 1, kinds: ['local_bash'] });
+        expect(readAgentTasks(input, createAgentTasksCache()).runningCount).toBe(0);
+    });
+
     it('is empty for a session that started nothing', () => {
         expect(readAgentTasks(input, createAgentTasksCache())).toEqual({ tasks: [], runningCount: 0, totalCount: 0, queuedInputs: 0 });
     });
