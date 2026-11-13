@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AttachTerminal } from './attachTerminal';
 import type { Metadata } from '@/api/types';
-import { anyUndelivered, BACKFILL_LINES, BACKFILL_MAX_LINES, buildMirrorMetadata, decideAgentChange, entriesAfter, isInterruptMarker, mirrorTag, parseMacSettingsChange, resetMirrorMetadata, serializeTerminalOpens, settingsAnswer, settleStaleRequests, shouldAbortReuse, transcriptLineModel, uploadStart, withMacSettings } from './runClaudeAgentMirror';
+import { anyUndelivered, BACKFILL_LINES, BACKFILL_MAX_LINES, buildMirrorMetadata, decideAgentChange, entriesAfter, isInterruptMarker, mirrorTag, parseMacSettingsChange, resetMirrorMetadata, serializeTerminalOpens, settingsAnswer, settleStaleRequests, shouldAbortReuse, transcriptLineModel, uploadStart, withMacSettings, withTranscriptModel } from './runClaudeAgentMirror';
 import type { ClaudeAgent } from './types';
 
 const agent = (overrides: Partial<ClaudeAgent> = {}): ClaudeAgent => ({
@@ -490,6 +490,17 @@ describe('claude-agent-settings', () => {
             models: [{ code: 'claude-opus-5-5', value: 'Opus 5.5' }],
             claudeAgentId: 'demo01',
         });
+    });
+
+    it('drops a picked model once the transcript shows the session on another one', () => {
+        const metadata = { ...buildMirrorMetadata(agent(), base), currentModelCode: 'claude-opus-5-5' };
+        expect(withTranscriptModel(metadata, 'claude-opus-5-5').currentModelCode).toBe('claude-opus-5-5');
+        expect(withTranscriptModel(metadata, 'claude-opus-5-5[1m]').currentModelCode).toBe('claude-opus-5-5');
+        const switched = withTranscriptModel(metadata, 'claude-sonnet-5-5');
+        expect(switched.currentModelCode).toBeUndefined();
+        expect(switched.claudeAgentId).toBe('demo01');
+        const onDefault = { ...metadata, currentModelCode: 'default' };
+        expect(withTranscriptModel(onDefault, 'claude-sonnet-5-5').currentModelCode).toBe('default');
     });
 
     it('answers ok, or the reason in words the phone shows', () => {

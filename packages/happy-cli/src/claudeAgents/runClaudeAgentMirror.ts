@@ -119,6 +119,19 @@ export function withMacSettings(metadata: Metadata, seen: MacSettings): Metadata
     };
 }
 
+/**
+ * The metadata once the transcript shows the session running `transcriptModel`: a model picked earlier
+ * that the transcript no longer runs (switched on the Mac) is dropped, so the app shows the real one.
+ */
+export function withTranscriptModel(metadata: Metadata, transcriptModel: string): Metadata {
+    const picked = metadata.currentModelCode;
+    if (picked === undefined || picked === 'default' || transcriptModel.startsWith(picked)) {
+        return metadata;
+    }
+    const { currentModelCode: _dropped, ...rest } = metadata;
+    return rest;
+}
+
 /** The `claude-agent-settings` answer: `{ ok: true }`, or `{ ok: false, error }` with what to tell the user. */
 export function settingsAnswer(result: ConfigureResult): { ok: true } | { ok: false; error: string } {
     if (result.ok) {
@@ -744,7 +757,7 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
             const model = transcriptLineModel(message);
             if (model !== null && model !== runningModel) {
                 runningModel = model;
-                session.updateMetadata((current) => ({ ...current, runningModel: model }));
+                session.updateMetadata((current) => ({ ...withTranscriptModel(current, model), runningModel: model }));
             }
             const uuid = message.type === 'summary' ? null : message.uuid;
             if (uuid !== null && alreadyUploaded.has(uuid)) {
@@ -805,20 +818,30 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         logger.debug(`[MIRROR] settings ${JSON.stringify(change)} -> ${result.ok ? 'ok' : result.reason}`);
         return settingsAnswer(result);
     });
-    // What the session runs in now, for the phone's mode chip; a later change reports itself.
-    void delivery.readPermissionMode().then((permissionMode) => {
-        if (permissionMode !== null && !stopping) {
-            session.updateMetadata((current) => withMacSettings(current, { permissionMode }));
-        }
-    });
+    // What the session runs in now, for the phone's mode chip. Read again where the mode can change
+    // without the phone picking it: after an answer (approving a plan leaves plan mode) and at the end
+    // of each turn (Shift+Tab on the Mac).
+    const refreshPermissionMode = (): void => {
+        void delivery.readPermissionMode().then((permissionMode) => {
+            if (permissionMode !== null && !stopping && session.getMetadata()?.currentOperatingModeCode !== permissionMode) {
+                session.updateMetadata((current) => withMacSettings(current, { permissionMode }));
+            }
+        });
+    };
+    refreshPermissionMode();
     session.rpcHandlerManager.registerHandler<PermissionResponse, void>('permission', async (answer) => {
         if (!stopping) {
             await bridge.answer(answer);
+            refreshPermissionMode();
         }
     });
 
     const permissionLoop = everyWithoutOverlap(PERMISSION_TICK_MS, async () => {
-        lastStatus = readSessionStatus(agent.pid);
+        const status = readSessionStatus(agent.pid);
+        if (status === 'idle' && lastStatus !== null && lastStatus !== 'idle') {
+            refreshPermissionMode();
+        }
+        lastStatus = status;
         await bridge.tick();
     });
     let listFailures = 0;
