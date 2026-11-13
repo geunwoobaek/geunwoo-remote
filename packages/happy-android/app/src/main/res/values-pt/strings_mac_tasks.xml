@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="mac_session_queued_inputs">
+        <item quantity="one">%1$d mensagem em espera · Claude vai lê-la quando o passo atual terminar</item>
+        <item quantity="many">%1$d mensagens em espera · Claude vai lê-las quando o passo atual terminar</item>
+        <item quantity="other">%1$d mensagens em espera · Claude vai lê-las quando o passo atual terminar</item>
+    </plurals>
+</resources>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- This fork only: a Mac background session's sub-agents, workflows and waiting messages. -->
-<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+<resources>
     <plurals name="mac_session_queued_inputs">
         <item quantity="one">%1$d message waiting · Claude reads it when the current step ends</item>
         <item quantity="other">%1$d messages waiting · Claude reads them when the current step ends</item>

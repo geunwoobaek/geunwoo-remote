@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="mac_session_queued_inputs">
+        <item quantity="other">%1$d 条消息等待中 · 当前步骤结束后 Claude 会读取</item>
+    </plurals>
+</resources>
