@@ -439,6 +439,22 @@ export class ApiClient {
    * socket emit doesn't drain before the process exits, the HTTP
    * response confirms the deactivate landed.
    */
+  /**
+   * Deletes a session of this account, with its messages. True only when the server confirms it.
+   */
+  async deleteSession(sessionId: string): Promise<boolean> {
+    try {
+      const response = await axios.delete(
+        `${configuration.serverUrl}/v1/sessions/${encodeURIComponent(sessionId)}`,
+        { headers: { 'Authorization': `Bearer ${this.credential.token}` }, timeout: 10000, validateStatus: () => true },
+      );
+      return response.status >= 200 && response.status < 300;
+    } catch (error) {
+      logger.debug('[API] deleteSession failed:', error);
+      return false;
+    }
+  }
+
   async deactivateSession(sessionId: string): Promise<boolean> {
     try {
       const response = await axios.post(

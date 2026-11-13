@@ -4,9 +4,10 @@ import axios from 'axios';
 import { connectionState } from '@/utils/serverConnectionErrors';
 
 // Use vi.hoisted to ensure mock functions are available when vi.mock factory runs
-const { mockPost, mockGet, mockIsAxiosError } = vi.hoisted(() => ({
+const { mockPost, mockGet, mockDelete, mockIsAxiosError } = vi.hoisted(() => ({
     mockPost: vi.fn(),
     mockGet: vi.fn(),
+    mockDelete: vi.fn(),
     mockIsAxiosError: vi.fn(() => true)
 }));
 
@@ -14,6 +15,7 @@ vi.mock('axios', () => ({
     default: {
         post: mockPost,
         get: mockGet,
+        delete: mockDelete,
         isAxiosError: mockIsAxiosError
     },
     isAxiosError: mockIsAxiosError
@@ -101,6 +103,21 @@ describe('Api server error handling', () => {
             expect(await api.sessionAccess('s1')).toBe('unknown');
             mockGet.mockRejectedValueOnce(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
             expect(await api.sessionAccess('s1')).toBe('unknown');
+        });
+    });
+
+    describe('deleteSession', () => {
+        it('is true when the server deletes the session', async () => {
+            mockDelete.mockResolvedValue({ status: 200, data: { success: true } });
+            expect(await api.deleteSession('s1')).toBe(true);
+            expect(mockDelete.mock.calls[0][0]).toMatch(/\/v1\/sessions\/s1$/);
+        });
+
+        it('is false when the server refuses or cannot be reached', async () => {
+            mockDelete.mockResolvedValueOnce({ status: 404, data: { error: 'Session not found or not owned by user' } });
+            expect(await api.deleteSession('s1')).toBe(false);
+            mockDelete.mockRejectedValueOnce(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+            expect(await api.deleteSession('s1')).toBe(false);
         });
     });
 

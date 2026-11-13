@@ -525,7 +525,18 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         happyLibDir: projectPath(),
         happyToolsDir: resolve(projectPath(), 'tools', 'unpacked'),
     });
-    const { response, reconnected } = await connectSession(api, metadata, agentId);
+    const connected = await connectSession(api, metadata, agentId);
+    const { reconnected } = connected;
+    let { response } = connected;
+    if (response !== null && !reconnected && fromDaemon !== null && shouldAbortReuse(response.metadata)) {
+        // The daemon starts a fresh mirror only when it holds no key for this agent's session, so the
+        // tagged session's key is gone (its mirror died before the daemon stored it). No mirror can
+        // write to it again, so it is deleted and the tag gets a new session.
+        logger.debug(`[MIRROR] Session ${response.id} cannot be opened with any stored key: replacing it`);
+        if (await api.deleteSession(response.id)) {
+            response = await api.getOrCreateSession({ tag: mirrorTag(agentId), metadata, state: {} });
+        }
+    }
     if (response === null) {
         console.error('Could not reach the Happy server.');
         process.exit(1);
