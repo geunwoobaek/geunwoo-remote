@@ -42,6 +42,11 @@
  *   the text is deleted and the send is `'failed'` (the phone says so and can send again).
  *   Enter is pressed again only over an input box with text in it, never over a dialog. The Mac
  *   user's own pane gets one Enter and no backspaces: what is in that box may be theirs.
+ * - With [InputDeliveryDeps.retryBusyMs] a phone message is never dropped for want of an input box
+ *   (a permission or other dialog on the Mac screen, the Mac user typing): it keeps its place and is
+ *   tried again until it goes. Between tries the terminal is let go, so an answer to that dialog
+ *   (from the phone or the Mac), an interrupt or a settings switch gets through in the meantime.
+ *   Later phone messages wait behind it, so they still arrive in the order they were sent.
  */
 
 import { sanitizeTypedText, type AttachKey, type AttachTerminal } from './attachTerminal';
@@ -102,6 +107,11 @@ export type InputDelivery = {
     configure(change: MacSettingsChange): Promise<ConfigureResult>;
     /** The permission mode under the input box right now; null when it cannot be read. */
     readPermissionMode(): Promise<MacPermissionMode | null>;
+    /**
+     * Stops retrying (the mirror is going away): sends still waiting resolve `'failed'`, none is
+     * tried again. Returns how many sends had not gone yet.
+     */
+    abandon(): number;
 };
 
 export type InputDeliveryDeps = {
@@ -117,6 +127,16 @@ export type InputDeliveryDeps = {
     echo: EchoFilter;
     /** How long to wait for a usable input box before giving up with `busy-input`. Default 10000. */
     waitInputMs?: number;
+    /**
+     * Never give up on a send for want of an input box: wait this long and try again, until it goes
+     * or [InputDelivery.abandon] is called. Each try then waits at most [retryWaitInputMs] for the
+     * box, so the terminal is free for other work between tries. Unset: one try of [waitInputMs].
+     */
+    retryBusyMs?: number;
+    /** With [retryBusyMs]: how long one try waits for the input box. Default 1500. */
+    retryWaitInputMs?: number;
+    /** With [retryBusyMs]: told once per send that has waited [waitInputMs] and is still waiting. */
+    onWaiting?: () => void;
     /** Pause after Enter before the terminal is closed. Default 400. */
     closeDelayMs?: number;
     /** Pause between two screen reads. Default 200. */
@@ -132,9 +152,12 @@ const DEFAULT_CLOSE_DELAY_MS = 400;
 const DEFAULT_POLL_INTERVAL_MS = 200;
 const DEFAULT_SUBMIT_WAIT_MS = 1_500;
 const DEFAULT_DRAFT_SETTLE_MS = 800;
+const DEFAULT_RETRY_WAIT_INPUT_MS = 1_500;
 
 /** What the hidden terminal found in the input box before typing. */
 type InputBox = { kind: 'empty' } | { kind: 'blocked' } | { kind: 'draft'; text: string };
+/** One send across its tries: the survey is answered with `0` once per send, never once per try. */
+type SendTries = { surveyDismissed: boolean };
 /** Extra Enters after the first one before the send is given up. */
 const ENTER_RETRIES = 2;
 /** Backspaces sent per key batch when deleting a text that would not submit. */
@@ -212,7 +235,13 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
     const pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     const submitWaitMs = deps.submitWaitMs ?? DEFAULT_SUBMIT_WAIT_MS;
     const draftSettleMs = deps.draftSettleMs ?? DEFAULT_DRAFT_SETTLE_MS;
+    const retryWaitInputMs = deps.retryWaitInputMs ?? DEFAULT_RETRY_WAIT_INPUT_MS;
     let queue: Promise<unknown> = Promise.resolve();
+    /** Sends in the order they came; a send that is still waiting for a box holds the ones after it. */
+    let sends: Promise<unknown> = Promise.resolve();
+    /** Sends not resolved yet (waiting, being typed, or queued behind one). */
+    let unsent = 0;
+    let abandoned = false;
 
     /** Runs `job` after everything queued so far, whatever happened to it. */
     function enqueue<T>(job: () => Promise<T>): Promise<T> {
@@ -224,11 +253,10 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
     /**
      * Waits for an empty input box, dismissing the survey once if it shows. A draft once the same
      * text has sat in the box for [draftSettleMs] (a box that is being submitted empties sooner, a
-     * line being typed keeps changing); blocked when no usable box showed up within [waitInputMs].
+     * line being typed keeps changing); blocked when no usable box showed up within `waitMs`.
      */
-    async function waitForInputBox(terminal: AttachTerminal): Promise<InputBox> {
+    async function waitForInputBox(terminal: AttachTerminal, waitMs: number = waitInputMs, tries: SendTries = { surveyDismissed: false }): Promise<InputBox> {
         const started = Date.now();
-        let dismissed = false;
         let held: { text: string; since: number } | null = null;
         for (;;) {
             const screen = await terminal.screen();
@@ -237,9 +265,9 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
             if (empty && !survey) {
                 return { kind: 'empty' };
             }
-            if (empty && survey && !dismissed) {
+            if (empty && survey && !tries.surveyDismissed) {
                 // Only with an empty box: a digit would otherwise land in the user's draft.
-                dismissed = true;
+                tries.surveyDismissed = true;
                 await terminal.press([{ digit: 0 }]);
             }
             const now = Date.now();
@@ -248,7 +276,7 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
             if (held !== null && now - held.since >= draftSettleMs) {
                 return { kind: 'draft', text: held.text };
             }
-            if (now - started >= waitInputMs) {
+            if (now - started >= waitMs) {
                 return { kind: 'blocked' };
             }
             await sleep(pollIntervalMs);
@@ -405,7 +433,7 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
         }
     }
 
-    async function deliver(text: string): Promise<DeliveryResult> {
+    async function deliver(text: string, waitMs: number = waitInputMs, tries: SendTries = { surveyDismissed: false }): Promise<DeliveryResult> {
         const viaUser = await deliverToUser(text);
         if (viaUser !== null) {
             deps.onRoute?.('input', 'cmux');
@@ -414,7 +442,7 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
         deps.onRoute?.('input', 'tmux');
         const terminal = await deps.openTerminal();
         try {
-            const box = await waitForInputBox(terminal);
+            const box = await waitForInputBox(terminal, waitMs, tries);
             if (box.kind === 'blocked') {
                 return 'busy-input';
             }
@@ -668,6 +696,30 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
         }
     }
 
+    /**
+     * One send with [InputDeliveryDeps.retryBusyMs]: tries until something other than `busy-input`
+     * comes back. Each try is queued on its own, so whatever was queued meanwhile runs between tries.
+     */
+    async function deliverPatiently(text: string, retryBusyMs: number): Promise<DeliveryResult> {
+        const started = Date.now();
+        const tries: SendTries = { surveyDismissed: false };
+        let told = false;
+        for (;;) {
+            if (abandoned) {
+                return 'failed';
+            }
+            const result = await enqueue(() => deliver(text, retryWaitInputMs, tries).catch((): DeliveryResult => 'failed'));
+            if (result !== 'busy-input') {
+                return result;
+            }
+            if (!told && Date.now() - started >= waitInputMs) {
+                told = true;
+                deps.onWaiting?.();
+            }
+            await sleep(retryBusyMs);
+        }
+    }
+
     async function configure(change: MacSettingsChange): Promise<ConfigureResult> {
         const seen: MacSettings = {};
         const terminal = await deps.openTerminal();
@@ -714,7 +766,20 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
                 // Nothing to type once control characters are gone: a no-op that counts as delivered.
                 return Promise.resolve('sent');
             }
-            return enqueue(() => deliver(clean).catch((): DeliveryResult => 'failed'));
+            const retryBusyMs = deps.retryBusyMs;
+            if (retryBusyMs === undefined) {
+                return enqueue(() => deliver(clean).catch((): DeliveryResult => 'failed'));
+            }
+            unsent++;
+            const run = sends.then(() => deliverPatiently(clean, retryBusyMs)).finally(() => {
+                unsent--;
+            });
+            sends = run.catch(() => undefined);
+            return run;
+        },
+        abandon() {
+            abandoned = true;
+            return unsent;
         },
         interrupt() {
             return enqueue(async () => {

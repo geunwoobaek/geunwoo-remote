@@ -63,14 +63,16 @@ const SKIP_SETTLE_WAIT_MS = 10_000;
 const MAX_LIST_FAILURES = 3;
 /** How long a shutdown waits for a tick that is still driving a terminal. */
 const SHUTDOWN_IDLE_WAIT_MS = 3_000;
-/** How long a shutdown waits for a delivery or answer that holds the attach terminal (input wait is 10s). */
+/** How long a shutdown waits for a delivery or answer that holds the attach terminal (one try waits up to 1.5s for the box). */
 const SHUTDOWN_DRAIN_MS = 12_000;
 /** At most one "text only" notice per burst of attachments. */
 const ATTACHMENT_NOTICE_GAP_MS = 2_000;
 
 const NOTICE_TEXT_ONLY = '이 세션은 텍스트만 받습니다';
-const NOTICE_BUSY_INPUT = '맥 화면에 권한 질문 등이 떠 있거나 맥에서 입력하는 중이라 보내지 못했습니다';
+const NOTICE_WAITING = '맥 화면에 권한 질문 등이 떠 있거나 맥에서 입력하는 중입니다. 끝나는 대로 이어서 보냅니다';
 const NOTICE_FAILED = '맥에 보내지 못했습니다';
+/** A phone message that cannot be typed yet (a dialog, the Mac user typing) is tried again this often. */
+const RETRY_BUSY_MS = 1_000;
 
 /** `claudeAgentSettings` in the metadata: this mirror answers `claude-agent-settings`. */
 const CLAUDE_AGENT_SETTINGS_VERSION = 1;
@@ -708,7 +710,20 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         logger.debug(`[claude-agent] ${use} via ${route === 'cmux' ? `cmux ${userSurface ?? ''}`.trim() : 'tmux'}`);
     };
     const echo = createEchoFilter();
-    const delivery = createInputDelivery({ openTerminal, openUserTerminal, onRoute, echo });
+    // A phone message is never dropped because a dialog or the Mac user's typing is in the way: it
+    // keeps its place and goes once the box is free (the phone can answer the dialog meanwhile).
+    const delivery = createInputDelivery({
+        openTerminal,
+        openUserTerminal,
+        onRoute,
+        echo,
+        retryBusyMs: RETRY_BUSY_MS,
+        onWaiting: () => {
+            if (!stopping) {
+                notice(NOTICE_WAITING);
+            }
+        },
+    });
 
     let lastStatus: ClaudeAgentStatus | null = null;
     const bridge = createPermissionBridge({
@@ -785,9 +800,8 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
 
     // Phone to Mac.
     const reportDelivery = (result: DeliveryResult): void => {
-        if (result === 'busy-input') {
-            notice(NOTICE_BUSY_INPUT);
-        } else if (result === 'failed') {
+        // While stopping, the sends left over are reported once by the shutdown.
+        if (result !== 'sent' && !stopping) {
             notice(NOTICE_FAILED);
         }
     };
@@ -899,6 +913,10 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
         }
         stopping = true;
         logger.debug(`[MIRROR] Shutting down (archive=${how.archive})`);
+        const unsent = delivery.abandon();
+        if (unsent > 0) {
+            notice(`맥 세션이 끝나 메시지 ${unsent}건을 보내지 못했습니다`);
+        }
         permissionLoop.stop();
         agentsLoop.stop();
         clearInterval(keepAliveTimer);

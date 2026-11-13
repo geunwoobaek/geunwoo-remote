@@ -1061,3 +1061,109 @@ describe('createInputDelivery configure', () => {
         expect(log).toEqual(['open#1', 'close#1']);
     });
 });
+
+describe('createInputDelivery that never drops a phone message', () => {
+    const PERMISSION = fixture('permission-bash');
+    const patient = { retryBusyMs: 5, retryWaitInputMs: 20, waitInputMs: 30, ...fast };
+    /** Shows `idle` once free, with a typed text in the box from typing until Enter in that terminal. */
+    const echoing = (free: () => boolean, busy: () => string) => (calls: Call[]): string => {
+        if (!free()) {
+            return busy();
+        }
+        const current = sinceOpen(calls);
+        const typed = current.map((line) => line.startsWith('type')).lastIndexOf(true);
+        return typed >= 0 && !current.slice(typed).some((line) => line.endsWith(':enter')) ? TYPED : EMPTY;
+    };
+
+    it('keeps a message while a permission dialog shows and sends it once the dialog is answered', async () => {
+        let answered = false;
+        const { log, openTerminal } = createHarness(echoing(() => answered, () => PERMISSION));
+        let waitingNotices = 0;
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), onWaiting: () => waitingNotices++, ...patient });
+        const sending = delivery.send('after the dialog');
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        expect(log.filter((line) => line.startsWith('type'))).toEqual([]);
+        answered = true;
+        expect(await sending).toBe('sent');
+        expect(log.filter((line) => line.startsWith('type') || line.startsWith('press')).map((line) => line.replace(/#\d+/, ''))).toEqual(['type:after the dialog', 'press:enter']);
+        // Told once, after it had waited the normal input wait.
+        expect(waitingNotices).toBe(1);
+    });
+
+    it('lets go of the terminal between tries, so an answer queued meanwhile gets it', async () => {
+        let answered = false;
+        const { log, openTerminal } = createHarness(echoing(() => answered, () => PERMISSION));
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...patient });
+        const sending = delivery.send('hello');
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        // Something else (the phone's stop button here) is queued while the message waits.
+        await delivery.interrupt();
+        expect(log.filter((line) => line.startsWith('press')).at(-1)).toMatch(/:escape$/);
+        answered = true;
+        expect(await sending).toBe('sent');
+        // Every terminal it opened was closed again.
+        expect(log.filter((line) => line.startsWith('open')).length).toBe(log.filter((line) => line.startsWith('close')).length);
+    });
+
+    it('keeps later messages behind a waiting one, in the order they were sent', async () => {
+        let answered = false;
+        const { log, openTerminal } = createHarness(echoing(() => answered, () => PERMISSION));
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...patient });
+        const first = delivery.send('first');
+        const second = delivery.send('second');
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        answered = true;
+        expect(await Promise.all([first, second])).toEqual(['sent', 'sent']);
+        expect(log.filter((line) => line.startsWith('type')).map((line) => line.split(':')[1])).toEqual(['first', 'second']);
+    });
+
+    it('waits out a Mac user who keeps typing, without typing over them', async () => {
+        let keys = 0;
+        let stopped = false;
+        const { log, openTerminal } = createHarness(echoing(() => stopped, () => holding(`still typing ${'x'.repeat(++keys)}`)));
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), draftSettleMs: 1000, ...patient });
+        const sending = delivery.send('from phone');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(log.filter((line) => line.startsWith('type') || line.startsWith('press'))).toEqual([]);
+        stopped = true;
+        expect(await sending).toBe('sent');
+        expect(log.filter((line) => line.startsWith('type'))).toHaveLength(1);
+    });
+
+    it('answers the survey with 0 only once across tries', async () => {
+        const { log, openTerminal } = createHarness([SURVEY_ANSI]);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...patient });
+        const sending = delivery.send('1 more thing');
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        expect(delivery.abandon()).toBe(1);
+        expect(await sending).toBe('failed');
+        expect(log.filter((line) => line.endsWith(':digit0'))).toHaveLength(1);
+        expect(log.filter((line) => line.startsWith('type'))).toEqual([]);
+    });
+
+    it('abandon resolves every waiting send as failed and counts them', async () => {
+        const { log, openTerminal } = createHarness([PERMISSION]);
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, echo, ...patient });
+        const sends = [delivery.send('a'), delivery.send('b')];
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        expect(delivery.abandon()).toBe(2);
+        expect(await Promise.all(sends)).toEqual(['failed', 'failed']);
+        expect(log.filter((line) => line.startsWith('type'))).toEqual([]);
+        expect(echo.shouldSkip('a')).toBe(false);
+    });
+
+    it('still reports a send that typing broke as failed instead of trying it again', async () => {
+        const { log, openTerminal } = createHarness([EMPTY]);
+        let opened = 0;
+        const breaking = async (): Promise<AttachTerminal> => {
+            const terminal = await openTerminal();
+            opened++;
+            return { ...terminal, typeText: async () => { throw new Error('tmux went away'); } };
+        };
+        const delivery = createInputDelivery({ openTerminal: breaking, echo: createEchoFilter(), ...patient });
+        expect(await delivery.send('once')).toBe('failed');
+        expect(opened).toBe(1);
+        expect(log.filter((line) => line.startsWith('type'))).toEqual([]);
+    });
+});
