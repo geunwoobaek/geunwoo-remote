@@ -91,7 +91,9 @@ internal fun htmlAssetType(path: String): String? = assetTypes[path.substringAft
 /**
  * The file on the computer a page's request [url] stands for, or null when
  * it is refused: another host, outside [root] (`..` included), anything
- * under a dot-named folder or file, or a type [htmlAssetType] doesn't serve.
+ * under a dot-named folder or file below [root], or a type [htmlAssetType]
+ * doesn't serve. The root itself may sit in a dot-named folder (a session
+ * in `.claude/worktrees/…`).
  */
 internal fun htmlAssetPath(url: String, root: String): String? {
     val uri = try {
@@ -101,10 +103,9 @@ internal fun htmlAssetPath(url: String, root: String): String? {
     }
     if (uri.host != HTML_ASSET_HOST || uri.scheme != "https") return null
     val path = uri.path?.takeIf { it.startsWith("/") } ?: return null
-    val segments = path.split('/').filter { it.isNotEmpty() }
-    if (segments.any { it.startsWith(".") }) return null
     val top = root.trimEnd('/')
     if (!path.startsWith("$top/")) return null
+    if (path.removePrefix("$top/").split('/').any { it.startsWith(".") }) return null
     return path.takeIf { htmlAssetType(it) != null }
 }
 

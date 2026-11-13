@@ -59,6 +59,20 @@ class HtmlPreviewTest {
         assertNull(htmlAssetPath("https://happy-file.invalid/Users/me/my app2/x.css", root))
     }
 
+    @Test fun aRootInsideADotFolderStillServesItsOwnFiles() {
+        // A session in a git worktree: the root itself sits under `.claude/`.
+        val worktree = "/Users/me/game/.claude/worktrees/cb"
+        val page = "$worktree/_proto/p-3d/index.html"
+        fun from(relative: String) =
+            htmlAssetPath(java.net.URI(htmlBaseUrl(page)).resolve(java.net.URI(null, null, relative, null)).toASCIIString(), worktree)
+        assertEquals("$worktree/_proto/p-3d/game.js", from("game.js"))
+        assertEquals("$worktree/common/kit/kit.js", from("../../common/kit/kit.js"))
+        // Below the root, dot-named folders and files are still refused.
+        assertNull(from("../../.git/hooks.js"))
+        assertNull(from(".cache/x.js"))
+        assertNull(from("../../../../../.ssh/x.css"))
+    }
+
     @Test fun assetTypesFollowTheName() {
         assertEquals("text/css", htmlAssetType("a/b.CSS"))
         assertEquals("font/woff2", htmlAssetType("f.woff2"))
