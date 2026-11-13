@@ -25,12 +25,14 @@
  * - The text is remembered in the echo filter just before it is typed, so the transcript line
  *   Claude Code writes for it is not uploaded to the phone a second time. If typing then fails
  *   the entry is forgotten again.
- * - A send counts only once the input box is empty again after Enter. A slow terminal (a Mac
+ * - In the hidden terminal, Enter is pressed only once the typed text shows in the input box, and
+ *   a send counts only once the box is empty again after Enter. A slow terminal (a Mac
  *   just awake from sleep, a very long session being loaded) can swallow the Enter and leave the
  *   text sitting in the box: never submitted, and every later phone message then finds the box
  *   taken. So Enter is pressed again while the text is still there, and if it still will not go,
  *   the text is deleted and the send is `'failed'` (the phone says so and can send again).
- *   Enter is pressed again only over an input box with text in it, never over a dialog.
+ *   Enter is pressed again only over an input box with text in it, never over a dialog. The Mac
+ *   user's own pane gets one Enter and no backspaces: what is in that box may be theirs.
  */
 
 import { sanitizeTypedText, type AttachKey, type AttachTerminal } from './attachTerminal';
@@ -181,33 +183,62 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
     }
 
     /**
-     * Called right after the first Enter. True once the input box shows empty, or when it stays
-     * hidden (a dialog took over: the text was taken). While text still sits in the box after
-     * [submitWaitMs], Enter is pressed again, up to [ENTER_RETRIES] times; false if it never goes.
+     * After typing: waits until the text shows in the input box, so an Enter is never pressed
+     * before the terminal took the keys. `'empty'` when the box stayed empty, `'none'` when no input
+     * box is drawn (a dialog), both after [submitWaitMs] times ([ENTER_RETRIES] + 1).
      */
-    async function confirmSubmitted(terminal: AttachTerminal): Promise<boolean> {
-        for (let retries = 0; ; retries++) {
-            const deadline = Date.now() + submitWaitMs;
-            let holdsText = false;
-            for (;;) {
-                const screen = await terminal.screen();
-                if (isInputBoxEmpty(screen)) {
-                    return true;
+    async function waitForTypedText(terminal: AttachTerminal): Promise<'text' | 'empty' | 'none'> {
+        const deadline = Date.now() + submitWaitMs * (ENTER_RETRIES + 1);
+        for (;;) {
+            const screen = await terminal.screen();
+            if (inputBoxHasText(screen)) {
+                return 'text';
+            }
+            if (Date.now() >= deadline) {
+                return isInputBoxEmpty(screen) ? 'empty' : 'none';
+            }
+            await sleep(pollIntervalMs);
+        }
+    }
+
+    /**
+     * Called right after the first Enter, over a box that showed the text. `'sent'` once the box is
+     * empty, or when it stays hidden (a dialog took over: the text was taken). While the text still
+     * sits in the box after [submitWaitMs], Enter is pressed again, up to [ENTER_RETRIES] times; if
+     * it never goes, the text is deleted and the send is `'failed'`. Once Enter was pressed, a
+     * terminal that cannot be read counts as `'sent'`: the message may be in, and a resend from the
+     * phone would then arrive twice.
+     */
+    async function confirmSubmitted(terminal: AttachTerminal, text: string): Promise<DeliveryResult> {
+        try {
+            for (let retries = 0; ; retries++) {
+                const deadline = Date.now() + submitWaitMs;
+                let holdsText = false;
+                for (;;) {
+                    const screen = await terminal.screen();
+                    if (isInputBoxEmpty(screen)) {
+                        return 'sent';
+                    }
+                    holdsText = inputBoxHasText(screen);
+                    if (Date.now() >= deadline) {
+                        break;
+                    }
+                    await sleep(pollIntervalMs);
                 }
-                holdsText = inputBoxHasText(screen);
-                if (Date.now() >= deadline) {
+                if (!holdsText) {
+                    return 'sent';
+                }
+                if (retries >= ENTER_RETRIES) {
                     break;
                 }
-                await sleep(pollIntervalMs);
+                await terminal.press(['enter']);
             }
-            if (!holdsText) {
-                return true;
-            }
-            if (retries >= ENTER_RETRIES) {
-                return false;
-            }
-            await terminal.press(['enter']);
+        } catch {
+            return 'sent';
         }
+        await clearUnsent(terminal, text);
+        deps.echo.forget(text);
+        return 'failed';
     }
 
     /** Deletes a text that would not submit, so it does not block the next message. Best effort. */
@@ -223,17 +254,6 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
         } catch {
             // The terminal is going away anyway; the send is reported as failed regardless.
         }
-    }
-
-    /** Presses Enter and makes sure the text left the box; `'failed'` (text deleted) when it did not. */
-    async function submit(terminal: AttachTerminal, text: string): Promise<DeliveryResult> {
-        await terminal.press(['enter']);
-        if (await confirmSubmitted(terminal)) {
-            return 'sent';
-        }
-        await clearUnsent(terminal, text);
-        deps.echo.forget(text);
-        return 'failed';
     }
 
     /** The user's pane, or null when there is none or it cannot be opened. */
@@ -271,11 +291,12 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
             deps.echo.remember(text);
             try {
                 await terminal.typeText(text);
-                return await submit(terminal, text);
+                await terminal.press(['enter']);
             } catch {
                 deps.echo.forget(text);
                 return 'failed';
             }
+            return 'sent';
         } finally {
             await closeQuietly(terminal);
         }
@@ -294,19 +315,29 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
                 return 'busy-input';
             }
             deps.echo.remember(text);
-            let result: DeliveryResult;
             try {
                 if (text.includes('\n')) {
                     await terminal.pasteText(text);
                 } else {
                     await terminal.typeText(text);
                 }
-                result = await submit(terminal, text);
+                const shown = await waitForTypedText(terminal);
+                if (shown !== 'text') {
+                    // The keys were lost (or a dialog took over): nothing to submit. Keys are taken in
+                    // order, so backspaces also remove a text that only shows up later.
+                    if (shown === 'empty') {
+                        await clearUnsent(terminal, text);
+                    }
+                    deps.echo.forget(text);
+                    return 'failed';
+                }
+                await terminal.press(['enter']);
             } catch (error) {
                 // Not sent: the transcript will never show it, so it must not swallow a later identical Mac line.
                 deps.echo.forget(text);
                 throw error;
             }
+            const result = await confirmSubmitted(terminal, text);
             await sleep(closeDelayMs);
             return result;
         } finally {

@@ -25,6 +25,8 @@ function createHarness(screens: string[] | ((log: Call[]) => string), extra: { p
     const terminals: FakeTerminal[] = [];
     let reads = 0;
     let override: string | null = null;
+    /** Like a real terminal, a typed text shows in the box until Enter (fixed screen lists only). */
+    let typedShows = false;
     const openTerminal = async (): Promise<AttachTerminal> => {
         const id = terminals.length + 1;
         log.push(`open#${id}`);
@@ -32,6 +34,9 @@ function createHarness(screens: string[] | ((log: Call[]) => string), extra: { p
             id,
             closed: false,
             screen: async () => {
+                if (typeof screens !== 'function' && typedShows) {
+                    return TYPED;
+                }
                 if (override !== null) {
                     return override;
                 }
@@ -42,11 +47,16 @@ function createHarness(screens: string[] | ((log: Call[]) => string), extra: { p
             },
             typeText: async (text) => {
                 log.push(`type#${id}:${text}`);
+                typedShows = true;
             },
             pasteText: async (text) => {
                 log.push(`paste#${id}:${text}`);
+                typedShows = true;
             },
             press: async (keys) => {
+                if (keys.includes('enter')) {
+                    typedShows = false;
+                }
                 log.push(`press#${id}:${keys.map((key) => (typeof key === 'string' ? key : `digit${key.digit}`)).join(',')}`);
                 for (const key of keys) {
                     const next = extra.pressChangesScreen?.(key) ?? null;
@@ -184,11 +194,12 @@ describe('createInputDelivery', () => {
     it('send deletes a text that never submits and reports failed, so the next message is not blocked', async () => {
         let stuck = true;
         const { log, openTerminal } = createHarness((calls) => {
-            if (!stuck || !calls.some((line) => line.startsWith('type'))) {
+            const current = calls.slice(calls.map((line) => line.startsWith('open#')).lastIndexOf(true));
+            if (!current.some((line) => line.startsWith('type'))) {
                 return EMPTY;
             }
-            const cleared = calls.some((line) => line.includes('backspace'));
-            return cleared ? EMPTY : TYPED;
+            const gone = stuck ? current.some((line) => line.includes('backspace')) : current.some((line) => line.endsWith(':enter'));
+            return gone ? EMPTY : TYPED;
         });
         const echo = createEchoFilter();
         const delivery = createInputDelivery({ openTerminal, echo, submitWaitMs: 20, ...fast });
@@ -206,10 +217,66 @@ describe('createInputDelivery', () => {
     it('send does not press Enter again over a dialog that replaced the input box', async () => {
         // Claude took the text and asked for a permission right away: Enter there would pick an option.
         const dialog = fixture('permission-bash');
-        const { log, openTerminal } = createHarness((calls) => (calls.some((line) => line.endsWith(':enter')) ? dialog : EMPTY));
+        const { log, openTerminal } = createHarness((calls) => {
+            if (calls.some((line) => line.endsWith(':enter'))) {
+                return dialog;
+            }
+            return calls.some((line) => line.startsWith('type')) ? TYPED : EMPTY;
+        });
         const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), submitWaitMs: 20, ...fast });
         expect(await delivery.send('run it')).toBe('sent');
         expect(log).toEqual(['open#1', 'type#1:run it', 'press#1:enter', 'close#1']);
+    });
+
+    it('send presses Enter only once the typed text shows in the box', async () => {
+        // A slow terminal draws the text late; an Enter before that would be lost.
+        let readsAfterTyping = 0;
+        const { log, openTerminal } = createHarness((calls) => {
+            if (!calls.some((line) => line.startsWith('type'))) {
+                return EMPTY;
+            }
+            if (calls.some((line) => line.endsWith(':enter'))) {
+                return EMPTY;
+            }
+            readsAfterTyping++;
+            if (readsAfterTyping < 4) {
+                return EMPTY;
+            }
+            calls.push('shown');
+            return TYPED;
+        });
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), submitWaitMs: 200, ...fast });
+        expect(await delivery.send('slow')).toBe('sent');
+        expect(log.indexOf('shown')).toBeGreaterThan(-1);
+        expect(log.indexOf('shown')).toBeLessThan(log.indexOf('press#1:enter'));
+        expect(log.filter((line) => line === 'press#1:enter')).toHaveLength(1);
+    });
+
+    it('send reports failed and presses no Enter when the typed keys never show', async () => {
+        const { log, openTerminal } = createHarness([EMPTY]);
+        const original = openTerminal;
+        // A terminal that drops the keys: the box stays empty after typing.
+        const dropping = async (): Promise<AttachTerminal> => ({ ...(await original()), typeText: async (text: string) => { log.push(`lost#1:${text}`); } });
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal: dropping, echo, submitWaitMs: 10, ...fast });
+        expect(await delivery.send('gone')).toBe('failed');
+        expect(log.some((line) => line.endsWith(':enter'))).toBe(false);
+        expect(log.some((line) => line.includes('backspace'))).toBe(true);
+        expect(echo.shouldSkip('gone')).toBe(false);
+    });
+
+    it('send counts a terminal that cannot be read after Enter as sent, so the phone does not resend', async () => {
+        const { log, openTerminal } = createHarness((calls) => {
+            if (calls.some((line) => line.endsWith(':enter'))) {
+                throw new Error('tmux went away');
+            }
+            return calls.some((line) => line.startsWith('type')) ? TYPED : EMPTY;
+        });
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, echo, submitWaitMs: 20, ...fast });
+        expect(await delivery.send('maybe in')).toBe('sent');
+        expect(log.at(-1)).toBe('close#1');
+        expect(echo.shouldSkip('maybe in')).toBe(true);
     });
 
     it('send does not type into a dialog', async () => {
@@ -563,6 +630,7 @@ describe('createInputDelivery with a user terminal', () => {
             openTerminal: () => open('tmux'),
             openUserTerminal: () => open('user'),
             echo: createEchoFilter(),
+            submitWaitMs: 5,
             ...fast,
         });
         await delivery.send('hi');
