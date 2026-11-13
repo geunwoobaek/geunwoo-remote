@@ -5,7 +5,6 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.compose.foundation.background
@@ -104,9 +103,6 @@ fun MermaidView(content: String, modifier: Modifier = Modifier, fallback: @Compo
 
 @SuppressLint("SetJavaScriptEnabled")
 private fun mermaidWebView(context: Context, background: Color, dark: Boolean, onHeight: (Int) -> Unit) = themedWebView(context, background, dark).apply {
-    // Sized from its content: with the box's height the page could only grow (scrollHeight
-    // is never under the viewport), so it keeps WebView's size-to-content layout.
-    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     settings.javaScriptEnabled = true
     settings.allowFileAccess = false
     settings.allowContentAccess = false

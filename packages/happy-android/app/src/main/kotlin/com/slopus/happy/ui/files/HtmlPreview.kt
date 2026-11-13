@@ -34,6 +34,7 @@ import com.slopus.happy.ui.components.Icon
 import com.slopus.happy.ui.components.Ionicon
 import com.slopus.happy.ui.components.Prompt
 import com.slopus.happy.ui.components.PromptModal
+import com.slopus.happy.ui.components.pageLayoutParams
 import com.slopus.happy.ui.components.themedWebView
 import com.slopus.happy.ui.theme.HappyTheme
 import kotlinx.coroutines.runBlocking
@@ -172,6 +173,8 @@ internal fun HtmlFilePage(
         AndroidView(
             factory = { ctx ->
                 themedWebView(ctx, Color.White, dark = false).apply {
+                    // The page's viewport is the viewer, as in a browser: 100vh and height media queries hold.
+                    layoutParams = pageLayoutParams()
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.allowFileAccess = false
