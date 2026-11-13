@@ -90,12 +90,14 @@ internal fun htmlAssetType(path: String): String? = assetTypes[path.substringAft
 
 /**
  * The file on the computer a page's request [url] stands for, or null when
- * it is refused: another host, outside [root] (`..` included), anything
+ * it is refused: a [method] other than GET or HEAD (a page probing a link
+ * asks with HEAD), another host, outside [root] (`..` included), anything
  * under a dot-named folder or file below [root], or a type [htmlAssetType]
  * doesn't serve. The root itself may sit in a dot-named folder (a session
  * in `.claude/worktrees/…`).
  */
-internal fun htmlAssetPath(url: String, root: String): String? {
+internal fun htmlAssetPath(url: String, root: String, method: String = "GET"): String? {
+    if (method.uppercase() !in setOf("GET", "HEAD")) return null
     val uri = try {
         URI(url).normalize()
     } catch (_: URISyntaxException) {
@@ -217,7 +219,7 @@ private class MemoSelection(private val onSelected: (String) -> Unit) {
 private class HtmlFileClient(private val root: String, private val read: suspend (String) -> ByteArray?) : WebViewClient() {
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
         if (request.url.host != HTML_ASSET_HOST) return null
-        val path = htmlAssetPath(request.url.toString(), root)?.takeIf { request.method.equals("GET", ignoreCase = true) } ?: return missing()
+        val path = htmlAssetPath(request.url.toString(), root, request.method) ?: return missing()
         val bytes = runCatching { runBlocking { withTimeoutOrNull(10_000) { read(path) } } }.getOrNull() ?: return missing()
         return WebResourceResponse(htmlAssetType(path), null, ByteArrayInputStream(bytes))
     }

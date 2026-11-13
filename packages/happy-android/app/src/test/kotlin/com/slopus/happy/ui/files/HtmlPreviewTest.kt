@@ -73,6 +73,15 @@ class HtmlPreviewTest {
         assertNull(from("../../../../../.ssh/x.css"))
     }
 
+    @Test fun aPageMayAskWhetherAFileIsThereButNotSendToTheComputer() {
+        // A hub page probes its links with HEAD before showing them as ready.
+        val url = java.net.URI(htmlBaseUrl("$root/index.html")).resolve("game/index.html").toASCIIString()
+        assertEquals("$root/game/index.html", htmlAssetPath(url, root, "HEAD"))
+        assertEquals("$root/game/index.html", htmlAssetPath(url, root, "get"))
+        assertNull(htmlAssetPath(url, root, "POST"))
+        assertNull(htmlAssetPath(url, root, "PUT"))
+    }
+
     @Test fun assetTypesFollowTheName() {
         assertEquals("text/css", htmlAssetType("a/b.CSS"))
         assertEquals("font/woff2", htmlAssetType("f.woff2"))
