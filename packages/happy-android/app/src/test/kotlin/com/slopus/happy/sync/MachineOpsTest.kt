@@ -3,6 +3,9 @@ package com.slopus.happy.sync
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.slopus.happy.crypto.encodeBase64
 import com.slopus.happy.data.SessionRecord
+import com.slopus.happy.model.RemoteTask
+import com.slopus.happy.model.RemoteTaskKind
+import com.slopus.happy.model.RemoteTaskStatus
 import com.slopus.happy.ui.home.ClaudeAgentsModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -468,6 +471,47 @@ class MachineOpsTest {
     fun reviveClaudeAgentOnAnOldDaemonSaysToUpdateTheMac() = runBlocking {
         h.startAndSync()
         assertEquals(ReviveClaudeAgentResult.Error(REVIVE_UNSUPPORTED), ops.reviveClaudeAgent("m1", "demo-agent"))
+    }
+
+    @Test
+    fun claudeAgentTasksReadsTheDaemonsAnswer() = runBlocking {
+        h.startAndSync()
+        val answers = ArrayDeque(listOf(
+            buildJsonObject {
+                put("type", "success")
+                put("queuedInputs", 2)
+                putJsonArray("tasks") {
+                    add(buildJsonObject {
+                        put("id", "wf_1"); put("kind", "workflow"); put("label", "game-panel"); put("detail", "3 testers")
+                        put("phase", "panel"); put("model", JsonNull); put("status", "running"); put("startedAt", 1000); put("endedAt", JsonNull); put("agentCount", 4)
+                    })
+                    add(buildJsonObject {
+                        put("id", "agent-a"); put("kind", "agent"); put("label", "Split memory"); put("detail", "Explore")
+                        put("phase", JsonNull); put("model", "opus"); put("status", "done"); put("startedAt", 500); put("endedAt", 900); put("agentCount", JsonNull)
+                    })
+                    add(buildJsonObject { put("id", "broken") })
+                }
+            },
+            buildJsonObject { put("type", "error"); put("code", "not-found"); put("errorMessage", "The Mac background session demo-agent was removed.") },
+        ))
+        val calls = respond("claude-agent-tasks") { answers.removeFirst() }
+        val read = ops.claudeAgentTasks("m1", "demo-agent") as ClaudeAgentTasksResult.Success
+        assertEquals(buildJsonObject { put("id", "demo-agent") }, calls.first())
+        assertEquals(2, read.value.queuedInputs)
+        assertEquals(
+            listOf(
+                RemoteTask("wf_1", RemoteTaskKind.Workflow, "game-panel", RemoteTaskStatus.Running, 1000, summary = "3 testers", lastTool = "panel · 4 agents"),
+                RemoteTask("agent-a", RemoteTaskKind.Agent, "Split memory", RemoteTaskStatus.Completed, 500, endedAt = 900, agentType = "Explore", lastTool = "opus"),
+            ),
+            read.value.tasks,
+        )
+        assertEquals(ClaudeAgentTasksResult.Error("The Mac background session demo-agent was removed."), ops.claudeAgentTasks("m1", "demo-agent"))
+    }
+
+    @Test
+    fun claudeAgentTasksOnAnOldDaemonIsUnsupported() = runBlocking {
+        h.startAndSync()
+        assertEquals(ClaudeAgentTasksResult.Unsupported, ops.claudeAgentTasks("m1", "demo-agent"))
     }
 
     @Test

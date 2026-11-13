@@ -1,5 +1,8 @@
 package com.slopus.happy.sync
 
+import com.slopus.happy.model.RemoteTask
+import com.slopus.happy.model.RemoteTaskKind
+import com.slopus.happy.model.RemoteTaskStatus
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -7,6 +10,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 
 // The Mac's `claude agents` background sessions, as the daemon's
 // `list-claude-agents` and `open-claude-agent` machine RPCs answer them.
@@ -59,6 +63,60 @@ sealed interface ReviveClaudeAgentResult {
     data class Success(val revived: Boolean) : ReviveClaudeAgentResult
 
     data class Error(val message: String) : ReviveClaudeAgentResult
+}
+
+/**
+ * What a Mac background session runs under itself (`claude-agent-tasks`): its
+ * sub-agents and workflows as [RemoteTask]s, running first, and how many typed
+ * messages wait for its current step (often a long command) to end.
+ */
+data class MacSessionTasks(val tasks: List<RemoteTask>, val queuedInputs: Int)
+
+/** What `claude-agent-tasks` came to; [Unsupported] from a daemon that predates it. */
+sealed interface ClaudeAgentTasksResult {
+    data class Success(val value: MacSessionTasks) : ClaudeAgentTasksResult
+
+    data object Unsupported : ClaudeAgentTasksResult
+
+    data class Error(val message: String) : ClaudeAgentTasksResult
+}
+
+/**
+ * The daemon's task list as the app's [RemoteTask]s; entries it cannot read are
+ * skipped. A running workflow's phase and agent count, and a sub-agent's model,
+ * stand where a Happy task shows its last tool.
+ */
+internal fun parseClaudeAgentTasks(answer: JsonObject): MacSessionTasks {
+    val tasks = (answer["tasks"] as? JsonArray).orEmpty().mapNotNull { element ->
+        val o = element as? JsonObject ?: return@mapNotNull null
+        val id = o.string("id") ?: return@mapNotNull null
+        val label = o.string("label") ?: return@mapNotNull null
+        val startedAt = (o["startedAt"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+        val workflow = o.string("kind") == "workflow"
+        val agentCount = (o["agentCount"] as? JsonPrimitive)?.longOrNull
+        RemoteTask(
+            id = id,
+            kind = if (workflow) RemoteTaskKind.Workflow else RemoteTaskKind.Agent,
+            title = label,
+            status = when (o.string("status")) {
+                "running" -> RemoteTaskStatus.Running
+                "done" -> RemoteTaskStatus.Completed
+                "failed" -> RemoteTaskStatus.Failed
+                else -> RemoteTaskStatus.Stopped
+            },
+            startedAt = startedAt,
+            endedAt = (o["endedAt"] as? JsonPrimitive)?.longOrNull,
+            agentType = if (workflow) null else o.string("detail"),
+            summary = if (workflow) o.string("detail")?.takeIf { it.isNotBlank() } else null,
+            lastTool = listOfNotNull(
+                o.string("phase"),
+                agentCount?.takeIf { workflow }?.let { "$it agents" },
+                o.string("model"),
+            ).joinToString(" · ").takeIf { it.isNotEmpty() },
+        )
+    }
+    val queued = (answer["queuedInputs"] as? JsonPrimitive)?.longOrNull ?: 0
+    return MacSessionTasks(tasks, queued.toInt().coerceAtLeast(0))
 }
 
 /** The `unavailable` reason this app gives a machine whose daemon has no `list-claude-agents`. */

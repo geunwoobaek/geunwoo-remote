@@ -339,6 +339,25 @@ class MachineOps internal constructor(
     }
 
     /**
+     * The sub-agents and workflows a Mac background session started, and the
+     * messages still waiting for it to read them. [ClaudeAgentTasksResult.Unsupported]
+     * from a daemon too old to know the call.
+     */
+    suspend fun claudeAgentTasks(machineId: String, id: String): ClaudeAgentTasksResult = try {
+        val answer = rpc.machineRpc(machineId, "claude-agent-tasks", buildJsonObject { put("id", id) }) as? JsonObject
+        when (answer?.string("type")) {
+            "success" -> ClaudeAgentTasksResult.Success(parseClaudeAgentTasks(answer))
+            "error" -> ClaudeAgentTasksResult.Error(answer.string("errorMessage")?.takeIf { it.isNotEmpty() } ?: "Failed to read the Mac session's tasks")
+            else -> ClaudeAgentTasksResult.Error(SpawnSessionResult.UNREADABLE)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        if (e.message == RPC_METHOD_NOT_AVAILABLE) ClaudeAgentTasksResult.Unsupported
+        else ClaudeAgentTasksResult.Error(e.message ?: "Failed to read the Mac session's tasks")
+    }
+
+    /**
      * Starts a new Claude chat as a Mac background session (`claude --bg` in
      * the folder) and opens its mirror. A failed call is a `call-failed`; on
      * success the session list is refreshed first, as [openClaudeAgent] does.

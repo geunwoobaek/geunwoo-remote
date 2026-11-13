@@ -271,12 +271,18 @@ fun rememberSessionScreenSlots(
     val indicators = metadata.rigActivityIndicators()
     val remoteTasks = metadata.remoteTasks()
     var showingTasks by remember { mutableStateOf(false) }
+    // A Mac background session's sub-agents and workflows, and the messages waiting for it, asked of its Mac.
+    val macTasks = rememberMacSessionTasks(graph, metadata?.machineId, metadata?.claudeAgentId)
+    var showingMacTasks by remember { mutableStateOf(false) }
+    val macBar = macSessionTasksBar(macTasks, System.currentTimeMillis(), onOpen = { showingMacTasks = true })
     val activityBar: (@Composable () -> Unit)? = when {
         remoteTasks.isNotEmpty() -> ({ RemoteTaskBar(remoteTasks, onOpen = { showingTasks = true }) })
+        macBar != null -> macBar
         indicators.isNotEmpty() -> ({ RigActivityBar(indicators) })
         else -> null
     }
     if (showingTasks) RemoteTaskSheet(remoteTasks) { showingTasks = false }
+    if (showingMacTasks) RemoteTaskSheet(recentMacTasks(macTasks?.tasks.orEmpty(), System.currentTimeMillis())) { showingMacTasks = false }
 
     val pendingSlot = pending?.takeIf { session == null }?.let { chat ->
         val anchor by produceState<ChatSessionInfo?>(null, chat.anchorSessionId) {
