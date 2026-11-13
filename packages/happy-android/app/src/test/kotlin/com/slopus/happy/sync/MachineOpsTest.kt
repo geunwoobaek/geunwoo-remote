@@ -446,6 +446,31 @@ class MachineOpsTest {
     }
 
     @Test
+    fun reviveClaudeAgentReadsTheDaemonsAnswer() = runBlocking {
+        h.startAndSync()
+        val answers = ArrayDeque(listOf(
+            buildJsonObject { put("type", "success"); put("revived", true) },
+            buildJsonObject { put("type", "success"); put("revived", false) },
+            buildJsonObject { put("type", "error"); put("code", "not-found"); put("errorMessage", "The Mac background session demo-agent was removed.") },
+            buildJsonObject { put("type", "error") },
+            JsonPrimitive("garbage"),
+        ))
+        val calls = respond("revive-claude-agent") { answers.removeFirst() }
+        assertEquals(ReviveClaudeAgentResult.Success(revived = true), ops.reviveClaudeAgent("m1", "demo-agent"))
+        assertEquals(buildJsonObject { put("id", "demo-agent") }, calls.first())
+        assertEquals(ReviveClaudeAgentResult.Success(revived = false), ops.reviveClaudeAgent("m1", "demo-agent"))
+        assertEquals(ReviveClaudeAgentResult.Error("The Mac background session demo-agent was removed."), ops.reviveClaudeAgent("m1", "demo-agent"))
+        assertEquals(ReviveClaudeAgentResult.Error("Failed to restart the Mac session"), ops.reviveClaudeAgent("m1", "demo-agent"))
+        assertEquals(ReviveClaudeAgentResult.Error(SpawnSessionResult.UNREADABLE), ops.reviveClaudeAgent("m1", "demo-agent"))
+    }
+
+    @Test
+    fun reviveClaudeAgentOnAnOldDaemonSaysToUpdateTheMac() = runBlocking {
+        h.startAndSync()
+        assertEquals(ReviveClaudeAgentResult.Error(REVIVE_UNSUPPORTED), ops.reviveClaudeAgent("m1", "demo-agent"))
+    }
+
+    @Test
     fun theHomeModelListsOnlineMachinesOnlyAndIgnoresARepeatTapOnARowBeingOpened() = runBlocking {
         h.startAndSync()
         respond("list-claude-agents") { buildJsonObject { putJsonArray("agents") { } } }

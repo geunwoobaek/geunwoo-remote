@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
@@ -315,6 +316,26 @@ class MachineOps internal constructor(
         throw e
     } catch (e: Exception) {
         OpenClaudeAgentResult.Error(e.message ?: "Failed to open session")
+    }
+
+    /**
+     * Brings back a Mac background session whose process has exited
+     * (`claude respawn` on the Mac), so its mirror can be opened again and a
+     * message can reach it. A daemon too old to know the call fails it.
+     */
+    suspend fun reviveClaudeAgent(machineId: String, id: String): ReviveClaudeAgentResult = try {
+        val answer = rpc.machineRpc(machineId, "revive-claude-agent", buildJsonObject { put("id", id) }) as? JsonObject
+        when (answer?.string("type")) {
+            "success" -> ReviveClaudeAgentResult.Success((answer["revived"] as? JsonPrimitive)?.booleanOrNull == true)
+            "error" -> ReviveClaudeAgentResult.Error(answer.string("errorMessage")?.takeIf { it.isNotEmpty() } ?: "Failed to restart the Mac session")
+            else -> ReviveClaudeAgentResult.Error(SpawnSessionResult.UNREADABLE)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        ReviveClaudeAgentResult.Error(
+            if (e.message == RPC_METHOD_NOT_AVAILABLE) REVIVE_UNSUPPORTED else e.message ?: "Failed to restart the Mac session",
+        )
     }
 
     /**

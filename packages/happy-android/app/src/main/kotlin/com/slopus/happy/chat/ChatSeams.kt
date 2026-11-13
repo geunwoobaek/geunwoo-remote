@@ -8,8 +8,10 @@ import com.slopus.happy.sync.AccountSync
 import com.slopus.happy.sync.AgentModeField
 import com.slopus.happy.sync.MessageSender
 import com.slopus.happy.sync.MessageSync
+import com.slopus.happy.sync.OpenClaudeAgentResult
 import com.slopus.happy.sync.PermissionDecision as SyncPermissionDecision
 import com.slopus.happy.sync.Presence
+import com.slopus.happy.sync.ReviveClaudeAgentResult
 import com.slopus.happy.sync.SendException
 import com.slopus.happy.sync.SendOptions
 import com.slopus.happy.sync.SendResult
@@ -17,9 +19,11 @@ import com.slopus.happy.sync.SessionComposer
 import com.slopus.happy.sync.SessionOps
 import com.slopus.happy.sync.SpawnSessionResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -128,6 +132,14 @@ interface ChatActions {
     /** A Mac background session's mode, model or effort, switched on the Mac now; throws when the mirror refuses. */
     suspend fun setMacSessionSetting(sessionId: String, field: AgentModeField, key: String) = Unit
 
+    /**
+     * A Mac background session whose mirror is gone (its Claude Code process
+     * finished or was stopped): restarts the session on the Mac if needed,
+     * opens its mirror again and answers the session to send to once the
+     * mirror listens. Throws when it cannot.
+     */
+    suspend fun wakeMacSession(sessionId: String, machineId: String, agentId: String): String = sessionId
+
     /** The composer's text changed (a Happy Agent draft syncs to the session). */
     suspend fun setDraft(sessionId: String, text: String) = Unit
 
@@ -206,6 +218,9 @@ object UnavailableChatActions : ChatActions {
  * [SessionComposer], the rest as [SessionOps] RPCs. Read at call time so a
  * new sign-in is picked up.
  */
+/** How long a woken Mac session's mirror may take to come online before the send gives up. */
+const val MAC_WAKE_ONLINE_WAIT_MS = 30_000L
+
 class SyncChatActions(private val account: () -> AccountSync?) : ChatActions {
     private fun account(): AccountSync = account.invoke() ?: throw SendException("Not signed in")
     private fun ops(): SessionOps = account().sessionOps
@@ -226,6 +241,20 @@ class SyncChatActions(private val account: () -> AccountSync?) : ChatActions {
 
     override suspend fun setMacSessionSetting(sessionId: String, field: AgentModeField, key: String) =
         ops().setClaudeAgentSettings(sessionId, field, key)
+
+    override suspend fun wakeMacSession(sessionId: String, machineId: String, agentId: String): String {
+        val account = account()
+        val revived = account.machineOps.reviveClaudeAgent(machineId, agentId)
+        if (revived is ReviveClaudeAgentResult.Error) throw SendException(revived.message)
+        val target = when (val opened = account.machineOps.openClaudeAgent(machineId, agentId)) {
+            is OpenClaudeAgentResult.Success -> opened.sessionId
+            is OpenClaudeAgentResult.Error -> throw SendException(opened.message)
+        }
+        // A mirror drops what was sent before it listened; its first keep-alive comes after its handlers.
+        withTimeoutOrNull(MAC_WAKE_ONLINE_WAIT_MS) { account.presence.sessions.first { it[target]?.active == true } }
+            ?: throw SendException("The Mac session did not come back in time. Try again.")
+        return target
+    }
 
     override suspend fun setDraft(sessionId: String, text: String) {
         account.invoke()?.composer?.setText(sessionId, text)

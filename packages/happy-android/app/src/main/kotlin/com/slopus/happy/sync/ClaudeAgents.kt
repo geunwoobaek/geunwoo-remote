@@ -48,6 +48,19 @@ sealed interface OpenClaudeAgentResult {
     data class Error(val message: String) : OpenClaudeAgentResult
 }
 
+/** The server's answer for a machine RPC the daemon does not register. */
+internal const val RPC_METHOD_NOT_AVAILABLE = "RPC method not available"
+
+/** Shown when the Mac's daemon predates `revive-claude-agent`. */
+const val REVIVE_UNSUPPORTED = "This Mac session has ended, and the Mac's happy is too old to restart it. Update it on the Mac."
+
+/** What `revive-claude-agent` came to; [Success.revived] is false when the session was running anyway. */
+sealed interface ReviveClaudeAgentResult {
+    data class Success(val revived: Boolean) : ReviveClaudeAgentResult
+
+    data class Error(val message: String) : ReviveClaudeAgentResult
+}
+
 /** The `unavailable` reason this app gives a machine whose daemon has no `list-claude-agents`. */
 const val CLAUDE_AGENTS_UNSUPPORTED = "unsupported"
 

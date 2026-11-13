@@ -265,11 +265,22 @@ private fun ChatRoute(
                 sending = true
                 scope.launch {
                     try {
-                        val plan = prepareComposerAttachments(graph, sessionId, latestState.session?.metadata, text, latestImages)
+                        // A Mac background session that has ended is woken on the Mac first; the
+                        // message (and a photo, written to the Mac through the mirror) goes once it listens.
+                        val metadata = latestState.session?.metadata
+                        val machineId = metadata?.machineId
+                        val agentId = metadata?.claudeAgentId
+                        val target = if (latestState.sessionState == SessionState.Disconnected && machineId != null && !agentId.isNullOrBlank()) {
+                            actions.wakeMacSession(sessionId, machineId, agentId)
+                        } else {
+                            sessionId
+                        }
+                        val plan = prepareComposerAttachments(graph, target, metadata, text, latestImages)
                         plan.notices.forEach { notices += attachmentNoticeAlert(it, resources) }
                         val message = plan.text ?: text
                         if (!plan.send || (message.isBlank() && plan.records.isEmpty())) return@launch
-                        actions.send(sessionId, message, attachments = plan.records, awaitDelivery = questions.isNotEmpty())
+                        actions.send(target, message, attachments = plan.records, awaitDelivery = questions.isNotEmpty())
+                        if (target != sessionId) onOpenSession(sessionId, target)
                         picked.forEach { latestImages?.remove(it.id) }
                         // The composer empties once the text is accepted, unless it was edited meanwhile.
                         if (draft.text == text) draft.set("")
