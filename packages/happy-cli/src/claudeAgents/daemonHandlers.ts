@@ -17,6 +17,8 @@ import { agentNameFrom, buildBgArgs, isUntrustedOutput, parseBackgroundedId } fr
 import type {
     ClaudeAgent,
     ClaudeAgentsListing,
+    ClaudeAgentTasks,
+    ClaudeAgentTasksResult,
     DiscardClaudeAgentResult,
     EnsureDirectoryResult,
     ReviveClaudeAgentResult,
@@ -37,6 +39,7 @@ export type ClaudeAgentHandlers = {
     start(request: StartClaudeAgentRequest): Promise<StartClaudeAgentResult>;
     discard(agentId: string): Promise<DiscardClaudeAgentResult>;
     revive(agentId: string): Promise<ReviveClaudeAgentResult>;
+    tasks(agentId: string): Promise<ClaudeAgentTasksResult>;
 };
 
 /** How long a started agent may take to show up in `claude agents --json`. */
@@ -62,6 +65,8 @@ export const TOOLS_REUSE_MS = 60_000;
  * revive and the open after it are two calls, so each stays inside the app's RPC timeout.
  */
 export const REVIVE_READY_TIMEOUT_MS = 20_000;
+/** The phone asks for a session's tasks every few seconds while it shows them; one listing serves that long. */
+export const TASKS_LISTING_REUSE_MS = 5_000;
 
 export type PersistedMirror = {
     happySessionId: string;
@@ -110,6 +115,8 @@ export type ClaudeAgentHandlerDeps = {
     removeAgent(claudePath: string, id: string): Promise<void>;
     /** `claude respawn <id>`. */
     respawnAgent(claudePath: string, id: string): Promise<void>;
+    /** The sub-agents and workflows the agent's session started, and its unread messages (Claude Code's files). */
+    readTasks(agent: ClaudeAgent): ClaudeAgentTasks;
     /** True when `path` is an existing directory. */
     directoryExists(path: string): boolean;
     /** Uses `directory` when it exists, otherwise creates it once `approved` (the `spawn-happy-session` rules). */
@@ -603,5 +610,34 @@ export function createClaudeAgentHandlers(deps: ClaudeAgentHandlerDeps): ClaudeA
         }
     }
 
-    return { list, open, start, discard, revive };
+    // The phone's list of what a session runs under itself. A session no longer listed as running
+    // is looked up among the ended ones: its finished work is still worth showing.
+    async function tasks(agentId: string): Promise<ClaudeAgentTasksResult> {
+        const checked = await checkTools();
+        if (checked.type !== 'ok') {
+            return {
+                type: 'error',
+                code: checked.type,
+                errorMessage: checked.type === 'claude-missing'
+                    ? 'claude was not found in the login shell. Install Claude Code first.'
+                    : 'tmux is required to mirror a background session.',
+            };
+        }
+        const { claudePath } = checked;
+        try {
+            const running = listed !== null && listed.claudePath === claudePath && now() - listed.at <= TASKS_LISTING_REUSE_MS
+                ? listed.agents
+                : await fetchShared(claudePath);
+            const agent = running.find((candidate) => candidate.id === agentId)
+                ?? (await deps.fetchAgents(claudePath, { all: true })).find((candidate) => candidate.id === agentId);
+            if (agent === undefined) {
+                return { type: 'error', code: 'not-found', errorMessage: `The Mac background session ${agentId} was removed.` };
+            }
+            return { type: 'success', ...deps.readTasks(agent) };
+        } catch (error) {
+            return { type: 'error', code: 'read-failed', errorMessage: `Could not read the session's tasks: ${describeError(error)}` };
+        }
+    }
+
+    return { list, open, start, discard, revive, tasks };
 }

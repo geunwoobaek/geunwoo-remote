@@ -51,6 +51,8 @@ import { claudeBgEnvironment } from '@/claudeAgents/startAgent';
 import type { EnsureDirectoryResult } from '@/claudeAgents/types';
 import { isTmuxInstalled } from '@/claudeAgents/attachTerminal';
 import { readLastLine } from '@/claudeAgents/transcript';
+import { createAgentTasksCache, readAgentTasks } from '@/claudeAgents/subtasks';
+import { findSessionProjectDir } from '@/claude/utils/path';
 import { bundleReadyForHandoff } from './bundleHandoff';
 import {
   MIRROR_RESUME_REFUSAL,
@@ -1004,6 +1006,8 @@ export async function startDaemon(): Promise<void> {
       });
     };
 
+    const agentTasksCache = createAgentTasksCache();
+    const claudeHome = process.env.CLAUDE_CONFIG_DIR || join(os.homedir(), '.claude');
     const claudeAgents = createClaudeAgentHandlers({
       resolveClaude: resolveClaudeBinary,
       tmuxInstalled: isTmuxInstalled,
@@ -1035,6 +1039,13 @@ export async function startDaemon(): Promise<void> {
         removeClaudeAgent(claudePath, id, claudeBgEnvironment(buildSessionChildEnvironment(ambientEnvironment))),
       respawnAgent: (claudePath, id) =>
         respawnClaudeAgent(claudePath, id, claudeBgEnvironment(buildSessionChildEnvironment(ambientEnvironment))),
+      readTasks: (agent) => readAgentTasks({
+        projectDir: findSessionProjectDir(agent.cwd, agent.sessionId),
+        sessionId: agent.sessionId,
+        jobStatePath: join(claudeHome, 'jobs', agent.id, 'state.json'),
+        parentAlive: agent.pid > 0,
+        parentStartedAt: agent.startedAt,
+      }, agentTasksCache),
       directoryExists: (path) => {
         try {
           return statSync(path).isDirectory();

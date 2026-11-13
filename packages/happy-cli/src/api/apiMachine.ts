@@ -209,6 +209,8 @@ export class ApiMachineClient {
                 claudeAgents.discard(requireNonEmptyString(params?.id, 'id')));
             this.rpcHandlerManager.registerHandler('revive-claude-agent', (params: any) =>
                 claudeAgents.revive(requireNonEmptyString(params?.id, 'id')));
+            this.rpcHandlerManager.registerHandler('claude-agent-tasks', (params: any) =>
+                claudeAgents.tasks(requireNonEmptyString(params?.id, 'id')));
         }
 
         // Register spawn session handler

@@ -57,6 +57,7 @@ function makeDeps(overrides: Partial<ClaudeAgentHandlerDeps> = {}): { deps: Clau
         stopAgent: async () => { throw new Error('stopAgent not expected'); },
         removeAgent: async () => { throw new Error('removeAgent not expected'); },
         respawnAgent: async () => { throw new Error('respawnAgent not expected'); },
+        readTasks: () => ({ tasks: [], runningCount: 0, totalCount: 0, queuedInputs: 0 }),
         directoryExists: () => true,
         ensureDirectory: async () => ({ type: 'ok', created: false }),
         sleep: async () => undefined,
@@ -692,5 +693,58 @@ describe('revive-claude-agent', () => {
         const [a, b] = await Promise.all([handlers.revive('abc12345'), handlers.revive('abc12345')]);
         expect(a).toEqual(b);
         expect(respawned).toEqual(['abc12345']);
+    });
+});
+
+describe('claude-agent-tasks', () => {
+    const someTasks = { tasks: [], runningCount: 0, totalCount: 0, queuedInputs: 2 };
+
+    it('reads the tasks of a running agent', async () => {
+        const read: ClaudeAgent[] = [];
+        const { deps } = makeDeps({ readTasks: (found) => { read.push(found); return someTasks; } });
+        expect(await createClaudeAgentHandlers(deps).tasks('abc12345')).toEqual({ type: 'success', ...someTasks });
+        expect(read.map((found) => found.id)).toEqual(['abc12345']);
+    });
+
+    it('looks an ended agent up among every session', async () => {
+        const read: ClaudeAgent[] = [];
+        const { deps } = makeDeps({
+            fetchAgents: async (_path, opts) => (opts?.all ? [agent('dead0001', { pid: 0 })] : [agent('abc12345')]),
+            readTasks: (found) => { read.push(found); return someTasks; },
+        });
+        expect(await createClaudeAgentHandlers(deps).tasks('dead0001')).toMatchObject({ type: 'success', queuedInputs: 2 });
+        expect(read[0]).toMatchObject({ id: 'dead0001', pid: 0 });
+    });
+
+    it('reuses a listing from a moment ago', async () => {
+        let listings = 0;
+        let clock = 1_000;
+        const { deps } = makeDeps({
+            fetchAgents: async () => { listings += 1; return [agent('abc12345')]; },
+            now: () => clock,
+        });
+        const handlers = createClaudeAgentHandlers(deps);
+        await handlers.tasks('abc12345');
+        clock += 3_000;
+        await handlers.tasks('abc12345');
+        expect(listings).toBe(1);
+        clock += 6_000;
+        await handlers.tasks('abc12345');
+        expect(listings).toBe(2);
+    });
+
+    it('reports a removed agent as not-found', async () => {
+        const { deps } = makeDeps({ fetchAgents: async () => [] });
+        expect(await createClaudeAgentHandlers(deps).tasks('abc12345')).toMatchObject({ type: 'error', code: 'not-found' });
+    });
+
+    it('reports a failed read', async () => {
+        const { deps } = makeDeps({ readTasks: () => { throw new Error('disk gone'); } });
+        expect(await createClaudeAgentHandlers(deps).tasks('abc12345')).toMatchObject({ type: 'error', code: 'read-failed' });
+    });
+
+    it('reports a missing claude', async () => {
+        const { deps } = makeDeps({ resolveClaude: async () => null });
+        expect(await createClaudeAgentHandlers(deps).tasks('abc12345')).toMatchObject({ type: 'error', code: 'claude-missing' });
     });
 });
