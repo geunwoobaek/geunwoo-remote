@@ -23,8 +23,11 @@
  *   terminal sets it aside with Claude Code's stash (Ctrl+S), sends the phone text, and Claude Code
  *   puts the draft back by itself once that text is submitted ("Draft restored"). A draft that came
  *   back counts as "our text went", so Enter is never pressed over the user's draft. If the phone
- *   text has to be deleted again, the draft is brought back with a second Ctrl+S. Accepted gap: a
- *   stash the user had already made is replaced by the new one (Claude Code keeps one).
+ *   text has to be deleted again, the draft is brought back with a second Ctrl+S. Only a draft that
+ *   held still for [draftSettleMs] is set aside, so a line the Mac user is typing right now is left
+ *   alone. A draft that is the phone text itself (an earlier copy whose Enter was lost) is not set
+ *   aside but submitted, and only an empty box counts as sent then. Accepted gap: a stash the user
+ *   had already made is replaced by the new one (Claude Code keeps one).
  * - A session survey (`1: Bad 2: Fine 3: Good 0: Dismiss`) sits right above the input box and
  *   would take a leading digit as its answer, so it is dismissed with `0` first. If it will not
  *   go away, nothing is typed.
@@ -80,7 +83,7 @@ export type InputDeliveryDeps = {
     pollIntervalMs?: number;
     /** How long one Enter has to empty the input box before it is pressed again. Default 1500. */
     submitWaitMs?: number;
-    /** How long text must sit in the box before it counts as a draft to set aside. Default 800. */
+    /** How long the same text must sit in the box before it counts as a draft to set aside. Default 800. */
     draftSettleMs?: number;
 };
 
@@ -89,6 +92,9 @@ const DEFAULT_CLOSE_DELAY_MS = 400;
 const DEFAULT_POLL_INTERVAL_MS = 200;
 const DEFAULT_SUBMIT_WAIT_MS = 1_500;
 const DEFAULT_DRAFT_SETTLE_MS = 800;
+
+/** What the hidden terminal found in the input box before typing. */
+type InputBox = { kind: 'empty' } | { kind: 'blocked' } | { kind: 'draft'; text: string };
 /** Extra Enters after the first one before the send is given up. */
 const ENTER_RETRIES = 2;
 /** Backspaces sent per key batch when deleting a text that would not submit. */
@@ -170,49 +176,49 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
     }
 
     /**
-     * Waits for an empty input box, dismissing the survey once if it shows. `'draft'` once text has
-     * sat in the box for [draftSettleMs] (a box that is just being submitted empties sooner);
-     * `'blocked'` when no usable box showed up within [waitInputMs] (a dialog stays open).
+     * Waits for an empty input box, dismissing the survey once if it shows. A draft once the same
+     * text has sat in the box for [draftSettleMs] (a box that is being submitted empties sooner, a
+     * line being typed keeps changing); blocked when no usable box showed up within [waitInputMs].
      */
-    async function waitForInputBox(terminal: AttachTerminal): Promise<'empty' | 'draft' | 'blocked'> {
+    async function waitForInputBox(terminal: AttachTerminal): Promise<InputBox> {
         const started = Date.now();
         let dismissed = false;
+        let held: { text: string; since: number } | null = null;
         for (;;) {
             const screen = await terminal.screen();
             const empty = isInputBoxEmpty(screen);
             const survey = hasSessionSurvey(screen);
             if (empty && !survey) {
-                return 'empty';
+                return { kind: 'empty' };
             }
             if (empty && survey && !dismissed) {
                 // Only with an empty box: a digit would otherwise land in the user's draft.
                 dismissed = true;
                 await terminal.press([{ digit: 0 }]);
             }
-            if (!survey && inputBoxHasText(screen) && Date.now() - started >= draftSettleMs) {
-                return 'draft';
+            const now = Date.now();
+            const text = survey ? '' : (inputBoxText(screen) ?? '');
+            held = text === '' ? null : held !== null && held.text === text ? held : { text, since: now };
+            if (held !== null && now - held.since >= draftSettleMs) {
+                return { kind: 'draft', text: held.text };
             }
-            if (Date.now() - started >= waitInputMs) {
-                return 'blocked';
+            if (now - started >= waitInputMs) {
+                return { kind: 'blocked' };
             }
             await sleep(pollIntervalMs);
         }
     }
 
-    /**
-     * Sets the draft in the box aside with the stash key. Resolves the draft as [inputBoxText] gives
-     * it, or null when the box did not empty within [submitWaitMs] (nothing is typed then).
-     */
-    async function setDraftAside(terminal: AttachTerminal): Promise<string | null> {
-        const draft = inputBoxText(await terminal.screen());
+    /** Sets the draft in the box aside with the stash key. False when the box did not empty within [submitWaitMs]. */
+    async function setDraftAside(terminal: AttachTerminal): Promise<boolean> {
         await terminal.press(['stash']);
         const deadline = Date.now() + submitWaitMs;
         for (;;) {
             if (isInputBoxEmpty(await terminal.screen())) {
-                return draft;
+                return true;
             }
             if (Date.now() >= deadline) {
-                return null;
+                return false;
             }
             await sleep(pollIntervalMs);
         }
@@ -363,32 +369,37 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
         const terminal = await deps.openTerminal();
         try {
             const box = await waitForInputBox(terminal);
-            if (box === 'blocked') {
+            if (box.kind === 'blocked') {
                 return 'busy-input';
             }
-            const draft = box === 'draft' ? await setDraftAside(terminal) : null;
-            if (box === 'draft' && draft === null) {
+            // The phone text already waits in the box (an earlier copy whose Enter was lost): submit
+            // that copy instead of setting it aside, or the restored copy would pass for "sent".
+            const resubmit = box.kind === 'draft' && box.text === text.replace(/\s+/g, '');
+            const draft = box.kind === 'draft' && !resubmit ? box.text : null;
+            if (draft !== null && !(await setDraftAside(terminal))) {
                 return 'busy-input';
             }
             deps.echo.remember(text);
             try {
-                if (text.includes('\n')) {
-                    await terminal.pasteText(text);
-                } else {
-                    await terminal.typeText(text);
-                }
-                const shown = await waitForTypedText(terminal);
-                if (shown !== 'text') {
-                    // The keys were lost (or a dialog took over): nothing to submit. Keys are taken in
-                    // order, so backspaces also remove a text that only shows up later.
-                    if (shown === 'empty') {
-                        await clearUnsent(terminal, text);
-                        if (draft !== null) {
-                            await bringDraftBack(terminal);
-                        }
+                if (!resubmit) {
+                    if (text.includes('\n')) {
+                        await terminal.pasteText(text);
+                    } else {
+                        await terminal.typeText(text);
                     }
-                    deps.echo.forget(text);
-                    return 'failed';
+                    const shown = await waitForTypedText(terminal);
+                    if (shown !== 'text') {
+                        // The keys were lost (or a dialog took over): nothing to submit. Keys are taken in
+                        // order, so backspaces also remove a text that only shows up later.
+                        if (shown === 'empty') {
+                            await clearUnsent(terminal, text);
+                            if (draft !== null) {
+                                await bringDraftBack(terminal);
+                            }
+                        }
+                        deps.echo.forget(text);
+                        return 'failed';
+                    }
                 }
                 await terminal.press(['enter']);
             } catch (error) {

@@ -513,6 +513,15 @@ describe('isInputBoxEmpty', () => {
         expect(inputBoxHasText(typed)).toBe(true);
         expect(inputBoxText(typed)).toBe('keepgoing');
     });
+
+    it('reads a draft restored by Claude Code exactly as it read the draft before the stash', () => {
+        // The restored screen also shows the `Draft restored` toast; the box text must still compare equal.
+        const before = screen('input-draft-attach');
+        const restored = screen('input-draft-restored-attach');
+        expect(inputBoxHasText(before)).toBe(true);
+        expect(inputBoxText(before)).toBe('halfwrittenmaclineaboutthereleasenotes');
+        expect(inputBoxText(restored)).toBe(inputBoxText(before));
+    });
 });
 
 /** The same screen as a `capture-pane -e` capture would give it: colour escapes around every line. */

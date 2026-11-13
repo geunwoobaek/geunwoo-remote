@@ -12,6 +12,12 @@ which come from the manual exploration run that preceded the script (same Claude
 setup, scrubbed the same way). That run is where a session survey and a dim prompt suggestion
 showed up on their own; the script cannot provoke them.
 
+The two `input-draft-*-attach` files are `capture-pane -e` captures of `claude attach` to a throwaway
+background session (Claude Code 2.1.322, Haiku, `claude --bg`) driven by the real `createInputDelivery`.
+Rows above the first prompt held hook output from other sessions and were blanked (rows kept); the
+session name became `demo-agent` (its rule padded back to full width) and the usage numbers were
+replaced.
+
 `input-empty-bg-agents` is a `capture-pane -e` capture of a plain interactive session (Claude Code
 2.1.322, Haiku, the same non-safe-mode setup as the `*-live` files) that had started three background
 subagents; the session name was replaced by `demo-agent-background-1`.
@@ -29,6 +35,8 @@ rows).
 | `input-suggestion-and-survey` | idle with a session survey (`1: Bad 2: Fine …`) and a dim suggestion in the input box; plain capture, so the suggestion looks like typed text |
 | `input-suggestion-ansi` | the same screen captured with `capture-pane -e` (the suggestion is drawn with SGR 2) |
 | `input-empty-live` | idle, empty input box, non-safe-mode session with a two-line status line |
+| `input-draft-attach` | `claude attach` to a background session, a Mac draft typed into the box; `capture-pane -e` |
+| `input-draft-restored-attach` | the same session after a stash (Ctrl+S), a sent phone text and Claude Code's `Draft restored` |
 | `input-empty-bg-agents` | idle with three background agents running: the agent list (`⏺ main`, `◯ local_agent …`) sits under the status lines; `capture-pane -e`, the box holds only a dim suggestion |
 | `permission-bash-live` | Bash permission in the same non-safe-mode session |
 | `permission-write` | Write permission for a new file (`1. Yes / 2. Yes, and … / 3. No`) |

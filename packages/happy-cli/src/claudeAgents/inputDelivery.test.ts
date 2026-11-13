@@ -14,8 +14,11 @@ const TYPED = fixture('input-typed');
 const SURVEY_ANSI = fixture('input-suggestion-ansi');
 /** Plain capture of the same screen: the suggestion cannot be told from typed text. */
 const SURVEY_PLAIN = fixture('input-suggestion-and-survey');
-/** The Mac user's half-written line: a box with other text than [TYPED]. */
-const DRAFT = TYPED.replace('Use the Write tool to create the new file', 'Half written Mac line about the release');
+/** Real `claude attach` captures: the Mac user's half-written line, and the same line after Claude Code restored it. */
+const DRAFT = fixture('input-draft-attach');
+const RESTORED = fixture('input-draft-restored-attach');
+/** The input box holding exactly `text`. */
+const holding = (text: string): string => DRAFT.replace('half written mac line about the release notes', text);
 
 type Call = string;
 
@@ -296,7 +299,7 @@ describe('createInputDelivery', () => {
         const { log, openTerminal } = createHarness((calls) => {
             const current = sinceOpen(calls);
             if (current.some((line) => line.endsWith(':enter'))) {
-                return DRAFT;
+                return RESTORED;
             }
             if (current.some((line) => line.startsWith('type'))) {
                 return TYPED;
@@ -336,6 +339,34 @@ describe('createInputDelivery', () => {
         expect(presses.at(-1)).toBe('press#1:stash');
         expect(log.at(-1)).toBe('close#1');
         expect(echo.shouldSkip('hi')).toBe(false);
+    });
+
+    it('submits a leftover copy of the same phone text instead of setting it aside', async () => {
+        // "계속" whose Enter was lost still sits in the box and the phone sends "계속" again: a restored
+        // copy must not pass for sent, so the copy is submitted and only an empty box counts.
+        const enters = (calls: Call[]): number => sinceOpen(calls).filter((line) => line.endsWith(':enter')).length;
+        const { log, openTerminal } = createHarness((calls) => (enters(calls) < 2 ? holding('계속') : EMPTY));
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, echo, draftSettleMs: 10, submitWaitMs: 20, ...fast });
+        expect(await delivery.send('계속')).toBe('sent');
+        expect(log).toEqual(['open#1', 'press#1:enter', 'press#1:enter', 'close#1']);
+        expect(echo.shouldSkip('계속')).toBe(true);
+    });
+
+    it('reports failed when a leftover copy of the phone text never submits', async () => {
+        const { log, openTerminal } = createHarness((calls) => (sinceOpen(calls).some((line) => line.includes('backspace')) ? EMPTY : holding('계속')));
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), draftSettleMs: 10, submitWaitMs: 20, ...fast });
+        expect(await delivery.send('계속')).toBe('failed');
+        expect(log.some((line) => line.endsWith(':stash'))).toBe(false);
+        expect(log.some((line) => line.includes('backspace'))).toBe(true);
+    });
+
+    it('leaves a line the Mac user is still typing alone', async () => {
+        let keys = 0;
+        const { log, openTerminal } = createHarness(() => holding(`still typing ${'x'.repeat(++keys)}`));
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), draftSettleMs: 30, waitInputMs: 80, ...fast });
+        expect(await delivery.send('from phone')).toBe('busy-input');
+        expect(log).toEqual(['open#1', 'close#1']);
     });
 
     it('waits for text that is about to be submitted instead of setting it aside', async () => {

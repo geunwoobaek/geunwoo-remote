@@ -66,7 +66,7 @@ const SHUTDOWN_DRAIN_MS = 12_000;
 const ATTACHMENT_NOTICE_GAP_MS = 2_000;
 
 const NOTICE_TEXT_ONLY = '이 세션은 텍스트만 받습니다';
-const NOTICE_BUSY_INPUT = '맥 화면이 다른 창(권한 질문 등)에 막혀 있어 보내지 못했습니다';
+const NOTICE_BUSY_INPUT = '맥 화면에 권한 질문 등이 떠 있거나 맥에서 입력하는 중이라 보내지 못했습니다';
 const NOTICE_FAILED = '맥에 보내지 못했습니다';
 
 export type MirrorMetadataBase = {
