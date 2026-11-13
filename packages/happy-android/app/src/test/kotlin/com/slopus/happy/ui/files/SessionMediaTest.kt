@@ -41,6 +41,13 @@ class SessionMediaTest {
         assertEquals(emptyList<String>(), SessionMedia.pathsIn("nothing here, and file.pngx isn't one"))
     }
 
+    @Test fun nameTemplatesInCodeAreNotFiles() {
+        // A script names the files it will make by pattern; those aren't files to show.
+        val code = "for s in a b; do shot \"/tmp/x/\$s.png\"; done; open('/tmp/x/%s.png' % s); " +
+            "Path(f\"/tmp/x/{s}.png\"); ls /tmp/x/*.png; cp '/tmp/x/<name>.png' . ; and /tmp/x/real.png"
+        assertEquals(listOf("/tmp/x/real.png"), SessionMedia.pathsIn(code))
+    }
+
     @Test fun kindsGoByExtension() {
         assertEquals(MediaKind.Picture, SessionMedia.kindOf("/a/B.PNG"))
         assertEquals(MediaKind.Video, SessionMedia.kindOf("x.mov"))

@@ -374,7 +374,8 @@ fun FileScreen(
             },
         )
     }
-    val page = HtmlPage(readAsset, assetRoot ?: filePath.substringBeforeLast('/', ""), onMemo)
+    val memo = remember(filePath) { PageMemo() }
+    val page = HtmlPage(readAsset, assetRoot ?: filePath.substringBeforeLast('/', ""), onMemo, memo)
     val shown = if (html) rememberShownPage(loaded!!.content, filePath, page) else null
     val named = remember(html, markdown, shown, loaded?.content, filePath) {
         when {
@@ -393,6 +394,7 @@ fun FileScreen(
         header = {
             StackHeader(heading, onBack) {
                 if (renderable) ModeSwitch(modes, mode) { mode = it }
+                if (html && mode == Mode.Rendered && onMemo != null) PageMemoButton(memo)
                 save?.let { FileSaveButton(it) }
                 actions()
             }
@@ -451,6 +453,7 @@ private class HtmlPage(
     val readAsset: (suspend (String) -> ByteArray?)?,
     val root: String,
     val onMemo: ((quote: String?, note: String) -> Unit)?,
+    val memo: PageMemo,
 )
 
 /** Where 1-based [line] of [text] starts; past its last line, its end. */
@@ -636,7 +639,7 @@ private fun LoadedFile(load: FileLoad.Loaded, filePath: String, line: Int?, colu
                     CircularProgressIndicator(Modifier.size(20.dp), color = colors.textSecondary, strokeWidth = 2.dp)
                 }
             } else {
-                HtmlFilePage(shown, filePath, page.root, page.readAsset, page.onMemo, Modifier.weight(1f).fillMaxWidth().testTag(FileTags.RENDERED))
+                HtmlFilePage(shown, filePath, page.root, page.readAsset, page.onMemo, Modifier.weight(1f).fillMaxWidth().testTag(FileTags.RENDERED), page.memo)
             }
             return@Column
         }

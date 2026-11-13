@@ -11,29 +11,22 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.slopus.happy.R
@@ -42,7 +35,7 @@ import com.slopus.happy.ui.components.Ionicon
 import com.slopus.happy.ui.components.Prompt
 import com.slopus.happy.ui.components.PromptModal
 import com.slopus.happy.ui.components.themedWebView
-import com.slopus.happy.ui.theme.happyTextStyle
+import com.slopus.happy.ui.theme.HappyTheme
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayInputStream
@@ -94,9 +87,11 @@ internal fun htmlAssetType(path: String): String? = assetTypes[path.substringAft
  * asks with HEAD), another host, outside [root] (`..` included), anything
  * under a dot-named folder or file below [root], or a type [htmlAssetType]
  * doesn't serve. The root itself may sit in a dot-named folder (a session
- * in `.claude/worktrees/…`).
+ * in `.claude/worktrees/…`), and so may the [page] asking: the dot-named
+ * folders the page itself is in (a worktree under the repo's `.claude/`)
+ * are its own, at the same place in its path; any other is refused.
  */
-internal fun htmlAssetPath(url: String, root: String, method: String = "GET"): String? {
+internal fun htmlAssetPath(url: String, root: String, method: String = "GET", page: String? = null): String? {
     if (method.uppercase() !in setOf("GET", "HEAD")) return null
     val uri = try {
         URI(url).normalize()
@@ -107,7 +102,10 @@ internal fun htmlAssetPath(url: String, root: String, method: String = "GET"): S
     val path = uri.path?.takeIf { it.startsWith("/") } ?: return null
     val top = root.trimEnd('/')
     if (!path.startsWith("$top/")) return null
-    if (path.removePrefix("$top/").split('/').any { it.startsWith(".") }) return null
+    val below = path.removePrefix("$top/").split('/')
+    val pageFolders = page?.takeIf { it.startsWith("$top/") }?.removePrefix("$top/")?.split('/')?.dropLast(1).orEmpty()
+    val ownDot = { i: Int -> i < pageFolders.size && below.subList(0, i + 1) == pageFolders.subList(0, i + 1) }
+    if (below.indices.any { below[it].startsWith(".") && !ownDot(it) }) return null
     return path.takeIf { htmlAssetType(it) != null }
 }
 
@@ -123,11 +121,40 @@ internal fun memoMessage(resources: Resources, filePath: String, quote: String?,
 }
 
 /**
- * An HTML file shown as a page. Its own files load from the computer
- * through [readAsset] (held to [root] by [htmlAssetPath]); anything else
- * loads from the network, as in a browser; a tapped link off the page
- * opens in one. With [onMemo], a Memo button sends a note about the page,
- * or the words selected on it, for the agent to change the file.
+ * A page's memo: the words selected on it, and the note being written
+ * (the quote it is about, empty for the whole page) while the prompt is up.
+ */
+@Stable
+internal class PageMemo {
+    var selection by mutableStateOf<String?>(null)
+    var writing by mutableStateOf<String?>(null)
+}
+
+/**
+ * The bar's Memo button for a shown page: it starts a note on the selected
+ * words, or on the page when none are. It sits in the bar, not on the page,
+ * so a page's own controls (a game's buttons) are never covered.
+ */
+@Composable
+internal fun PageMemoButton(memo: PageMemo) {
+    val label = stringResource(if (memo.selection != null) R.string.file_memo_on_selection else R.string.file_memo)
+    val colors = HappyTheme.colors
+    IconButton(
+        onClick = { memo.writing = memo.selection.orEmpty() },
+        modifier = Modifier.testTag(HtmlPreviewTags.MEMO).semantics { contentDescription = label },
+    ) {
+        Icon(Ionicon.CreateOutline, 22.dp, if (memo.selection != null) colors.success else colors.text)
+    }
+}
+
+/**
+ * An HTML file shown as a page, edge to edge with nothing laid over it, so
+ * a page that is an app or a game plays as it would in a browser. Its own
+ * files load from the computer through [readAsset] (held to [root] by
+ * [htmlAssetPath]); anything else loads from the network, as in a browser;
+ * a tapped link off the page opens in one. With [onMemo], [memo] (started
+ * by [PageMemoButton]) sends a note about the page, or the words selected
+ * on it, for the agent to change the file.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -138,9 +165,8 @@ internal fun HtmlFilePage(
     readAsset: (suspend (String) -> ByteArray?)?,
     onMemo: ((quote: String?, note: String) -> Unit)?,
     modifier: Modifier = Modifier,
+    memo: PageMemo = remember { PageMemo() },
 ) {
-    var selection by remember(filePath) { mutableStateOf<String?>(null) }
-    var writing by remember { mutableStateOf<String?>(null) }
     val read by rememberUpdatedState(readAsset)
     Box(modifier) {
         AndroidView(
@@ -151,8 +177,8 @@ internal fun HtmlFilePage(
                     settings.allowFileAccess = false
                     settings.allowContentAccess = false
                     overScrollMode = View.OVER_SCROLL_NEVER
-                    addJavascriptInterface(MemoSelection { text -> post { selection = text.takeIf { it.isNotBlank() } } }, MEMO_BRIDGE)
-                    webViewClient = HtmlFileClient(root) { path -> read?.invoke(path) }
+                    addJavascriptInterface(MemoSelection { text -> post { memo.selection = text.takeIf { it.isNotBlank() } } }, MEMO_BRIDGE)
+                    webViewClient = HtmlFileClient(root, filePath) { path -> read?.invoke(path) }
                     loadDataWithBaseURL(htmlBaseUrl(filePath), ReadablePage.forPhone(html), "text/html", "utf-8", null)
                     tag = html
                 }
@@ -169,26 +195,8 @@ internal fun HtmlFilePage(
             },
             modifier = Modifier.fillMaxSize().testTag(HtmlPreviewTags.WEB),
         )
-        if (onMemo != null) {
-            val label = stringResource(if (selection != null) R.string.file_memo_on_selection else R.string.file_memo)
-            Row(
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(16.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xFF1C1C1E))
-                    .clickable(role = Role.Button) { writing = selection.orEmpty() }
-                    .testTag(HtmlPreviewTags.MEMO)
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Ionicon.CreateOutline, 16.dp, Color.White)
-                Text(label, style = happyTextStyle(fontSize = 14, weight = FontWeight.SemiBold), color = Color.White, modifier = Modifier.padding(start = 6.dp))
-            }
-        }
     }
-    writing?.let { quote ->
+    memo.writing?.takeIf { onMemo != null }?.let { quote ->
         PromptModal(
             Prompt(
                 title = stringResource(R.string.file_memo_title),
@@ -198,7 +206,7 @@ internal fun HtmlFilePage(
                 allowBlank = false,
                 onResult = { note -> if (!note.isNullOrBlank()) onMemo?.invoke(quote.ifEmpty { null }, note) },
             ),
-            onDismiss = { writing = null },
+            onDismiss = { memo.writing = null },
         )
     }
 }
@@ -216,10 +224,10 @@ private class MemoSelection(private val onSelected: (String) -> Unit) {
  * [root], refused after 10 seconds), a link tapped to anywhere else opened
  * in the browser, and the selection watched once each document loads.
  */
-private class HtmlFileClient(private val root: String, private val read: suspend (String) -> ByteArray?) : WebViewClient() {
+private class HtmlFileClient(private val root: String, private val page: String, private val read: suspend (String) -> ByteArray?) : WebViewClient() {
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
         if (request.url.host != HTML_ASSET_HOST) return null
-        val path = htmlAssetPath(request.url.toString(), root, request.method) ?: return missing()
+        val path = htmlAssetPath(request.url.toString(), root, request.method, page) ?: return missing()
         val bytes = runCatching { runBlocking { withTimeoutOrNull(10_000) { read(path) } } }.getOrNull() ?: return missing()
         return WebResourceResponse(htmlAssetType(path), null, ByteArrayInputStream(bytes))
     }

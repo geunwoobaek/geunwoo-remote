@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -73,6 +75,24 @@ class HtmlPreviewTest {
         assertNull(from("../../../../../.ssh/x.css"))
     }
 
+    @Test fun aPageInADotFolderBelowTheRootServesItsOwnFolderButNoOtherDotFolder() {
+        // The session started in the repo, then moved into a worktree under its `.claude/`.
+        val repo = "/Users/me/game"
+        val page = "$repo/.claude/worktrees/cb/_proto/p-3d/index.html"
+        fun from(relative: String) =
+            htmlAssetPath(java.net.URI(htmlBaseUrl(page)).resolve(java.net.URI(null, null, relative, null)).toASCIIString(), repo, page = page)
+        assertEquals("$repo/.claude/worktrees/cb/_proto/p-3d/game.js", from("game.js"))
+        assertEquals("$repo/.claude/worktrees/cb/common/kit/kit.js", from("../../common/kit/kit.js"))
+        assertEquals("$repo/.claude/worktrees/cb/index.html", from("../../index.html"))
+        // Dot folders the page doesn't sit in stay refused, in the worktree and beside it.
+        assertNull(from("../../.git/hooks.js"))
+        assertNull(from(".cache/x.js"))
+        assertNull(from("../../../../../.git/x.js"))
+        assertNull(from("../../../../.secrets/x.css"))
+        // Without the page, the old rule holds.
+        assertNull(htmlAssetPath(java.net.URI(htmlBaseUrl(page)).resolve("game.js").toASCIIString(), repo))
+    }
+
     @Test fun aPageMayAskWhetherAFileIsThereButNotSendToTheComputer() {
         // A hub page probes its links with HEAD before showing them as ready.
         val url = java.net.URI(htmlBaseUrl("$root/index.html")).resolve("game/index.html").toASCIIString()
@@ -110,6 +130,26 @@ class HtmlPreviewTest {
         rule.onNodeWithTag(HtmlPreviewTags.MEMO).assertExists()
         // A fragment's first heading names it in the bar.
         rule.onNodeWithText("Hi", useUnmergedTree = true).assertExists()
+    }
+
+    @Test fun theMemoButtonSitsInTheBarSoNothingCoversThePage() {
+        // A page can be a game: its own buttons fill the bottom of the screen.
+        rule.setHappyContent {
+            FileScreen(FileLoad.Loaded("<html><body><button>Run</button></body></html>", null), "$root/game/index.html", onBack = {}, onMemo = { _, _ -> })
+        }
+        val button = rule.onNodeWithTag(HtmlPreviewTags.MEMO).getBoundsInRoot()
+        val page = rule.onNodeWithTag(FileTags.RENDERED).getBoundsInRoot()
+        assertTrue("memo ${button.bottom} must be above the page ${page.top}", button.bottom <= page.top)
+        rule.onNodeWithTag(HtmlPreviewTags.MEMO).performClick()
+        rule.onNodeWithText(resources.getString(com.slopus.happy.R.string.file_memo_title)).assertExists()
+    }
+
+    @Test fun aPageWithNoMemoHasNoMemoButton() {
+        rule.setHappyContent {
+            FileScreen(FileLoad.Loaded("<h1>Hi</h1>", null), "$root/docs/report.html", onBack = {})
+        }
+        rule.onNodeWithTag(FileTags.RENDERED).assertExists()
+        rule.onAllNodesWithTag(HtmlPreviewTags.MEMO).assertCountEquals(0)
     }
 
     private val fragment = "<svg><title>Flow</title></svg>\n<h1>Inbound steps</h1>\n<p>Scan the box.</p>\n"

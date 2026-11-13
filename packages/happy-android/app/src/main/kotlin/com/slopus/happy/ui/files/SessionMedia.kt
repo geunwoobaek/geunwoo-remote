@@ -68,8 +68,11 @@ object SessionMedia {
             val start = m.groups[1]!!.range.first
             if (found.keys.none { it <= start && start < it + found.getValue(it).length }) found[start] = m.groupValues[1]
         }
-        return found.toSortedMap().values.filterNot { "://" in it }.distinct()
+        return found.toSortedMap().values.filterNot { "://" in it || it.any { c -> c in TEMPLATE_MARKS } }.distinct()
     }
+
+    /** A name a script fills in (`$s.png`, `%s.png`, `{s}.png`, `*.png`, `<name>.png`), not a file. */
+    private const val TEMPLATE_MARKS = "\$%{}*<>"
 
     /** Tools whose words name files by pattern or listing, not ones the agent made or looked at. */
     private val listingTools = setOf("Glob", "Grep", "LS", "ls", "glob", "grep")
