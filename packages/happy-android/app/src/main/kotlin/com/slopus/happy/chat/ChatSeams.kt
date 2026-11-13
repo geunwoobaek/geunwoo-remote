@@ -125,6 +125,9 @@ interface ChatActions {
     /** The composer's per-session mode picks, only the fields that changed; a null value resets that pick. */
     suspend fun setModes(sessionId: String, patch: Map<AgentModeField, String?>) = Unit
 
+    /** A Mac background session's mode, model or effort, switched on the Mac now; throws when the mirror refuses. */
+    suspend fun setMacSessionSetting(sessionId: String, field: AgentModeField, key: String) = Unit
+
     /** The composer's text changed (a Happy Agent draft syncs to the session). */
     suspend fun setDraft(sessionId: String, text: String) = Unit
 
@@ -220,6 +223,9 @@ class SyncChatActions(private val account: () -> AccountSync?) : ChatActions {
     override suspend fun setModes(sessionId: String, patch: Map<AgentModeField, String?>) {
         if (patch.isNotEmpty()) account().composer.setAgentModes(sessionId, patch)
     }
+
+    override suspend fun setMacSessionSetting(sessionId: String, field: AgentModeField, key: String) =
+        ops().setClaudeAgentSettings(sessionId, field, key)
 
     override suspend fun setDraft(sessionId: String, text: String) {
         account.invoke()?.composer?.setText(sessionId, text)

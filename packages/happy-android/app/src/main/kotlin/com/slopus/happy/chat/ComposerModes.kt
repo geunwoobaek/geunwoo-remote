@@ -2,6 +2,7 @@ package com.slopus.happy.chat
 
 import androidx.compose.runtime.Immutable
 import com.slopus.happy.model.SessionMetadata
+import com.slopus.happy.model.claudeAgentSettingsEnabled
 import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.model.isRig
 import com.slopus.happy.model.isRigV1
@@ -39,17 +40,20 @@ data class ComposerModes(
     }
 }
 
-/** rig.ts `isRigModelSelectionEnabled` */
+/**
+ * rig.ts `isRigModelSelectionEnabled`. A Mac background session is switched by
+ * its mirror, which only a mirror from a CLI with [claudeAgentSettingsEnabled] does.
+ */
 fun SessionMetadata?.rigModelSelectionEnabled(): Boolean =
-    !isClaudeAgentMirror() && (!isRigV1() || (this?.session?.modelLocked != true && this?.capabilities?.modelSelection != false))
+    if (isClaudeAgentMirror()) claudeAgentSettingsEnabled() else (!isRigV1() || (this?.session?.modelLocked != true && this?.capabilities?.modelSelection != false))
 
 /** rig.ts `isRigReasoningSelectionEnabled` */
 fun SessionMetadata?.rigReasoningSelectionEnabled(): Boolean =
-    !isClaudeAgentMirror() && (!isRigV1() || this?.capabilities?.reasoningSelection != false)
+    if (isClaudeAgentMirror()) claudeAgentSettingsEnabled() else (!isRigV1() || this?.capabilities?.reasoningSelection != false)
 
-/** rig.ts `isRigPermissionSelectionEnabled`; a Mac background session keeps the model, effort and mode it runs with. */
+/** rig.ts `isRigPermissionSelectionEnabled` */
 fun SessionMetadata?.rigPermissionSelectionEnabled(): Boolean =
-    !isClaudeAgentMirror() && (!isRigV1() || this?.capabilities?.permissionModeSelection != false)
+    if (isClaudeAgentMirror()) claudeAgentSettingsEnabled() else (!isRigV1() || this?.capabilities?.permissionModeSelection != false)
 
 object ComposerModeResolver {
     /**
@@ -65,6 +69,7 @@ object ComposerModeResolver {
         overrides: AgentDefaultOverrides?,
         translate: (Int) -> String,
     ): ComposerModes {
+        if (metadata.isClaudeAgentMirror()) return resolveMacSession(metadata, translate)
         val flavor = metadata?.flavor
         val rig = metadata.isRig()
         val defaults = AgentDefaults.resolve(overrides, flavor, metadata?.version)
@@ -80,15 +85,10 @@ object ComposerModeResolver {
             },
         )
         val rigModelKey = metadata.rigSelectedModel()?.let { (provider, id) -> qualifyRigModelKey(provider, id) }
-        // A Mac background session runs the model it was started with: show what it reports, never a pick or default.
-        val model = if (metadata.isClaudeAgentMirror()) {
-            metadata.runningModel()?.let { running -> models.find { it.key == running } ?: ModeOption(running, running) }
-        } else {
-            ModeOptions.resolveCurrentOption(
-                models,
-                listOf(sessionModel, if (rig) rigModelKey else defaults.modelMode, if (rig) null else metadata?.currentModelCode),
-            )
-        }
+        val model = ModeOptions.resolveCurrentOption(
+            models,
+            listOf(sessionModel, if (rig) rigModelKey else defaults.modelMode, if (rig) null else metadata?.currentModelCode),
+        )
         val modelKey = model?.key ?: "default"
         val efforts = ModeOptions.effortLevelsForModel(flavor, modelKey, metadata)
         val effort = ModeOptions.resolveCurrentOption(
@@ -105,6 +105,31 @@ object ComposerModeResolver {
             canChangePermission = metadata.rigPermissionSelectionEnabled(),
             canChangeModel = metadata.rigModelSelectionEnabled(),
             canChangeEffort = metadata.rigReasoningSelectionEnabled(),
+        )
+    }
+
+    /**
+     * A Mac background session: each chip shows what the mirror last saw the
+     * session run with (the metadata's current codes, else the model of its
+     * transcript), never a pick of the phone's or a default; a pick goes to the
+     * Mac at once and shows once the mirror reports it back.
+     */
+    private fun resolveMacSession(metadata: SessionMetadata?, translate: (Int) -> String): ComposerModes {
+        val modes = ModeOptions.macSessionPermissionModes(translate)
+        val running = metadata?.currentModelCode ?: metadata.runningModel()
+        val models = ModeOptions.availableModels("claude", metadata, translate, running)
+        val efforts = ModeOptions.effortLevelsForModel("claude", running)
+        val enabled = metadata.claudeAgentSettingsEnabled()
+        return ComposerModes(
+            availableModes = modes,
+            permissionMode = ModeOptions.resolveCurrentOption(modes, listOf(metadata?.currentOperatingModeCode)),
+            availableModels = models,
+            modelMode = running?.let { key -> models.find { it.key == key } ?: ModeOption(key, key) },
+            availableEffortLevels = efforts,
+            effortLevel = ModeOptions.resolveCurrentOption(efforts, listOf(metadata?.currentThoughtLevelCode)),
+            canChangePermission = enabled,
+            canChangeModel = enabled,
+            canChangeEffort = enabled,
         )
     }
 

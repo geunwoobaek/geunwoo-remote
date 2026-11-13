@@ -50,6 +50,18 @@ object ModeOptions {
         ModeOption("default", "Default", translate(R.string.agent_input_permission_mode_default)),
     )
 
+    /**
+     * The modes Shift+Tab steps a Mac background session through, which is
+     * all its mirror can switch it to: bypass is not in the cycle unless the
+     * session was started with it.
+     */
+    fun macSessionPermissionModes(translate: (Int) -> String) = listOf(
+        ModeOption("default", "Manual", translate(R.string.agent_input_gemini_permission_mode_default)),
+        ModeOption("acceptEdits", "Edits", translate(R.string.agent_input_permission_mode_accept_edits)),
+        ModeOption("plan", "Plan", translate(R.string.agent_input_permission_mode_plan)),
+        ModeOption("auto", "Auto", translate(R.string.agent_input_permission_mode_auto)),
+    )
+
     private fun codexPermissionModes(translate: (Int) -> String) = listOf(
         ModeOption("auto", "Auto", translate(R.string.agent_input_codex_permission_mode_auto_description), AgentDefaults.CLI_VERSION_WITH_AUTO),
         ModeOption("safe-yolo", "Workspace", translate(R.string.agent_input_codex_permission_mode_safe_yolo_description)),

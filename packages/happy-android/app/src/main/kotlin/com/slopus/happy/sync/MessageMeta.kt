@@ -3,6 +3,7 @@ package com.slopus.happy.sync
 import com.slopus.happy.model.AgentAttention
 import com.slopus.happy.model.SessionMetadata
 import com.slopus.happy.model.SessionState
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.model.isRigV1
 import com.slopus.happy.model.qualifyRigModelKey
 import com.slopus.happy.model.resolveSessionState
@@ -68,6 +69,8 @@ object MessageMetaResolver {
      */
     fun mode(metadata: SessionMetadata?, mirror: ComposerMirror, overrides: AgentDefaultOverrides?): MessageModeMeta {
         if (metadata.isRigV1()) return rigMode(metadata!!, mirror)
+        // A Mac background session is switched through the mirror's settings RPC, never per message.
+        if (metadata.isClaudeAgentMirror()) return MessageModeMeta()
 
         val flavor = metadata?.flavor
         val agentOverrides = AgentDefaults.override(overrides, flavor)

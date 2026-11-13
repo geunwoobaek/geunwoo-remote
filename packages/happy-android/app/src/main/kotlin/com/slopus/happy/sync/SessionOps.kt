@@ -115,6 +115,29 @@ class SessionOps internal constructor(
         }
     }
 
+    /**
+     * A Mac background session's permission mode, model or effort ([field]
+     * set to [key]), switched by its mirror on the Mac at once
+     * (`claude-agent-settings`). The mirror publishes the new value to the
+     * metadata; a refusal (a dialog open on the Mac, a model the session does
+     * not offer) throws [RpcException] with the mirror's words.
+     */
+    suspend fun setClaudeAgentSettings(sessionId: String, field: AgentModeField, key: String) {
+        val answer = rpc.sessionRpc(sessionId, "claude-agent-settings", buildJsonObject {
+            put(
+                when (field) {
+                    AgentModeField.PERMISSION_MODE -> "permissionMode"
+                    AgentModeField.MODEL_MODE -> "model"
+                    AgentModeField.EFFORT_LEVEL -> "effort"
+                },
+                key,
+            )
+        }) as? JsonObject
+        if ((answer?.get("ok") as? JsonPrimitive)?.booleanOrNull != true) {
+            throw RpcException(answer?.string("error") ?: "The Mac session's setting could not be changed.")
+        }
+    }
+
     /** ops.ts `sessionKill`: end the session's process now. */
     suspend fun kill(sessionId: String): OpResult = attempt({ OpResult(false, it ?: "Unknown error") }) {
         decode(OpResult.serializer(), rpc.sessionRpc(sessionId, "killSession", JsonObject(emptyMap())))

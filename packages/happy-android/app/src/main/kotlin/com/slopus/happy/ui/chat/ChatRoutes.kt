@@ -43,6 +43,7 @@ import com.slopus.happy.chat.SyncChatPresenceSource
 import com.slopus.happy.model.Machine
 import com.slopus.happy.model.SessionState
 import com.slopus.happy.model.gitStatusKey
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.model.isCliOutdated
 import com.slopus.happy.model.resumeCommandBlock
 import com.slopus.happy.projects.GitStatusServices
@@ -324,10 +325,12 @@ private fun ChatRoute(
             },
             onModeChange = onModeChange@{ field, option ->
                 if (compose != null && compose.composing) return@onModeChange compose.selectMode(field, option)
-                val patch = ComposerModeResolver.patch(field, option, latestState.session?.metadata, latestMirror)
+                val metadata = latestState.session?.metadata
+                val patch = ComposerModeResolver.patch(field, option, metadata, latestMirror)
                 scope.launch {
                     try {
-                        actions.setModes(sessionId, patch)
+                        // A Mac background session switches on the Mac now and its chip shows what the mirror reports back.
+                        if (metadata.isClaudeAgentMirror()) actions.setMacSessionSetting(sessionId, field, option.key) else actions.setModes(sessionId, patch)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {

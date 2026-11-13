@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.slopus.happy.R
 import com.slopus.happy.chat.ComposerModes
 import com.slopus.happy.model.SessionMetadata
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.model.isRig
 import com.slopus.happy.model.providerIconKind
 import com.slopus.happy.model.settings.ModeOption
@@ -83,7 +84,7 @@ object ComposerPickerSpec {
     val emptyPaddingVertical = 12.dp
 }
 
-private enum class ComposerPicker { Model, Effort }
+private enum class ComposerPicker { Permission, Model, Effort }
 
 /** AgentInput.tsx `isSandboxEnabled`: an object says so in `enabled`; any other value means on. */
 internal fun SessionMetadata?.sandboxEnabled(): Boolean = when (val sandbox = this?.sandbox) {
@@ -110,7 +111,9 @@ internal fun permissionKindIcon(kind: String): Ionicon = when (kind) {
 /**
  * The compact composer's model and effort chips (AgentInput.tsx
  * `mobileActionMiddle`, Android's popup pickers), filling the action row's
- * middle. Spec: 2 apart. Permissions live in the chat header overflow.
+ * middle. Spec: 2 apart. Permissions live in session info, except for a Mac
+ * background session that can be switched: its mode chip leads the row, so
+ * manual, edits, plan and auto are one tap from the composer.
  * Model and effort sit against the send button: the model name 14,
  * one line, padded 8 at the start, shrinking first and ellipsised; a "·"
  * 14 textSecondary; then the effort level (or "EFFORT") in a 64 chip padded
@@ -133,6 +136,7 @@ fun ComposerModeChips(
     var anchorCenterY by remember { mutableIntStateOf(0) }
     val canOpenModel = modes.canChangeModel && modes.availableModels.isNotEmpty()
     val showEffort = modes.canChangeEffort && modes.availableEffortLevels.isNotEmpty()
+    val showPermission = metadata.isClaudeAgentMirror() && modes.canChangePermission && modes.availableModes.isNotEmpty()
     fun toggle(picker: ComposerPicker) {
         haptics.light()
         open = if (open == picker) null else picker
@@ -144,6 +148,26 @@ fun ComposerModeChips(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ComposerPickerSpec.chipGap),
         ) {
+            if (showPermission) {
+                val permissionTitle = composerPermissionTitle(metadata)
+                Box(
+                    modifier = Modifier
+                        .testTag(ComposerPickerTags.PERMISSION)
+                        .height(ComposerPickerSpec.chipHeight)
+                        .clip(RoundedCornerShape(ComposerPickerSpec.chipHeight / 2))
+                        .clickable(role = Role.Button) { toggle(ComposerPicker.Permission) }
+                        .semantics { contentDescription = permissionTitle }
+                        .padding(horizontal = ComposerPickerSpec.modelPaddingStart),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        modes.permissionMode?.name ?: permissionTitle,
+                        style = ComposerPickerSpec.chipText,
+                        color = colors.text,
+                        maxLines = 1,
+                    )
+                }
+            }
             // The model takes what is left and gives way first; its chip hugs its label at the end.
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                 val modelTitle = stringResource(R.string.agent_input_model_title)
@@ -196,6 +220,7 @@ fun ComposerModeChips(
         val picker = rememberLastShown(open) ?: return@Box
         val close = { open = null }
         val title = when (picker) {
+            ComposerPicker.Permission -> composerPermissionTitle(metadata)
             ComposerPicker.Model -> stringResource(R.string.agent_input_model_title)
             ComposerPicker.Effort -> stringResource(R.string.agent_input_effort_title)
         }
@@ -204,12 +229,12 @@ fun ComposerModeChips(
             title = title,
             onDismiss = close,
             anchorCenterY = anchorCenterY,
-            alignEnd = true,
+            alignEnd = picker != ComposerPicker.Permission,
             width = 320.dp,
         ) {
             Column(Modifier.testTag(PickerSheetTags.PANEL).verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
                 PickerSheetSection("title", title, separated = false)
-                ComposerPickerOptions(picker, modes) { field, option ->
+                ComposerPickerOptions(picker, modes, metadata) { field, option ->
                     haptics.light()
                     close()
                     onSelect(field, option)
@@ -223,10 +248,12 @@ fun ComposerModeChips(
 private fun ComposerPickerOptions(
     picker: ComposerPicker,
     modes: ComposerModes,
+    metadata: SessionMetadata?,
     onSelect: (AgentModeField, ModeOption) -> Unit,
 ) {
     val colors = HappyTheme.colors
     when (picker) {
+        ComposerPicker.Permission -> ComposerPermissionOptions(modes, metadata, onSelect)
         ComposerPicker.Model -> {
             if (modes.availableModels.isEmpty()) {
                 Text(

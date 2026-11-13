@@ -28,6 +28,8 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -48,7 +50,7 @@ class ComposerPickerLayoutTest {
     private fun modes(mirror: ComposerMirror = ComposerMirror(), metadata: SessionMetadata? = this.metadata): ComposerModes =
         ComposerModeResolver.resolve(metadata, mirror, null) { RuntimeEnvironment.getApplication().getString(it) }
 
-    private fun showComposer(modes: ComposerModes, onSelect: (AgentModeField, ModeOption) -> Unit = { _, _ -> }) {
+    private fun showComposer(modes: ComposerModes, metadata: SessionMetadata? = this.metadata, onSelect: (AgentModeField, ModeOption) -> Unit = { _, _ -> }) {
         rule.setHappyContent {
             ChatComposer(
                 text = "",
@@ -96,6 +98,52 @@ class ComposerPickerLayoutTest {
         // With nothing else in the row the model still sits against send.
         val primary = rule.node(ComposerTags.PRIMARY).bounds
         assertDp("model against send", primary.left - 10.dp, rule.node(ComposerPickerTags.MODEL).bounds.right)
+    }
+
+    /** A Mac background session whose mirror switches it: in auto mode, on Opus 5.5 at high effort. */
+    private val macSession = requireNotNull(
+        SessionMetadata.parse(
+            buildJsonObject {
+                put("path", "/Users/tester/project")
+                put("host", "tester-mac")
+                put("flavor", "claude")
+                put("claudeAgentId", "demo-agent")
+                put("claudeAgentSettings", 1)
+                put("currentOperatingModeCode", "auto")
+                put("currentModelCode", "claude-opus-5-5")
+                put("currentThoughtLevelCode", "high")
+            },
+        ),
+    )
+
+    // [mode] [... model · effort] [send]: a Mac background session leads with its mode chip.
+    @Test
+    fun aMacSessionLeadsWithItsModeChipAndPicksAMode() {
+        val picks = mutableListOf<Pair<AgentModeField, String>>()
+        showComposer(modes(metadata = macSession), macSession) { field, option -> picks += field to option.key }
+        val row = rule.node(ComposerPickerTags.ROW).bounds
+        val permission = rule.node(ComposerPickerTags.PERMISSION).bounds
+        assertDp("mode chip at the row's start", row.left, permission.left)
+        assertEquals(true, permission.right < rule.node(ComposerPickerTags.MODEL).bounds.left)
+        rule.onNodeWithText("Auto", useUnmergedTree = true).assertExists()
+        rule.onNodeWithText("Opus 5.5", useUnmergedTree = true).assertExists()
+        rule.onNodeWithText("High", useUnmergedTree = true).assertExists()
+
+        rule.node(ComposerPickerTags.PERMISSION).performClick()
+        rule.waitForIdle()
+        rule.node(PickerSheetTags.PANEL).assertExists()
+        rule.node(PickerSheetTags.option("bypassPermissions")).assertDoesNotExist()
+        rule.node(PickerSheetTags.option("default")).performClick()
+        rule.waitForIdle()
+        assertEquals(listOf(AgentModeField.PERMISSION_MODE to "default"), picks)
+    }
+
+    @Test
+    fun aMacSessionFromAnOlderCliHasNoModeChip() {
+        val locked = requireNotNull(SessionMetadata.parse(buildJsonObject { put("path", "/p"); put("host", "tester-mac"); put("flavor", "claude"); put("claudeAgentId", "demo-agent") }))
+        showComposer(modes(metadata = locked), locked)
+        rule.node(ComposerPickerTags.PERMISSION).assertDoesNotExist()
+        rule.node(ComposerPickerTags.MODEL).assertIsNotEnabled()
     }
 
     @Test

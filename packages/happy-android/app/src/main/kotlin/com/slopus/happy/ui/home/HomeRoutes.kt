@@ -40,6 +40,7 @@ import com.slopus.happy.ui.chat.rememberShownLinkState
 import com.slopus.happy.ui.connection.rememberNetworkPath
 import com.slopus.happy.model.Settings
 import com.slopus.happy.model.gitStatusKey
+import com.slopus.happy.model.isClaudeAgentMirror
 import com.slopus.happy.model.parseJsonObject
 import com.slopus.happy.projects.GitStatusServices
 import com.slopus.happy.sync.ComposerMirror
@@ -259,7 +260,11 @@ private fun SessionInfoRouteScreen(graph: AppGraph, id: String, nav: NavHostCont
     val latestMetadata by rememberUpdatedState(metadata)
     val permission = if (!overChat) null else remember(modes, account, id) {
         SessionInfoPermission(modes) { field, option ->
-            account?.composer?.setAgentModes(id, ComposerModeResolver.patch(field, option, latestMetadata, latestMirror))
+            if (latestMetadata.isClaudeAgentMirror()) {
+                account?.sessionOps?.setClaudeAgentSettings(id, field, option.key)
+            } else {
+                account?.composer?.setAgentModes(id, ComposerModeResolver.patch(field, option, latestMetadata, latestMirror))
+            }
         }
     }
     val context = LocalContext.current

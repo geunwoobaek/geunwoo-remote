@@ -5,7 +5,13 @@ package com.slopus.happy.model
  * names that session's agent id in its metadata (`claudeAgentId`). Messages
  * typed on the phone are typed into the Mac session and dialogs are answered
  * by pressing keys there, so what only a session of our own can do (fork,
- * resume, picking a model or mode, attachments, "allow always" answers) is
- * turned off for it.
+ * resume, attachments, "allow always" answers) is turned off for it.
  */
 fun SessionMetadata?.isClaudeAgentMirror(): Boolean = !this?.claudeAgentId.isNullOrBlank()
+
+/**
+ * The mirror switches the Mac session's permission mode, model and effort when
+ * asked (`claude-agent-settings`, [SessionMetadata.claudeAgentSettings] ≥ 1).
+ * A mirror from an older CLI does not, and its pickers stay locked.
+ */
+fun SessionMetadata?.claudeAgentSettingsEnabled(): Boolean = isClaudeAgentMirror() && (this?.claudeAgentSettings ?: 0L) >= 1L

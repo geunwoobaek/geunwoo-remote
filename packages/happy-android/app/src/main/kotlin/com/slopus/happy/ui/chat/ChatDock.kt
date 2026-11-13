@@ -217,7 +217,7 @@ private fun ChatComposerFor(
         showDetails = showDetails,
         onPanelPositioned = onPanelPositioned,
         middle = {
-            // [+] [... model · effort]: permissions live in the header overflow.
+            // [+] [mode] [... model · effort]: the mode chip only on a Mac background session; others pick it in session info.
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ComposerSpec.actionRowGap)) {
                 ComposerAddImageButton(
                     accepts = if (state.session == null) AttachAccepts.RelayPictures else AttachAccepts.relay(metadata, canUseAttachments(metadata)),

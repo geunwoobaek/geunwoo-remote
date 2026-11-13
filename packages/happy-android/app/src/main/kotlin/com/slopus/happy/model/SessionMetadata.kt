@@ -278,6 +278,8 @@ data class SessionMetadata(
     val claudeSessionId: String? = null,
     /** The Mac `claude agents` background session this session mirrors (the agent's id); null for any other session. */
     val claudeAgentId: String? = null,
+    /** The mirror answers the `claude-agent-settings` RPC at this version (1: mode, model, effort); null when it does not. */
+    val claudeAgentSettings: Long? = null,
     val codexThreadId: String? = null,
     val tools: List<String>? = null,
     val slashCommands: List<String>? = null,
@@ -390,6 +392,7 @@ data class SessionMetadata(
             machineId = f.optional("machineId", Read.string),
             claudeSessionId = f.optional("claudeSessionId", Read.string),
             claudeAgentId = f.optional("claudeAgentId", Read.string),
+            claudeAgentSettings = f.optional("claudeAgentSettings", Read.long),
             codexThreadId = f.optional("codexThreadId", Read.string),
             tools = f.optional("tools", Read.arrayOf(Read.string)),
             slashCommands = f.optional("slashCommands", Read.arrayOf(Read.string)),

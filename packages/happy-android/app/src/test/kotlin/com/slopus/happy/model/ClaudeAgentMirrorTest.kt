@@ -18,6 +18,8 @@ import com.slopus.happy.model.HomeModelFixtures.machineMetadata
 import com.slopus.happy.model.HomeModelFixtures.metadata
 import com.slopus.happy.model.HomeModelFixtures.session
 import com.slopus.happy.sync.ComposerMirror
+import com.slopus.happy.sync.MessageMetaResolver
+import com.slopus.happy.sync.MessageModeMeta
 import com.slopus.happy.attachments.imageAttachmentSendPlan
 import com.slopus.happy.ui.attachments.canUseAttachments
 import com.slopus.happy.ui.home.ResumeAvailability
@@ -25,6 +27,9 @@ import com.slopus.happy.ui.home.SessionActionId
 import com.slopus.happy.ui.home.canForkSession
 import com.slopus.happy.ui.home.resumeAvailability
 import com.slopus.happy.ui.home.sessionActionIds
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
@@ -37,8 +42,9 @@ import org.junit.Test
 /**
  * A Happy session that mirrors a Mac `claude agents` background session
  * carries `claudeAgentId` in its metadata. The app recognises it and turns
- * off what cannot work for it: fork, resume, model and mode choice,
- * attachments, "allow always" answers. Its dialog cards read correctly.
+ * off what cannot work for it: fork, resume, attachments, "allow always"
+ * answers. Its mode, model and effort switch on the Mac through the mirror
+ * when the mirror says it can. Its dialog cards read correctly.
  */
 class ClaudeAgentMirrorTest {
     private fun mirrorMetadata() = metadata(path = "/Users/tester/project") {
@@ -122,11 +128,71 @@ class ClaudeAgentMirrorTest {
         )
     }
 
-    @Test fun `model and permission selection are off for a mirror`() {
+    @Test fun `model and permission selection are off for a mirror from a CLI without the settings RPC`() {
         val modes = ComposerModeResolver.resolve(mirrorMetadata(), ComposerMirror(), null) { "tr:$it" }
+        assertFalse(mirrorMetadata().claudeAgentSettingsEnabled())
         assertFalse(modes.canChangeModel)
         assertFalse(modes.canChangeEffort)
         assertFalse(modes.canChangePermission)
+    }
+
+    private fun switchableMirror(extra: JsonObjectBuilder.() -> Unit = {}) = metadata(path = "/Users/tester/project") {
+        put("machineId", "m1")
+        put("flavor", "claude")
+        put("claudeSessionId", "claude-1")
+        put("claudeAgentId", "demo-agent")
+        put("claudeAgentSettings", 1)
+        extra()
+    }
+
+    @Test fun `a mirror with the settings RPC shows and switches what the Mac session runs with`() {
+        val metadata = switchableMirror {
+            put("currentOperatingModeCode", "auto")
+            put("currentModelCode", "claude-opus-5-5")
+            put("currentThoughtLevelCode", "high")
+            put("runningModel", "claude-haiku-5-5")
+        }
+        // A pick of the phone's own or a user default never shows: the chips show the Mac session.
+        val modes = ComposerModeResolver.resolve(metadata, ComposerMirror(permissionMode = "plan", modelMode = "claude-sonnet-5-5", effortLevel = "low"), null) { "tr:$it" }
+        assertTrue(metadata.claudeAgentSettingsEnabled())
+        assertTrue(modes.canChangeModel)
+        assertTrue(modes.canChangeEffort)
+        assertTrue(modes.canChangePermission)
+        assertEquals(listOf("default", "acceptEdits", "plan", "auto"), modes.availableModes.map { it.key })
+        assertEquals("Manual", modes.availableModes.first().name)
+        assertEquals("auto", modes.permissionMode?.key)
+        assertEquals("claude-opus-5-5", modes.modelMode?.key)
+        assertEquals("high", modes.effortLevel?.key)
+        assertEquals(listOf("low", "medium", "high", "xhigh", "max"), modes.availableEffortLevels.map { it.key })
+    }
+
+    @Test fun `a mirror lists the models its Mac picker offers once the mirror has seen them`() {
+        val metadata = switchableMirror {
+            put("currentModelCode", "claude-haiku-5-5")
+            put(
+                "models",
+                buildJsonArray {
+                    add(buildJsonObject { put("code", "default"); put("value", "Default") })
+                    add(buildJsonObject { put("code", "claude-opus-5-5"); put("value", "Opus 5.5") })
+                    add(buildJsonObject { put("code", "claude-haiku-5-5"); put("value", "Haiku 5.5") })
+                },
+            )
+        }
+        val modes = ComposerModeResolver.resolve(metadata, ComposerMirror(), null) { "tr:$it" }
+        assertEquals(listOf("default", "claude-opus-5-5", "claude-haiku-5-5"), modes.availableModels.map { it.key })
+        assertEquals("Haiku 5.5", modes.modelMode?.name)
+    }
+
+    @Test fun `before the mirror reports, the model chip shows the transcript's model and the others stay empty`() {
+        val modes = ComposerModeResolver.resolve(switchableMirror { put("runningModel", "claude-sonnet-5-5") }, ComposerMirror(), null) { "tr:$it" }
+        assertEquals("claude-sonnet-5-5", modes.modelMode?.key)
+        assertNull(modes.permissionMode)
+        assertNull(modes.effortLevel)
+    }
+
+    @Test fun `a message to a mirror carries no mode, model or effort`() {
+        val meta = MessageMetaResolver.mode(switchableMirror(), ComposerMirror(permissionMode = "plan", modelMode = "claude-opus-5-5"), null)
+        assertEquals(MessageModeMeta(), meta)
     }
 
     @Test fun `a mirror takes photos into its folder, never as uploads`() {
