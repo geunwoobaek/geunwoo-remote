@@ -29,6 +29,8 @@ export type AttachKey =
     | 'space'
     | 'tab'
     | 'backspace'
+    /** Ctrl+S, Claude Code's `chat:stash`: sets a draft aside (or brings it back into an empty box). */
+    | 'stash'
     | { digit: number };
 
 export type AttachTerminal = {
@@ -72,6 +74,7 @@ const NAMED_KEYS: Record<Exclude<AttachKey, { digit: number }>, string> = {
     space: 'Space',
     tab: 'Tab',
     backspace: 'BSpace',
+    stash: 'C-s',
 };
 
 // OSC (ESC ] ... BEL | ESC \), CSI (ESC [ ... final), other two-byte ESC sequences, then C0 (minus \n and \t) and DEL.

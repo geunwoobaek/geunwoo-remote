@@ -12,6 +12,10 @@ which come from the manual exploration run that preceded the script (same Claude
 setup, scrubbed the same way). That run is where a session survey and a dim prompt suggestion
 showed up on their own; the script cannot provoke them.
 
+`input-empty-bg-agents` is a `capture-pane -e` capture of a plain interactive session (Claude Code
+2.1.322, Haiku, the same non-safe-mode setup as the `*-live` files) that had started three background
+subagents; the session name was replaced by `demo-agent-background-1`.
+
 The two `*-live` files come from one extra session started WITHOUT `--safe-mode` (the user's hooks,
 plugins and custom two-line status line active; only `--settings` with an ask rule for Bash). They
 check that a real everyday session looks the same at the bottom of the screen. Hook output above
@@ -25,6 +29,7 @@ rows).
 | `input-suggestion-and-survey` | idle with a session survey (`1: Bad 2: Fine …`) and a dim suggestion in the input box; plain capture, so the suggestion looks like typed text |
 | `input-suggestion-ansi` | the same screen captured with `capture-pane -e` (the suggestion is drawn with SGR 2) |
 | `input-empty-live` | idle, empty input box, non-safe-mode session with a two-line status line |
+| `input-empty-bg-agents` | idle with three background agents running: the agent list (`⏺ main`, `◯ local_agent …`) sits under the status lines; `capture-pane -e`, the box holds only a dim suggestion |
 | `permission-bash-live` | Bash permission in the same non-safe-mode session |
 | `permission-write` | Write permission for a new file (`1. Yes / 2. Yes, and … / 3. No`) |
 | `permission-bash` | Bash permission for a long command that wraps (`1. Yes / 2. No`) |

@@ -1,0 +1,40 @@
+
+
+[38;5;114m⏺[39m [1m3[0m background agents launched [38;5;246m(↓ to manage)[39m
+   [38;5;246m├[39m [1mSleep 150 seconds[0m
+   [38;5;246m├[39m [1mSleep 150 seconds[0m
+   [38;5;246m└[39m [1mSleep 150 seconds[0m
+
+[38;5;231m⏺[39m I launched the three background agents with [38;5;153mmodel: "sonnet"[39m, each set to run [38;5;153msleep 150[39m and reply "done". They're
+  running now, and I'm not waiting on them. I'll report when their completion notifications arrive.
+
+[38;5;246m✻[39m [38;5;246mWaiting for [1m3[0m[38;5;246m background agents to finish[39m
+
+[38;5;114m⏺[39m Agent "Sleep 150 seconds" is waiting on its own background work[38;5;246m · 12s[39m
+
+[38;5;231m⏺[39m One of the three agents has reported, but its result is interim. It says its foreground [38;5;153msleep 150[39m was blocked, so it
+  started the sleep in the background and will reply when that finishes. I'm treating that agent as still running, not
+  done. The other two haven't reported. I'll report again when the remaining notifications arrive.
+
+[38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
+
+[38;5;114m⏺[39m Agent "Sleep 150 seconds" is waiting on its own background work[38;5;246m · 12s[39m
+
+[38;5;114m⏺[39m Agent "Sleep 150 seconds" is waiting on its own background work[38;5;246m · 12s[39m
+
+[38;5;231m⏺[39m All three agents have now reported, but none has finished. Each one says its [38;5;153msleep 150[39m was blocked in the foreground
+  and is running in the background, and each will reply when that finishes. Their results are interim, so I'm not
+  counting any of them as done. They'll send further notifications when the sleeps complete.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 18s · done 오후 10:23 · 3 shells still running[39m
+                                                                [38;5;220mUpdate available! Run: [1mbrew upgrade claude-code@latest[0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────── demo-agent-background-1 ─
+[39m❯ [2mcheck if the agents are done[0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;246m✉demo-agent-background-1 | ✅haiku-5-5(medium) | 14턴 | 5h:50% 7d:22% | 💰 $0.40 | 🧠 67,800 (7%)[39m
+  [38;5;246m⏸ manual mode on · [38;5;44m3 shells[38;5;246m · ← 1 agent[39m
+
+[1m  ⏺ main[0m
+[38;5;246m  ◯ local_agent sonnet-5-5(~medium)  Sleep 150 seconds                                                   15s · ↓ 49.1k[39m
+[38;5;246m  ◯ local_agent sonnet-5-5(~medium)  Sleep 150 seconds                                                   15s · ↓ 49.0k[39m
+[38;5;246m  ◯ local_agent sonnet-5-5(~medium)  Sleep 150 seconds                                                   15s · ↓ 49.1k[39m

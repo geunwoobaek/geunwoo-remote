@@ -14,10 +14,15 @@ const TYPED = fixture('input-typed');
 const SURVEY_ANSI = fixture('input-suggestion-ansi');
 /** Plain capture of the same screen: the suggestion cannot be told from typed text. */
 const SURVEY_PLAIN = fixture('input-suggestion-and-survey');
+/** The Mac user's half-written line: a box with other text than [TYPED]. */
+const DRAFT = TYPED.replace('Use the Write tool to create the new file', 'Half written Mac line about the release');
 
 type Call = string;
 
 type FakeTerminal = AttachTerminal & { id: number; closed: boolean };
+
+/** The calls since the last terminal was opened. */
+const sinceOpen = (calls: Call[]): Call[] => calls.slice(calls.map((line) => line.startsWith('open#')).lastIndexOf(true));
 
 /** Terminals share one log. `screens` is what `screen()` returns; the last entry repeats. */
 function createHarness(screens: string[] | ((log: Call[]) => string), extra: { pressChangesScreen?: (key: AttachKey) => string | null } = {}) {
@@ -284,6 +289,61 @@ describe('createInputDelivery', () => {
         const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), waitInputMs: 30, ...fast });
         expect(await delivery.send('hello')).toBe('busy-input');
         expect(log).toEqual(['open#1', 'close#1']);
+    });
+
+    it('sets a Mac draft aside, sends the phone text, and takes the restored draft as sent', async () => {
+        // Claude Code puts the stashed draft back on submit; Enter over it would send the Mac line.
+        const { log, openTerminal } = createHarness((calls) => {
+            const current = sinceOpen(calls);
+            if (current.some((line) => line.endsWith(':enter'))) {
+                return DRAFT;
+            }
+            if (current.some((line) => line.startsWith('type'))) {
+                return TYPED;
+            }
+            return current.some((line) => line.endsWith(':stash')) ? EMPTY : DRAFT;
+        });
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, echo, draftSettleMs: 10, submitWaitMs: 20, ...fast });
+        expect(await delivery.send('from phone')).toBe('sent');
+        expect(log).toEqual(['open#1', 'press#1:stash', 'type#1:from phone', 'press#1:enter', 'close#1']);
+        expect(echo.shouldSkip('from phone')).toBe(true);
+    });
+
+    it('types nothing when the stash key does not empty the box', async () => {
+        const { log, openTerminal } = createHarness([DRAFT]);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), draftSettleMs: 10, submitWaitMs: 20, ...fast });
+        expect(await delivery.send('from phone')).toBe('busy-input');
+        expect(log).toEqual(['open#1', 'press#1:stash', 'close#1']);
+    });
+
+    it('brings the Mac draft back when the phone text never submits', async () => {
+        const { log, openTerminal } = createHarness((calls) => {
+            const current = sinceOpen(calls);
+            const stashes = current.filter((line) => line.endsWith(':stash')).length;
+            if (stashes === 0 || stashes === 2) {
+                return DRAFT;
+            }
+            const typed = current.some((line) => line.startsWith('type'));
+            return typed && !current.some((line) => line.includes('backspace')) ? TYPED : EMPTY;
+        });
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, echo, draftSettleMs: 10, submitWaitMs: 20, ...fast });
+        expect(await delivery.send('hi')).toBe('failed');
+        const presses = log.filter((line) => line.startsWith('press#1:'));
+        expect(presses[0]).toBe('press#1:stash');
+        expect(presses.at(-2)).toContain('backspace');
+        expect(presses.at(-1)).toBe('press#1:stash');
+        expect(log.at(-1)).toBe('close#1');
+        expect(echo.shouldSkip('hi')).toBe(false);
+    });
+
+    it('waits for text that is about to be submitted instead of setting it aside', async () => {
+        // A box the Mac user just submitted empties before the settle time: no stash.
+        const { log, openTerminal } = createHarness([TYPED, EMPTY]);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), draftSettleMs: 500, ...fast });
+        expect(await delivery.send('after')).toBe('sent');
+        expect(log).toEqual(['open#1', 'type#1:after', 'press#1:enter', 'close#1']);
     });
 
     it('send sanitizes control characters before typing', async () => {

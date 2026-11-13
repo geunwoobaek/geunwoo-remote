@@ -18,7 +18,13 @@
  *
  * Rules the delivery keeps:
  * - Text is typed only into an empty input box. A dim suggestion counts as empty (the screen is
- *   a `capture-pane -e` capture); a dialog or typed text means "not yet".
+ *   a `capture-pane -e` capture); a dialog means "not yet".
+ * - A draft in the box (the Mac user's half-written line) does not hold the phone back: the hidden
+ *   terminal sets it aside with Claude Code's stash (Ctrl+S), sends the phone text, and Claude Code
+ *   puts the draft back by itself once that text is submitted ("Draft restored"). A draft that came
+ *   back counts as "our text went", so Enter is never pressed over the user's draft. If the phone
+ *   text has to be deleted again, the draft is brought back with a second Ctrl+S. Accepted gap: a
+ *   stash the user had already made is replaced by the new one (Claude Code keeps one).
  * - A session survey (`1: Bad 2: Fine 3: Good 0: Dismiss`) sits right above the input box and
  *   would take a leading digit as its answer, so it is dismissed with `0` first. If it will not
  *   go away, nothing is typed.
@@ -37,7 +43,7 @@
 
 import { sanitizeTypedText, type AttachKey, type AttachTerminal } from './attachTerminal';
 import { cmuxTypable } from './cmuxTerminal';
-import { inputBoxHasText, isInputBoxEmpty } from './dialogs';
+import { inputBoxHasText, inputBoxText, isInputBoxEmpty } from './dialogs';
 
 export type DeliveryResult = 'sent' | 'busy-input' | 'failed';
 
@@ -74,12 +80,15 @@ export type InputDeliveryDeps = {
     pollIntervalMs?: number;
     /** How long one Enter has to empty the input box before it is pressed again. Default 1500. */
     submitWaitMs?: number;
+    /** How long text must sit in the box before it counts as a draft to set aside. Default 800. */
+    draftSettleMs?: number;
 };
 
 const DEFAULT_WAIT_INPUT_MS = 10_000;
 const DEFAULT_CLOSE_DELAY_MS = 400;
 const DEFAULT_POLL_INTERVAL_MS = 200;
 const DEFAULT_SUBMIT_WAIT_MS = 1_500;
+const DEFAULT_DRAFT_SETTLE_MS = 800;
 /** Extra Enters after the first one before the send is given up. */
 const ENTER_RETRIES = 2;
 /** Backspaces sent per key batch when deleting a text that would not submit. */
@@ -150,6 +159,7 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
     const closeDelayMs = deps.closeDelayMs ?? DEFAULT_CLOSE_DELAY_MS;
     const pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     const submitWaitMs = deps.submitWaitMs ?? DEFAULT_SUBMIT_WAIT_MS;
+    const draftSettleMs = deps.draftSettleMs ?? DEFAULT_DRAFT_SETTLE_MS;
     let queue: Promise<unknown> = Promise.resolve();
 
     /** Runs `job` after everything queued so far, whatever happened to it. */
@@ -159,26 +169,63 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
         return run;
     }
 
-    /** Waits for an empty input box, dismissing the survey once if it shows. False on timeout. */
-    async function waitForEmptyInput(terminal: AttachTerminal): Promise<boolean> {
-        const deadline = Date.now() + waitInputMs;
+    /**
+     * Waits for an empty input box, dismissing the survey once if it shows. `'draft'` once text has
+     * sat in the box for [draftSettleMs] (a box that is just being submitted empties sooner);
+     * `'blocked'` when no usable box showed up within [waitInputMs] (a dialog stays open).
+     */
+    async function waitForInputBox(terminal: AttachTerminal): Promise<'empty' | 'draft' | 'blocked'> {
+        const started = Date.now();
         let dismissed = false;
         for (;;) {
             const screen = await terminal.screen();
             const empty = isInputBoxEmpty(screen);
             const survey = hasSessionSurvey(screen);
             if (empty && !survey) {
-                return true;
+                return 'empty';
             }
             if (empty && survey && !dismissed) {
                 // Only with an empty box: a digit would otherwise land in the user's draft.
                 dismissed = true;
                 await terminal.press([{ digit: 0 }]);
             }
-            if (Date.now() >= deadline) {
-                return false;
+            if (!survey && inputBoxHasText(screen) && Date.now() - started >= draftSettleMs) {
+                return 'draft';
+            }
+            if (Date.now() - started >= waitInputMs) {
+                return 'blocked';
             }
             await sleep(pollIntervalMs);
+        }
+    }
+
+    /**
+     * Sets the draft in the box aside with the stash key. Resolves the draft as [inputBoxText] gives
+     * it, or null when the box did not empty within [submitWaitMs] (nothing is typed then).
+     */
+    async function setDraftAside(terminal: AttachTerminal): Promise<string | null> {
+        const draft = inputBoxText(await terminal.screen());
+        await terminal.press(['stash']);
+        const deadline = Date.now() + submitWaitMs;
+        for (;;) {
+            if (isInputBoxEmpty(await terminal.screen())) {
+                return draft;
+            }
+            if (Date.now() >= deadline) {
+                return null;
+            }
+            await sleep(pollIntervalMs);
+        }
+    }
+
+    /** Brings a set-aside draft back into the box, which must be empty for the stash key to do that. */
+    async function bringDraftBack(terminal: AttachTerminal): Promise<void> {
+        try {
+            if (isInputBoxEmpty(await terminal.screen())) {
+                await terminal.press(['stash']);
+            }
+        } catch {
+            // Claude Code also brings the draft back with the next submitted message.
         }
     }
 
@@ -207,16 +254,17 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
      * sits in the box after [submitWaitMs], Enter is pressed again, up to [ENTER_RETRIES] times; if
      * it never goes, the text is deleted and the send is `'failed'`. Once Enter was pressed, a
      * terminal that cannot be read counts as `'sent'`: the message may be in, and a resend from the
-     * phone would then arrive twice.
+     * phone would then arrive twice. With a set-aside [draft], the draft showing again means the
+     * phone text was submitted (Claude Code restores the draft on submit).
      */
-    async function confirmSubmitted(terminal: AttachTerminal, text: string): Promise<DeliveryResult> {
+    async function confirmSubmitted(terminal: AttachTerminal, text: string, draft: string | null): Promise<DeliveryResult> {
         try {
             for (let retries = 0; ; retries++) {
                 const deadline = Date.now() + submitWaitMs;
                 let holdsText = false;
                 for (;;) {
                     const screen = await terminal.screen();
-                    if (isInputBoxEmpty(screen)) {
+                    if (isInputBoxEmpty(screen) || (draft !== null && inputBoxText(screen) === draft)) {
                         return 'sent';
                     }
                     holdsText = inputBoxHasText(screen);
@@ -237,6 +285,9 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
             return 'sent';
         }
         await clearUnsent(terminal, text);
+        if (draft !== null) {
+            await bringDraftBack(terminal);
+        }
         deps.echo.forget(text);
         return 'failed';
     }
@@ -311,7 +362,12 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
         deps.onRoute?.('input', 'tmux');
         const terminal = await deps.openTerminal();
         try {
-            if (!(await waitForEmptyInput(terminal))) {
+            const box = await waitForInputBox(terminal);
+            if (box === 'blocked') {
+                return 'busy-input';
+            }
+            const draft = box === 'draft' ? await setDraftAside(terminal) : null;
+            if (box === 'draft' && draft === null) {
                 return 'busy-input';
             }
             deps.echo.remember(text);
@@ -327,6 +383,9 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
                     // order, so backspaces also remove a text that only shows up later.
                     if (shown === 'empty') {
                         await clearUnsent(terminal, text);
+                        if (draft !== null) {
+                            await bringDraftBack(terminal);
+                        }
                     }
                     deps.echo.forget(text);
                     return 'failed';
@@ -337,7 +396,7 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
                 deps.echo.forget(text);
                 throw error;
             }
-            const result = await confirmSubmitted(terminal, text);
+            const result = await confirmSubmitted(terminal, text, draft);
             await sleep(closeDelayMs);
             return result;
         } finally {

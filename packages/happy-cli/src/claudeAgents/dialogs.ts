@@ -117,28 +117,27 @@ function isRule(line: string): boolean {
 }
 
 /**
- * The input box is a rule, a `❯` line (plus indented continuation lines), a plain rule, then at
- * most three status lines. While a dialog is open the box is not drawn and the screen ends with
- * the named rule instead.
+ * The input box is a rule, a `❯` line (plus indented continuation lines), a plain rule, then the
+ * status lines and, while background agents run, one row per agent (`⏺ main`, `◯ local_agent …`),
+ * so any number of lines. Its bottom rule is the lowest rule on the screen. While a dialog is open
+ * the box is not drawn and the lowest rule is the dialog's named rule instead.
  */
 function findInputBox(lines: string[]): { first: number; last: number } | null {
-    for (let bottom = lines.length - 1; bottom >= Math.max(1, lines.length - 4); bottom--) {
-        if (!RULE.test(lines[bottom].trim())) {
-            continue;
-        }
-        if (lines.slice(bottom + 1).some(isRule)) {
-            return null;
-        }
-        let first = bottom - 1;
-        while (first > 0 && lines[first].startsWith('  ') && !lines[first].trimStart().startsWith('❯')) {
-            first--;
-        }
-        if (first <= 0 || !lines[first].startsWith('❯') || !isRule(lines[first - 1])) {
-            return null;
-        }
-        return { first, last: bottom - 1 };
+    let bottom = lines.length - 1;
+    while (bottom > 0 && !isRule(lines[bottom])) {
+        bottom--;
     }
-    return null;
+    if (bottom <= 0 || !RULE.test(lines[bottom].trim())) {
+        return null;
+    }
+    let first = bottom - 1;
+    while (first > 0 && lines[first].startsWith('  ') && !lines[first].trimStart().startsWith('❯')) {
+        first--;
+    }
+    if (first <= 0 || !lines[first].startsWith('❯') || !isRule(lines[first - 1])) {
+        return null;
+    }
+    return { first, last: bottom - 1 };
 }
 
 /** Plan mode's `Planning: <plan file>` line, drawn between two full-width rules above a dialog. */
@@ -697,6 +696,24 @@ export function isInputBoxEmpty(screen: string): boolean {
 /** True when the input box is drawn and holds typed text (not just a dim suggestion). */
 export function inputBoxHasText(screen: string): boolean {
     return parseScreen(screen).input !== null && !isInputBoxEmpty(screen);
+}
+
+/**
+ * The typed (not dim) text in the input box with all whitespace removed, so a wrapped line and the
+ * same text on one line compare equal; null when no input box is drawn. Only for comparing two
+ * reads of the box, never for retyping what it holds.
+ */
+export function inputBoxText(screen: string): string | null {
+    const parsed = parseScreen(screen);
+    if (parsed.input === null) {
+        return null;
+    }
+    const rawLines = screen.split('\n');
+    let text = '';
+    for (let index = parsed.input.first; index <= parsed.input.last; index++) {
+        text += visibleUndimmedText(rawLines[index] ?? '').replace(/^❯/, '');
+    }
+    return text.replace(/\s+/g, '');
 }
 
 /** The characters of a raw captured line that are not drawn dim (SGR 2). */

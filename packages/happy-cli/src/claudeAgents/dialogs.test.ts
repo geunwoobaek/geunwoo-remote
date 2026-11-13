@@ -5,6 +5,8 @@ import type { PendingToolUse } from './transcript';
 import {
     classifyScreen,
     dialogFingerprint,
+    inputBoxHasText,
+    inputBoxText,
     isInputBoxEmpty,
     keysForPermission,
     keysForPlan,
@@ -498,6 +500,18 @@ describe('isInputBoxEmpty', () => {
     it('treats a dim suggestion as empty only when the capture keeps escape sequences', () => {
         expect(isInputBoxEmpty(screen('input-suggestion-and-survey'))).toBe(false);
         expect(isInputBoxEmpty(screen('input-suggestion-ansi'))).toBe(true);
+    });
+
+    it('finds the box above the list of running background agents', () => {
+        // Three agent rows plus `⏺ main` push the box's bottom rule seven lines up.
+        const idle = screen('input-empty-bg-agents');
+        expect(isInputBoxEmpty(idle)).toBe(true);
+        expect(classifyScreen(idle)).toBe('none');
+
+        const typed = idle.split('\n').map((line) => (line.includes('❯') && line.includes('check if the agents') ? '❯ keep going' : line)).join('\n');
+        expect(isInputBoxEmpty(typed)).toBe(false);
+        expect(inputBoxHasText(typed)).toBe(true);
+        expect(inputBoxText(typed)).toBe('keepgoing');
     });
 });
 
