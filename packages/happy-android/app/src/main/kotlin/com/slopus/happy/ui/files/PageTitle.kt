@@ -45,13 +45,19 @@ object PageTitle {
  * (one slice; a CLI without slices sends the whole file once); null when it
  * has none or can't be read.
  */
-suspend fun SessionFileOps.readPageTitle(sessionId: String, path: String): String? {
+suspend fun SessionFileOps.readPageTitle(sessionId: String, path: String, onCannotOpen: () -> Unit = {}): String? {
     val head = try {
         val chunk = readFileChunk(sessionId, path, 0, PageTitle.HEAD_BYTES)
         when {
             chunk.success -> chunk.content
-            chunk.error == SessionMedia.METHOD_NOT_FOUND -> readFile(sessionId, path).takeIf { it.success }?.content
-            else -> null
+            chunk.error == SessionMedia.METHOD_NOT_FOUND -> readFile(sessionId, path).let { whole ->
+                if (!whole.success && SessionMedia.cannotOpen(whole.error)) onCannotOpen()
+                whole.takeIf { it.success }?.content
+            }
+            else -> {
+                if (SessionMedia.cannotOpen(chunk.error)) onCannotOpen()
+                null
+            }
         }
     } catch (e: CancellationException) {
         throw e

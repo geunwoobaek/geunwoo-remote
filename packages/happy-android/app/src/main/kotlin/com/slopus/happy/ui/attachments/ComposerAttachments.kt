@@ -34,6 +34,9 @@ import com.slopus.happy.attachments.AttachmentNotice
 import com.slopus.happy.attachments.AttachmentServices
 import com.slopus.happy.attachments.AttachmentSendPlan
 import com.slopus.happy.attachments.AttachmentUploadResult
+import com.slopus.happy.attachments.MirrorPhotoResult
+import com.slopus.happy.attachments.MirrorPhotos
+import com.slopus.happy.attachments.saveMirrorPhotos
 import com.slopus.happy.attachments.prepareAttachmentSend
 import com.slopus.happy.attachments.readAttachmentBytes
 import com.slopus.happy.attachments.supportsImageAttachmentsForFlavor
@@ -54,9 +57,13 @@ import android.content.res.Resources
 /** The open chat's image picker; null where the session takes no images (no strip, no add button). */
 val LocalComposerImages = compositionLocalOf<ImagePicker?> { null }
 
-/** SessionView.tsx `canUseAttachments`: the rig's capability for rig v1 sessions, else the flavor; never for a Mac background session's mirror. */
+/**
+ * SessionView.tsx `canUseAttachments`: the rig's capability for rig v1
+ * sessions, else the flavor. A Mac background session's mirror takes photos
+ * saved into its folder ([MirrorPhotos]), so it needs that folder's path.
+ */
 fun canUseAttachments(metadata: SessionMetadata?): Boolean =
-    if (metadata.isClaudeAgentMirror()) false
+    if (metadata.isClaudeAgentMirror()) metadata?.path?.startsWith("/") == true
     else if (metadata.isRigV1()) metadata.rigCanUseAttachments() else supportsImageAttachmentsForFlavor(metadata?.flavor)
 
 /**
@@ -137,6 +144,15 @@ suspend fun prepareComposerAttachments(
     picker: ImagePicker?,
 ): AttachmentSendPlan {
     val images = picker?.images?.toList().orEmpty()
+    if (metadata.isClaudeAgentMirror()) {
+        if (images.isEmpty()) return AttachmentSendPlan(send = true, records = emptyList(), notices = emptyList())
+        val ops = graph.account.value?.sessionOps
+        val root = metadata?.path
+        val saved = if (ops == null || root == null) MirrorPhotoResult(emptyList(), images.size) else ops.saveMirrorPhotos(sessionId, root, images)
+        val notices = if (saved.failed > 0) listOf(AttachmentNotice.UploadFailed(saved.failed)) else emptyList()
+        if (saved.paths.isEmpty() && text.isBlank()) return AttachmentSendPlan(send = false, records = emptyList(), notices = notices)
+        return AttachmentSendPlan(send = true, records = emptyList(), notices = notices, text = MirrorPhotos.message(saved.paths, text))
+    }
     val transfers = AttachmentServices.of(graph).transfers
     return prepareAttachmentSend(metadata, text, images) { list ->
         transfers?.upload(sessionId, list, ::readAttachmentBytes) ?: AttachmentUploadResult(emptyList(), list.size)

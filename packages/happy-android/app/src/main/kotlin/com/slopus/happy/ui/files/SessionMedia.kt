@@ -52,27 +52,79 @@ object SessionMedia {
 
     /** A bare path: no spaces, not inside a URL (nothing word-like, `:` or `/` right before it). */
     private val barePath = Regex(
-        "(?<![\\w.:/~\\-가-힣])((?:~|\\.{1,2})?/?(?:[\\w.\\-~가-힣]+/)*[\\w.\\-가-힣]+\\.(?:$EXTENSIONS))(?![\\w\\-가-힣])",
+        "(?<![\\w.:/~\\-가-힣$}%{])((?:~|\\.{1,2})?/?(?:[\\w.\\-~가-힣]+/)*[\\w.\\-가-힣]+\\.(?:$EXTENSIONS))(?![\\w\\-가-힣])",
         RegexOption.IGNORE_CASE,
     )
 
     /** A path in backticks or quotes, which may hold spaces. */
     private val quotedPath = Regex("[`'\"]((?:~|\\.{1,2}|/)[^`'\"\\n]*?\\.(?:$EXTENSIONS))[`'\"]", RegexOption.IGNORE_CASE)
 
+    /**
+     * A path under a shell variable (`$CLAUDE_JOB_DIR/tmp/a.html`, `${HOME}/a.png`),
+     * kept as `$NAME/rest` for [expand]: cut at the `$`, it would read as a
+     * folder named after the variable, which is never there.
+     */
+    private val variablePath = Regex(
+        "\\$(?:\\{([A-Za-z_][A-Za-z0-9_]*)\\}|([A-Za-z_][A-Za-z0-9_]*))(/(?:[\\w.\\-~가-힣]+/)*[\\w.\\-가-힣]+\\.(?:$EXTENSIONS))(?![\\w\\-가-힣])",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private val variableHead = Regex("^\\$([A-Za-z_][A-Za-z0-9_]*)(/.*)$")
+
     /** The picture, recording and page paths [text] names, in order, each once. */
     fun pathsIn(text: String): List<String> {
         if (text.isEmpty()) return emptyList()
         val found = LinkedHashMap<Int, String>()
-        for (m in quotedPath.findAll(text)) found[m.groups[1]!!.range.first] = m.groupValues[1]
-        for (m in barePath.findAll(text)) {
-            val start = m.groups[1]!!.range.first
-            if (found.keys.none { it <= start && start < it + found.getValue(it).length }) found[start] = m.groupValues[1]
+        fun add(start: Int, path: String) {
+            if (found.keys.none { it <= start && start < it + found.getValue(it).length }) found[start] = path
         }
-        return found.toSortedMap().values.filterNot { "://" in it || it.any { c -> c in TEMPLATE_MARKS } }.distinct()
+        for (m in variablePath.findAll(text)) add(m.range.first, "$" + (m.groups[1] ?: m.groups[2])!!.value + m.groupValues[3])
+        for (m in quotedPath.findAll(text)) add(m.groups[1]!!.range.first, m.groupValues[1])
+        for (m in barePath.findAll(text)) add(m.groups[1]!!.range.first, m.groupValues[1])
+        return found.toSortedMap().values.filterNot { "://" in it || isTemplate(it) }.distinct()
     }
 
-    /** A name a script fills in (`$s.png`, `%s.png`, `{s}.png`, `*.png`, `<name>.png`), not a file. */
+    /** A name a script fills in (`$s.png`, `%s.png`, `{s}.png`, `*.png`, `<name>.png`), not a file; a leading `$NAME/` is a folder, not a blank. */
+    private fun isTemplate(path: String): Boolean {
+        val rest = variableHead.find(path)?.groupValues?.get(2) ?: path
+        return rest.any { it in TEMPLATE_MARKS }
+    }
+
     private const val TEMPLATE_MARKS = "\$%{}*<>"
+
+    /**
+     * [path] with its leading `$NAME` replaced from [variables]; [path] as it
+     * is when it starts with none; null when the variable is one the phone
+     * can't know (no tile: it would open a file that isn't there).
+     */
+    fun expand(path: String, variables: Map<String, String>): String? {
+        val m = variableHead.find(path) ?: return path.takeUnless { it.startsWith("$") }
+        val value = variables[m.groupValues[1]]?.trimEnd('/')?.takeIf { it.isNotEmpty() } ?: return null
+        return value + m.groupValues[2]
+    }
+
+    /**
+     * The shell variables a session's paths may start with, from what the
+     * computer said of it: `$HOME`, and for a Claude Code background job,
+     * `$CLAUDE_JOB_DIR` (`~/.claude/jobs/<the first 8 of its session id>`).
+     */
+    fun variables(homeDir: String?, claudeSessionId: String?): Map<String, String> {
+        val home = homeDir?.trimEnd('/')?.takeIf { it.startsWith("/") } ?: return emptyMap()
+        return buildMap {
+            put("HOME", home)
+            claudeSessionId?.takeIf { it.length >= 8 }?.let { put("CLAUDE_JOB_DIR", "$home/.claude/jobs/${it.take(8)}") }
+        }
+    }
+
+    /**
+     * Whether a failed read's [error] says the computer will never give this
+     * path (it isn't there, or it is outside what the session may read), as
+     * opposed to the computer being out of reach for now.
+     */
+    fun cannotOpen(error: String?): Boolean {
+        val said = error?.lowercase() ?: return false
+        return "enoent" in said || "no such file" in said || "access denied" in said || "outside the working directory" in said || "eisdir" in said
+    }
 
     /** Tools whose words name files by pattern or listing, not ones the agent made or looked at. */
     private val listingTools = setOf("Glob", "Grep", "LS", "ls", "glob", "grep")

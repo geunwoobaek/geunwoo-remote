@@ -129,8 +129,9 @@ class ClaudeAgentMirrorTest {
         assertFalse(modes.canChangePermission)
     }
 
-    @Test fun `attachments are off for a mirror`() {
-        assertFalse(canUseAttachments(mirrorMetadata()))
+    @Test fun `a mirror takes photos into its folder, never as uploads`() {
+        assertTrue(canUseAttachments(mirrorMetadata()))
+        assertFalse(canUseAttachments(metadata(path = "") { put("claudeAgentId", "demo-agent") }))
         val plan = imageAttachmentSendPlan(mirrorMetadata(), "look", attachmentCount = 1)
         assertFalse(plan.supportsAttachments)
         assertFalse(plan.shouldUseAttachments)

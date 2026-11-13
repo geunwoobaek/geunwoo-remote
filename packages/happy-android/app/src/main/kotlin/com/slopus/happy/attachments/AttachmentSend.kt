@@ -22,7 +22,13 @@ sealed interface AttachmentNotice {
  * [records] go to the sender ahead of the text; [send] false means nothing
  * is sent at all (an image-only message to an agent that takes no images).
  */
-data class AttachmentSendPlan(val send: Boolean, val records: List<JsonObject>, val notices: List<AttachmentNotice>)
+data class AttachmentSendPlan(
+    val send: Boolean,
+    val records: List<JsonObject>,
+    val notices: List<AttachmentNotice>,
+    /** The text to send in place of the typed one ([MirrorPhotos.message]); null to send it as typed. */
+    val text: String? = null,
+)
 
 /**
  * Plans the send ([imageAttachmentSendPlan], the rig policy filter), uploads

@@ -61,14 +61,14 @@ class MediaStripLayoutTest {
     }
 
     private fun host(pages: Map<String, String>, cwd: String? = null, open: (String) -> Unit = {}) =
-        SessionMediaHost("s", root, Computer(pages), Files.createTempDirectory("media").toFile(), cwd, open)
+        SessionMediaHost("s", root, Computer(pages), Files.createTempDirectory("media").toFile(), cwd, open = open)
 
     // 16 in from each side and 4 below the row above, at least 68 high; the picture's 112 tile 4 + 4 under it.
     @Test
     fun aWrittenPageIsAFullWidthCardAbovePictureTiles() {
         val page = "$root/compare/index.html"
         val opened = ArrayList<String>()
-        val host = host(mapOf(page to "<html><head><title>Tie-break compare</title></head>"), open = { opened += it })
+        val host = host(mapOf(page to "<html><head><title>Tie-break compare</title></head>", "$root/shot.png" to "png"), open = { opened += it })
         rule.setHappyContent {
             CompositionLocalProvider(LocalSessionMedia provides host) {
                 MediaStrip(listOf(ChatMedia(page, made = true), ChatMedia("$root/shot.png")))
@@ -105,10 +105,28 @@ class MediaStripLayoutTest {
     fun aPageOnlyNamedStaysATile() {
         val page = "$root/named.html"
         rule.setHappyContent {
-            CompositionLocalProvider(LocalSessionMedia provides host(emptyMap())) { MediaStrip(listOf(ChatMedia(page))) }
+            CompositionLocalProvider(LocalSessionMedia provides host(mapOf(page to "<p>no title</p>"))) { MediaStrip(listOf(ChatMedia(page))) }
         }
         rule.node(MediaStripTags.tile(page)).assertExists()
         rule.node(MediaStripTags.card(page)).assertDoesNotExist()
+    }
+
+    // A path the computer says isn't there (a deleted copy, a name cut from a shell variable) is never offered.
+    @Test
+    fun aFileTheComputerDoesNotHaveIsLeftOut() {
+        val kept = "$root/kept.html"
+        val gone = "$root/gone.html"
+        val picture = "$root/gone.png"
+        rule.setHappyContent {
+            CompositionLocalProvider(LocalSessionMedia provides host(mapOf(kept to "<p>here</p>"))) {
+                MediaStrip(listOf(ChatMedia(kept), ChatMedia(gone, made = true), ChatMedia(picture)))
+            }
+        }
+        rule.waitForIdle()
+        rule.node(MediaStripTags.tile(kept)).assertExists()
+        rule.node(MediaStripTags.card(gone)).assertDoesNotExist()
+        rule.node(MediaStripTags.tile(gone)).assertDoesNotExist()
+        rule.node(MediaStripTags.tile(picture)).assertDoesNotExist()
     }
 
     @Test

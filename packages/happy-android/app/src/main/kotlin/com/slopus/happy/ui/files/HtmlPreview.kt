@@ -176,6 +176,9 @@ internal fun HtmlFilePage(
                     settings.domStorageEnabled = true
                     settings.allowFileAccess = false
                     settings.allowContentAccess = false
+                    // A page lays itself out as in a browser: the phone's text size must not
+                    // blow up a game's fixed layout (titles over the board, buttons wrapping).
+                    settings.textZoom = 100
                     overScrollMode = View.OVER_SCROLL_NEVER
                     addJavascriptInterface(MemoSelection { text -> post { memo.selection = text.takeIf { it.isNotBlank() } } }, MEMO_BRIDGE)
                     webViewClient = HtmlFileClient(root, filePath) { path -> read?.invoke(path) }

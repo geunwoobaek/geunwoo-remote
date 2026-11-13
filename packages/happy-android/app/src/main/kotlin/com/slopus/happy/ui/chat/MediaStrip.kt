@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -95,6 +96,8 @@ class SessionMediaHost(
     private val cacheDir: File,
     /** `metadata.cwd`: where the agent works now, when happy-cli said; null reads as before. */
     val cwd: String? = null,
+    /** The shell variables a path may start with ([SessionMedia.variables]); one not here names no file the phone can find. */
+    private val variables: Map<String, String> = emptyMap(),
     val open: (String) -> Unit,
 ) {
     private val thumbnails = LruCache<String, ImageBitmap>(32)
@@ -105,11 +108,28 @@ class SessionMediaHost(
     /** Paths that couldn't be read, so scrolling past them doesn't ask the computer again. */
     private val unreadable = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
 
+    /**
+     * Items ([MediaItem.key]) the computer said it will never give (not
+     * there, or outside what the session may read): their tiles and cards
+     * leave the strip, so nothing in the chat opens to an error.
+     */
+    private val gone = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
+
+    /** Whether [item] is known to name nothing that opens. */
+    fun isGone(item: MediaItem): Boolean = gone[item.key] == true
+
+    private fun markGone(key: String) {
+        gone[key] = true
+    }
+
     /** One read at a time: the same picture under two rows must not write one cache file twice. */
     private val reading = Mutex()
 
-    /** Where [path] may be, the likeliest first: against the agent's folder, then the session's; empty when relative with no folder. */
-    fun candidates(path: String): List<String> = AgentFolder.candidates(path, sessionPath, cwd)
+    /** Where [path] may be, the likeliest first: against the agent's folder, then the session's; empty when relative with no folder or under a variable the phone can't know. */
+    fun candidates(path: String): List<String> {
+        val expanded = SessionMedia.expand(path, variables) ?: return emptyList()
+        return AgentFolder.candidates(expanded, sessionPath, cwd)
+    }
 
     /** [path] at its likeliest absolute place; null when relative with no folder to resolve it by. */
     fun absolute(path: String): String? = candidates(path).firstOrNull()
@@ -125,10 +145,12 @@ class SessionMediaHost(
             val key = absolute(one.path) ?: continue
             val kind = SessionMedia.kindOf(key) ?: continue
             val card = one.made && kind == MediaKind.Page
+            // A path under a variable opens where the variable leads, not as the chat wrote it.
+            val opens = if (one.path.startsWith("$")) key else one.path
             val seen = byKey[key]
             byKey[key] = when {
-                seen == null -> MediaItem(one.path, key, kind, card)
-                card && !seen.card -> seen.copy(path = one.path, card = true)
+                seen == null -> MediaItem(opens, key, kind, card)
+                card && !seen.card -> seen.copy(path = opens, card = true)
                 else -> seen
             }
         }
@@ -142,8 +164,12 @@ class SessionMediaHost(
         thumbnails.get(key)?.let { return it }
         if (key in unreadable) return null
         return reading.withLock {
-            thumbnails.get(key) ?: places.firstNotNullOfOrNull { decodeThumbnail(it, widest) }
-                .also { if (it == null) unreadable += key else thumbnails.put(key, it) }
+            var closed = 0
+            thumbnails.get(key) ?: places.firstNotNullOfOrNull { place -> decodeThumbnail(place, widest) { closed++ } }
+                .also {
+                    if (it == null) unreadable += key else thumbnails.put(key, it)
+                    if (it == null && closed == places.size) markGone(key)
+                }
         }
     }
 
@@ -152,15 +178,57 @@ class SessionMediaHost(
         val places = candidates(path)
         val key = places.firstOrNull() ?: return null
         titles.get(key)?.let { return it.ifEmpty { null } }
-        val title = places.firstNotNullOfOrNull { ops.readPageTitle(sessionId, it) }
+        var closed = 0
+        val title = places.firstNotNullOfOrNull { ops.readPageTitle(sessionId, it) { closed++ } }
+        if (title == null && closed == places.size) {
+            markGone(key)
+            return null
+        }
         titles.put(key, title.orEmpty())
         return title
     }
 
-    private suspend fun decodeThumbnail(path: String, widest: Int): ImageBitmap? {
+    /**
+     * Whether [item] opens, asked once of the computer (a picture by its
+     * thumbnail, a page by its title, a recording by its first byte); one
+     * that never will leaves the strip ([isGone]).
+     */
+    suspend fun check(item: MediaItem) {
+        if (isGone(item)) return
+        when (item.kind) {
+            MediaKind.Page -> title(item.path)
+            MediaKind.Picture -> Unit // its tile reads the thumbnail
+            MediaKind.Video -> {
+                val places = candidates(item.path)
+                if (places.isEmpty() || item.key in unreadable) return
+                var closed = 0
+                for (place in places) {
+                    val first = try {
+                        ops.readFileChunk(sessionId, place, 0L, 1)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        return
+                    }
+                    if (first.success) return
+                    if (SessionMedia.cannotOpen(first.error)) closed++
+                }
+                if (closed == places.size) {
+                    unreadable += item.key
+                    markGone(item.key)
+                }
+            }
+        }
+    }
+
+    private suspend fun decodeThumbnail(path: String, widest: Int, onCannotOpen: () -> Unit): ImageBitmap? {
         val file = SessionMedia.cacheFile(cacheDir, sessionId, path)
         return withContext(Dispatchers.IO) {
-            if (!file.exists() && ops.readMediaToFile(sessionId, path, file, SessionMedia.MAX_PICTURE_BYTES) != MediaRead.Done) return@withContext null
+            if (!file.exists()) {
+                val read = ops.readMediaToFile(sessionId, path, file, SessionMedia.MAX_PICTURE_BYTES)
+                if (read is MediaRead.Failed && SessionMedia.cannotOpen(read.reason)) onCannotOpen()
+                if (read != MediaRead.Done) return@withContext null
+            }
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.path, bounds)
             if (bounds.outWidth <= 0) return@withContext null
@@ -215,7 +283,9 @@ private val TILE = 112.dp
 @Composable
 fun MediaStrip(media: List<ChatMedia>, modifier: Modifier = Modifier) {
     val host = LocalSessionMedia.current ?: return
-    val shown = remember(media, host) { host.items(media) }
+    val listed = remember(media, host) { host.items(media) }
+    for (item in listed) LaunchedEffect(item.key, host) { host.check(item) }
+    val shown = listed.filterNot(host::isGone)
     if (shown.isEmpty()) return
     val cards = shown.filter { it.card }
     val tiles = shown.filterNot { it.card }

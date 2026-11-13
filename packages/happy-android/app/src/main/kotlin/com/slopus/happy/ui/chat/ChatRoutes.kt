@@ -266,8 +266,9 @@ private fun ChatRoute(
                     try {
                         val plan = prepareComposerAttachments(graph, sessionId, latestState.session?.metadata, text, latestImages)
                         plan.notices.forEach { notices += attachmentNoticeAlert(it, resources) }
-                        if (!plan.send || (text.isBlank() && plan.records.isEmpty())) return@launch
-                        actions.send(sessionId, text, attachments = plan.records, awaitDelivery = questions.isNotEmpty())
+                        val message = plan.text ?: text
+                        if (!plan.send || (message.isBlank() && plan.records.isEmpty())) return@launch
+                        actions.send(sessionId, message, attachments = plan.records, awaitDelivery = questions.isNotEmpty())
                         picked.forEach { latestImages?.remove(it.id) }
                         // The composer empties once the text is accepted, unless it was edited meanwhile.
                         if (draft.text == text) draft.set("")
@@ -342,7 +343,10 @@ private fun ChatRoute(
         LocalComposerImages provides images,
         LocalSuggestionSource provides rememberSessionSuggestions(graph, sessionId, state.session?.metadata),
         LocalUsageDisplay provides UsageDisplay(settings.alwaysShowContextSize, settings.usageLimitShowRemaining),
-        LocalSessionMedia provides rememberSessionMedia(account, sessionId, state.session?.metadata?.path, state.session?.metadata?.cwd, onOpenMedia),
+        LocalSessionMedia provides rememberSessionMedia(
+            account, sessionId, state.session?.metadata?.path, state.session?.metadata?.cwd,
+            SessionMedia.variables(state.session?.metadata?.homeDir, state.session?.metadata?.claudeSessionId), onOpenMedia,
+        ),
     ) {
         val captureAccount = account
         if (watchingLive && captureAccount != null) {
@@ -429,11 +433,11 @@ private fun rememberMachine(graph: AppGraph, machineId: String?): State<Machine?
  * host, so relative paths are read against where it is now.
  */
 @Composable
-private fun rememberSessionMedia(account: AccountSync?, sessionId: String, sessionPath: String?, cwd: String?, open: (String, String) -> Unit): SessionMediaHost? {
+private fun rememberSessionMedia(account: AccountSync?, sessionId: String, sessionPath: String?, cwd: String?, variables: Map<String, String>, open: (String, String) -> Unit): SessionMediaHost? {
     val context = androidx.compose.ui.platform.LocalContext.current
     val latestOpen by rememberUpdatedState(open)
-    return remember(account, sessionId, sessionPath, cwd, context) {
-        account?.let { SessionMediaHost(sessionId, sessionPath, SyncSessionFileOps(it), context.cacheDir, cwd) { path -> latestOpen(sessionId, path) } }
+    return remember(account, sessionId, sessionPath, cwd, variables, context) {
+        account?.let { SessionMediaHost(sessionId, sessionPath, SyncSessionFileOps(it), context.cacheDir, cwd, variables) { path -> latestOpen(sessionId, path) } }
     }
 }
 
