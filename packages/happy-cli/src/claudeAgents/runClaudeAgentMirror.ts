@@ -57,6 +57,8 @@ const EXIT_AGENT_NOT_FOUND = 2;
 const PERMISSION_TICK_MS = 1_000;
 const AGENTS_POLL_MS = 3_000;
 const KEEP_ALIVE_MS = 2_000;
+/** The longest the first keep-alive waits for the skip of earlier phone messages. */
+const SKIP_SETTLE_WAIT_MS = 10_000;
 /** Failed `claude agents` runs in a row before the agent counts as gone. */
 const MAX_LIST_FAILURES = 3;
 /** How long a shutdown waits for a tick that is still driving a terminal. */
@@ -879,8 +881,17 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
             session.updateMetadata((current) => ({ ...current, claudeSessionId: change.switchTo }));
         }
     });
-    const keepAliveTimer = setInterval(() => session.keepAlive(lastStatus === 'busy', 'remote'), KEEP_ALIVE_MS);
-    session.keepAlive(false, 'remote');
+    // The phone sends to a woken session once it shows online: the first keep-alive waits until the
+    // messages from before this process have been skipped, or that first message would be skipped too.
+    // (A shutdown during that wait finds no timer and keeps the session offline.)
+    let keepAliveTimer: NodeJS.Timeout | undefined;
+    void Promise.race([session.existingMessagesSettled(), sleep(SKIP_SETTLE_WAIT_MS)]).then(() => {
+        if (stopping) {
+            return;
+        }
+        keepAliveTimer = setInterval(() => session.keepAlive(lastStatus === 'busy', 'remote'), KEEP_ALIVE_MS);
+        session.keepAlive(false, 'remote');
+    });
 
     async function shutdown(how: { archive: boolean; reason?: string; code: number }): Promise<void> {
         if (stopping) {

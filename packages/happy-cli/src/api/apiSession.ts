@@ -219,6 +219,8 @@ export class ApiSessionClient extends EventEmitter {
     private closed = false;
     private ignoreArchiveSignal = false;
     private skipInitialMessages = false;
+    private existingMessagesSkipped: Promise<void> = Promise.resolve();
+    private resolveExistingMessagesSkipped: (() => void) | null = null;
     /** The trailing run of user message texts seen by the skip pass so far (see `skipExistingMessages`). */
     private skippedUserTexts: string[] = [];
     private onSkippedUserMessages: ((texts: string[]) => void) | null = null;
@@ -678,6 +680,8 @@ export class ApiSessionClient extends EventEmitter {
             const texts = this.skippedUserTexts;
             this.onSkippedUserMessages = null;
             this.skippedUserTexts = [];
+            this.resolveExistingMessagesSkipped?.();
+            this.resolveExistingMessagesSkipped = null;
             if (report !== null && texts.length > 0) {
                 // A throw here must not fail this fetch: its retry would no longer skip.
                 try {
@@ -985,6 +989,17 @@ export class ApiSessionClient extends EventEmitter {
         this.skipInitialMessages = true;
         this.skippedUserTexts = [];
         this.onSkippedUserMessages = onSkippedUserMessages ?? null;
+        this.existingMessagesSkipped = new Promise((resolve) => {
+            this.resolveExistingMessagesSkipped = resolve;
+        });
+    }
+
+    /**
+     * Settles once the pass started by `skipExistingMessages` has read the log: a message sent after
+     * that is routed. Already settled when no skip was asked for.
+     */
+    existingMessagesSettled(): Promise<void> {
+        return this.existingMessagesSkipped;
     }
 
     updateMetadata(handler: (metadata: Metadata) => Metadata) {

@@ -960,6 +960,24 @@ describe('ApiSessionClient v3 messages API migration', () => {
             expect(onUserMessage.mock.calls[0][0].content.text).toBe('new');
         });
 
+        it('existingMessagesSettled waits for a completed skip pass', async () => {
+            const client = new ApiSessionClient('fake-token', session);
+            await client.existingMessagesSettled();
+            client.skipExistingMessages();
+            let settled = false;
+            void client.existingMessagesSettled().then(() => { settled = true; });
+
+            mockAxiosGet
+                .mockRejectedValueOnce(new Error('timeout'))
+                .mockResolvedValueOnce(phoneMessage(1, 'old', false));
+            await expect((client as any).fetchMessages()).rejects.toThrow('timeout');
+            await Promise.resolve();
+            expect(settled).toBe(false);
+            await (client as any).fetchMessages();
+            await Promise.resolve();
+            expect(settled).toBe(true);
+        });
+
         it('a retry after page 2 failed does not replay the rest of the history', async () => {
             const client = new ApiSessionClient('fake-token', session);
             const onUserMessage = vi.fn();
