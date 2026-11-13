@@ -694,6 +694,11 @@ export function isInputBoxEmpty(screen: string): boolean {
     return true;
 }
 
+/** True when the input box is drawn and holds typed text (not just a dim suggestion). */
+export function inputBoxHasText(screen: string): boolean {
+    return parseScreen(screen).input !== null && !isInputBoxEmpty(screen);
+}
+
 /** The characters of a raw captured line that are not drawn dim (SGR 2). */
 function visibleUndimmedText(rawLine: string): string {
     let dim = false;

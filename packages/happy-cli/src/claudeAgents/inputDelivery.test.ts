@@ -170,6 +170,48 @@ describe('createInputDelivery', () => {
         expect(log).toEqual(['open#1', 'type#1:later', 'press#1:enter', 'close#1']);
     });
 
+    it('send presses Enter again when the first one was swallowed and the text still sits in the box', async () => {
+        // A Mac just awake from sleep: the first Enter is lost, the typed text stays in the box.
+        const enters = (log: Call[]): number => log.filter((line) => line.endsWith(':enter')).length;
+        const { log, openTerminal } = createHarness((calls) => (calls.some((line) => line.startsWith('type')) && enters(calls) < 2 ? TYPED : EMPTY));
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, echo, submitWaitMs: 30, ...fast });
+        expect(await delivery.send('keep going')).toBe('sent');
+        expect(log).toEqual(['open#1', 'type#1:keep going', 'press#1:enter', 'press#1:enter', 'close#1']);
+        expect(echo.shouldSkip('keep going')).toBe(true);
+    });
+
+    it('send deletes a text that never submits and reports failed, so the next message is not blocked', async () => {
+        let stuck = true;
+        const { log, openTerminal } = createHarness((calls) => {
+            if (!stuck || !calls.some((line) => line.startsWith('type'))) {
+                return EMPTY;
+            }
+            const cleared = calls.some((line) => line.includes('backspace'));
+            return cleared ? EMPTY : TYPED;
+        });
+        const echo = createEchoFilter();
+        const delivery = createInputDelivery({ openTerminal, echo, submitWaitMs: 20, ...fast });
+        expect(await delivery.send('hi')).toBe('failed');
+        expect(log.filter((line) => line === 'press#1:enter')).toHaveLength(3);
+        // One backspace per character plus spares, in one batch.
+        expect(log).toContain(`press#1:${Array.from({ length: 6 }, () => 'backspace').join(',')}`);
+        expect(log.at(-1)).toBe('close#1');
+        expect(echo.shouldSkip('hi')).toBe(false);
+
+        stuck = false;
+        expect(await delivery.send('next')).toBe('sent');
+    });
+
+    it('send does not press Enter again over a dialog that replaced the input box', async () => {
+        // Claude took the text and asked for a permission right away: Enter there would pick an option.
+        const dialog = fixture('permission-bash');
+        const { log, openTerminal } = createHarness((calls) => (calls.some((line) => line.endsWith(':enter')) ? dialog : EMPTY));
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), submitWaitMs: 20, ...fast });
+        expect(await delivery.send('run it')).toBe('sent');
+        expect(log).toEqual(['open#1', 'type#1:run it', 'press#1:enter', 'close#1']);
+    });
+
     it('send does not type into a dialog', async () => {
         const { log, openTerminal } = createHarness([fixture('permission-bash')]);
         const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), waitInputMs: 30, ...fast });
