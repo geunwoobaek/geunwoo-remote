@@ -29,6 +29,10 @@ export type AttachKey =
     | 'space'
     | 'tab'
     | 'backspace'
+    | 'left'
+    | 'right'
+    /** Shift+Tab: cycles the permission mode under the input box. */
+    | 'shift-tab'
     /** Ctrl+S, Claude Code's `chat:stash`: sets a draft aside (or brings it back into an empty box). */
     | 'stash'
     | { digit: number };
@@ -74,6 +78,9 @@ const NAMED_KEYS: Record<Exclude<AttachKey, { digit: number }>, string> = {
     space: 'Space',
     tab: 'Tab',
     backspace: 'BSpace',
+    left: 'Left',
+    right: 'Right',
+    'shift-tab': 'BTab',
     stash: 'C-s',
 };
 

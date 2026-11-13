@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AttachTerminal } from './attachTerminal';
 import type { Metadata } from '@/api/types';
-import { anyUndelivered, BACKFILL_LINES, BACKFILL_MAX_LINES, buildMirrorMetadata, decideAgentChange, entriesAfter, isInterruptMarker, mirrorTag, resetMirrorMetadata, serializeTerminalOpens, settleStaleRequests, shouldAbortReuse, transcriptLineModel, uploadStart } from './runClaudeAgentMirror';
+import { anyUndelivered, BACKFILL_LINES, BACKFILL_MAX_LINES, buildMirrorMetadata, decideAgentChange, entriesAfter, isInterruptMarker, mirrorTag, parseMacSettingsChange, resetMirrorMetadata, serializeTerminalOpens, settingsAnswer, settleStaleRequests, shouldAbortReuse, transcriptLineModel, uploadStart, withMacSettings } from './runClaudeAgentMirror';
 import type { ClaudeAgent } from './types';
 
 const agent = (overrides: Partial<ClaudeAgent> = {}): ClaudeAgent => ({
@@ -455,5 +455,50 @@ describe('transcriptLineModel', () => {
         expect(transcriptLineModel({ type: 'assistant', message: { model: '  ', content: [] } })).toBeNull();
         expect(transcriptLineModel({ type: 'user', message: { model: 'claude-haiku-5-5', content: 'hi' } })).toBeNull();
         expect(transcriptLineModel(null)).toBeNull();
+    });
+});
+
+describe('claude-agent-settings', () => {
+    it('advertises the settings RPC in the mirror metadata, also on a reused session', () => {
+        const metadata = buildMirrorMetadata(agent(), base);
+        expect(metadata.claudeAgentSettings).toBe(1);
+        expect(resetMirrorMetadata({ ...metadata, claudeAgentSettings: undefined }, agent(), 99).claudeAgentSettings).toBe(1);
+    });
+
+    it('takes a change of any of the three settings', () => {
+        expect(parseMacSettingsChange({ permissionMode: 'auto' })).toEqual({ permissionMode: 'auto' });
+        expect(parseMacSettingsChange({ model: 'claude-opus-5-5', effort: 'high' })).toEqual({ model: 'claude-opus-5-5', effort: 'high' });
+        expect(parseMacSettingsChange({ model: 'default', effort: null, permissionMode: undefined })).toEqual({ model: 'default' });
+    });
+
+    it('refuses an empty change or a value the Mac session cannot be set to', () => {
+        expect(parseMacSettingsChange({})).toBeNull();
+        expect(parseMacSettingsChange(null)).toBeNull();
+        expect(parseMacSettingsChange('auto')).toBeNull();
+        expect(parseMacSettingsChange({ permissionMode: 'yolo' })).toBeNull();
+        expect(parseMacSettingsChange({ model: 'gpt-6-sol' })).toBeNull();
+        expect(parseMacSettingsChange({ model: 'claude-opus-5-5', effort: 'extreme' })).toBeNull();
+    });
+
+    it('publishes what the Mac session runs with and keeps what it did not see', () => {
+        const metadata = { ...buildMirrorMetadata(agent(), base), currentModelCode: 'claude-haiku-5-5', currentThoughtLevelCode: 'low' };
+        const updated = withMacSettings(metadata, { permissionMode: 'plan', effort: 'high', models: [{ code: 'claude-opus-5-5', value: 'Opus 5.5' }] });
+        expect(updated).toMatchObject({
+            currentOperatingModeCode: 'plan',
+            currentModelCode: 'claude-haiku-5-5',
+            currentThoughtLevelCode: 'high',
+            models: [{ code: 'claude-opus-5-5', value: 'Opus 5.5' }],
+            claudeAgentId: 'demo01',
+        });
+    });
+
+    it('answers ok, or the reason in words the phone shows', () => {
+        expect(settingsAnswer({ ok: true, settings: {} })).toEqual({ ok: true });
+        expect(settingsAnswer({ ok: false, reason: 'busy', settings: {} })).toEqual({ ok: false, error: expect.stringContaining('맥') });
+        const unsupported = settingsAnswer({ ok: false, reason: 'unsupported', settings: {} });
+        const failed = settingsAnswer({ ok: false, reason: 'failed', settings: {} });
+        expect(unsupported.ok).toBe(false);
+        expect(failed.ok).toBe(false);
+        expect(unsupported).not.toEqual(failed);
     });
 });

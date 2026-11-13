@@ -693,6 +693,15 @@ export function isInputBoxEmpty(screen: string): boolean {
     return true;
 }
 
+/**
+ * The plain, trimmed lines under the input box (status lines, the permission mode line, the
+ * background-agent rows); null when no input box is drawn (a dialog or a picker is open).
+ */
+export function inputBoxFooter(screen: string): string[] | null {
+    const parsed = parseScreen(screen);
+    return parsed.input === null ? null : parsed.lines.slice(parsed.input.last + 2).map((line) => line.trim());
+}
+
 /** True when the input box is drawn and holds typed text (not just a dim suggestion). */
 export function inputBoxHasText(screen: string): boolean {
     return parseScreen(screen).input !== null && !isInputBoxEmpty(screen);

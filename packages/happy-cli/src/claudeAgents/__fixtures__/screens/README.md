@@ -18,6 +18,12 @@ Rows above the first prompt held hook output from other sessions and were blanke
 session name became `demo-agent` (its rule padded back to full width) and the usage numbers were
 replaced.
 
+The `mode-*` and `model-*` files are `capture-pane -e` captures of `claude attach` to a throwaway
+background session (Claude Code 2.1.322, Haiku, `claude --bg`), taken while switching its settings
+the way the phone does: Shift+Tab for the permission mode, `/model` and the picker's `s` ("use this
+session only") for the model and effort. Rows above the first prompt were blanked (rows kept), the
+session name became `demo-agent` and the usage numbers were replaced.
+
 `input-empty-bg-agents` is a `capture-pane -e` capture of a plain interactive session (Claude Code
 2.1.322, Haiku, the same non-safe-mode setup as the `*-live` files) that had started three background
 subagents; the session name was replaced by `demo-agent-background-1`.
@@ -38,6 +44,13 @@ rows).
 | `input-draft-attach` | `claude attach` to a background session, a Mac draft typed into the box; `capture-pane -e` |
 | `input-draft-restored-attach` | the same session after a stash (Ctrl+S), a sent phone text and Claude Code's `Draft restored` |
 | `input-empty-bg-agents` | idle with three background agents running: the agent list (`⏺ main`, `◯ local_agent …`) sits under the status lines; `capture-pane -e`, the box holds only a dim suggestion |
+| `mode-manual` | attached background session in manual mode (`⏸ manual mode on` under the box) |
+| `mode-accept-edits` | the same after one Shift+Tab (`⏵⏵ accept edits on`) |
+| `mode-plan` | after two (`⏸ plan mode on`) |
+| `mode-auto` | after three (`⏵⏵ auto mode on`); a fourth goes back to manual |
+| `model-picker` | the `/model` picker: five rows with the cursor and `✔` on Haiku 5.5, the effort line and the `s to use this session only` footer |
+| `model-switch-confirm` | `Switch model?` after `s` on another model in a session with cached history (`❯ 1. Yes, switch to Sonnet 5.5`) |
+| `model-set-session-only` | the screen after confirming: `Set model to Sonnet 5.5 for this session only with xhigh effort` |
 | `permission-bash-live` | Bash permission in the same non-safe-mode session |
 | `permission-write` | Write permission for a new file (`1. Yes / 2. Yes, and … / 3. No`) |
 | `permission-bash` | Bash permission for a long command that wraps (`1. Yes / 2. No`) |

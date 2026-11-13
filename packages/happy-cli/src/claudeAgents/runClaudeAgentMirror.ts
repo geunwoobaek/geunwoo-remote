@@ -45,7 +45,8 @@ import { fetchClaudeAgents, resolveClaudeBinary, takeMirrorHandoff } from './age
 import { isTmuxInstalled, openAttachTerminal, type AttachTerminal } from './attachTerminal';
 import { findAgentSurface, guardUserPane, openCmuxTerminal, paneShowsAgent, userPaneSize } from './cmuxTerminal';
 import { screenSessionName } from './dialogs';
-import { createEchoFilter, createInputDelivery, type DeliveryResult } from './inputDelivery';
+import { createEchoFilter, createInputDelivery, type ConfigureResult, type DeliveryResult, type MacSettings, type MacSettingsChange } from './inputDelivery';
+import { MAC_EFFORT_LEVELS, MAC_PERMISSION_MODES, pickerLabelOf, type MacEffortLevel, type MacPermissionMode } from './macSettings';
 import { createPermissionBridge } from './permissionBridge';
 import { findToolUseOutcome, parseTranscriptLines, readSessionStatus } from './transcript';
 import type { ClaudeAgent, ClaudeAgentStatus } from './types';
@@ -68,6 +69,70 @@ const ATTACHMENT_NOTICE_GAP_MS = 2_000;
 const NOTICE_TEXT_ONLY = '이 세션은 텍스트만 받습니다';
 const NOTICE_BUSY_INPUT = '맥 화면에 권한 질문 등이 떠 있거나 맥에서 입력하는 중이라 보내지 못했습니다';
 const NOTICE_FAILED = '맥에 보내지 못했습니다';
+
+/** `claudeAgentSettings` in the metadata: this mirror answers `claude-agent-settings`. */
+const CLAUDE_AGENT_SETTINGS_VERSION = 1;
+const SETTINGS_BUSY = '맥 화면에 권한 질문 등이 떠 있거나 맥에서 입력하는 중이라 바꾸지 못했습니다';
+const SETTINGS_UNSUPPORTED = '이 맥 세션에서는 고를 수 없는 설정입니다';
+const SETTINGS_FAILED = '맥 세션 설정을 바꾸지 못했습니다. 다시 시도해 주세요';
+
+/**
+ * The `claude-agent-settings` RPC's params: `permissionMode`, `model` (a Claude model key) and
+ * `effort`, each optional. Null when a field holds something the Mac session cannot be set to, or
+ * when nothing is asked for.
+ */
+export function parseMacSettingsChange(params: unknown): MacSettingsChange | null {
+    if (typeof params !== 'object' || params === null) {
+        return null;
+    }
+    const { permissionMode, model, effort } = params as Record<string, unknown>;
+    const change: MacSettingsChange = {};
+    if (permissionMode !== undefined && permissionMode !== null) {
+        if (!(MAC_PERMISSION_MODES as readonly unknown[]).includes(permissionMode)) {
+            return null;
+        }
+        change.permissionMode = permissionMode as MacPermissionMode;
+    }
+    if (model !== undefined && model !== null) {
+        if (typeof model !== 'string' || pickerLabelOf(model) === null) {
+            return null;
+        }
+        change.model = model;
+    }
+    if (effort !== undefined && effort !== null) {
+        if (!(MAC_EFFORT_LEVELS as readonly unknown[]).includes(effort)) {
+            return null;
+        }
+        change.effort = effort as MacEffortLevel;
+    }
+    return Object.keys(change).length > 0 ? change : null;
+}
+
+/** The metadata with what the Mac session was seen running with; unseen fields keep their value. */
+export function withMacSettings(metadata: Metadata, seen: MacSettings): Metadata {
+    return {
+        ...metadata,
+        ...(seen.permissionMode === undefined ? {} : { currentOperatingModeCode: seen.permissionMode }),
+        ...(seen.model === undefined ? {} : { currentModelCode: seen.model }),
+        ...(seen.effort === undefined ? {} : { currentThoughtLevelCode: seen.effort }),
+        ...(seen.models === undefined ? {} : { models: seen.models }),
+    };
+}
+
+/** The `claude-agent-settings` answer: `{ ok: true }`, or `{ ok: false, error }` with what to tell the user. */
+export function settingsAnswer(result: ConfigureResult): { ok: true } | { ok: false; error: string } {
+    if (result.ok) {
+        return { ok: true };
+    }
+    switch (result.reason) {
+        case 'busy':
+            return { ok: false, error: SETTINGS_BUSY };
+        case 'unsupported':
+            return { ok: false, error: SETTINGS_UNSUPPORTED };
+        default:
+            return { ok: false, error: SETTINGS_FAILED };
+    }
+}
 
 export type MirrorMetadataBase = {
     host: string;
@@ -104,6 +169,7 @@ export function buildMirrorMetadata(agent: ClaudeAgent, base: MirrorMetadataBase
         flavor: 'claude',
         claudeSessionId: agent.sessionId,
         claudeAgentId: agent.id,
+        claudeAgentSettings: CLAUDE_AGENT_SETTINGS_VERSION,
         name: agent.name ?? basename(agent.cwd),
     };
 }
@@ -265,6 +331,7 @@ export function resetMirrorMetadata(metadata: Metadata, agent: ClaudeAgent, now:
         ...metadata,
         claudeSessionId: agent.sessionId,
         claudeAgentId: agent.id,
+        claudeAgentSettings: CLAUDE_AGENT_SETTINGS_VERSION,
         cwd: agent.cwd,
         // The Mac session can be renamed while no mirror runs; the app has no rename of its own to keep.
         name: agent.name ?? metadata.name,
@@ -726,6 +793,22 @@ export async function runClaudeAgentMirror(opts: { agentId: string }): Promise<v
     session.rpcHandlerManager.registerHandler('abort', async () => {
         if (!stopping) {
             await delivery.interrupt();
+        }
+    });
+    session.rpcHandlerManager.registerHandler<unknown, { ok: true } | { ok: false; error: string }>('claude-agent-settings', async (params) => {
+        const change = parseMacSettingsChange(params);
+        if (change === null || stopping) {
+            return { ok: false, error: change === null ? SETTINGS_UNSUPPORTED : SETTINGS_FAILED };
+        }
+        const result = await delivery.configure(change);
+        session.updateMetadata((current) => withMacSettings(current, result.settings));
+        logger.debug(`[MIRROR] settings ${JSON.stringify(change)} -> ${result.ok ? 'ok' : result.reason}`);
+        return settingsAnswer(result);
+    });
+    // What the session runs in now, for the phone's mode chip; a later change reports itself.
+    void delivery.readPermissionMode().then((permissionMode) => {
+        if (permissionMode !== null && !stopping) {
+            session.updateMetadata((current) => withMacSettings(current, { permissionMode }));
         }
     });
     session.rpcHandlerManager.registerHandler<PermissionResponse, void>('permission', async (answer) => {

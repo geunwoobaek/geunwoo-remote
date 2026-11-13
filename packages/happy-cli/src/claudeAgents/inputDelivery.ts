@@ -46,9 +46,45 @@
 
 import { sanitizeTypedText, type AttachKey, type AttachTerminal } from './attachTerminal';
 import { cmuxTypable } from './cmuxTerminal';
-import { inputBoxHasText, inputBoxText, isInputBoxEmpty } from './dialogs';
+import { classifyScreen, inputBoxHasText, inputBoxText, isInputBoxEmpty } from './dialogs';
+import {
+    MAC_EFFORT_LEVELS,
+    isSwitchConfirmation,
+    modelKeyOf,
+    pickerLabelOf,
+    pickerRowFor,
+    readModelPicker,
+    readModelResult,
+    readPermissionMode,
+    type MacEffortLevel,
+    type MacPermissionMode,
+    type ModelPicker,
+} from './macSettings';
 
 export type DeliveryResult = 'sent' | 'busy-input' | 'failed';
+
+/** What the phone asks a background session to switch to; a field left out stays as it is. */
+export type MacSettingsChange = {
+    permissionMode?: MacPermissionMode;
+    /** A phone model key (`claude-opus-5-5`, `default`). */
+    model?: string;
+    effort?: MacEffortLevel;
+};
+
+/** What the session was seen running with; a field is left out when it was not seen. */
+export type MacSettings = {
+    permissionMode?: MacPermissionMode;
+    /** The model the picker marks current, as a phone model key. */
+    model?: string;
+    effort?: MacEffortLevel;
+    /** The picker's rows, as phone model keys and labels. */
+    models?: Array<{ code: string; value: string }>;
+};
+
+export type ConfigureResult =
+    | { ok: true; settings: MacSettings }
+    /** `busy`: a dialog or the Mac user's typing is in the way; `unsupported`: the session has no such choice. */
+    | { ok: false; reason: 'busy' | 'unsupported' | 'failed'; settings: MacSettings };
 
 export type EchoFilter = {
     /** Registers one expected copy of a user line that was typed from the phone. */
@@ -62,6 +98,10 @@ export type EchoFilter = {
 export type InputDelivery = {
     send(text: string): Promise<DeliveryResult>;
     interrupt(): Promise<void>;
+    /** Switches the session's permission mode, model and effort, in the same queue as sends. */
+    configure(change: MacSettingsChange): Promise<ConfigureResult>;
+    /** The permission mode under the input box right now; null when it cannot be read. */
+    readPermissionMode(): Promise<MacPermissionMode | null>;
 };
 
 export type InputDeliveryDeps = {
@@ -99,6 +139,12 @@ type InputBox = { kind: 'empty' } | { kind: 'blocked' } | { kind: 'draft'; text:
 const ENTER_RETRIES = 2;
 /** Backspaces sent per key batch when deleting a text that would not submit. */
 const BACKSPACE_BATCH = 100;
+/** Shift+Tab presses before a mode is given up: one more than the longest cycle (five modes). */
+const MODE_CYCLE_MAX = 5;
+/** How long `/model` gets to open its picker. */
+const PICKER_WAIT_MS = 4_000;
+/** How long a switch gets to report "Set model to … for this session only" (a hook may run first). */
+const MODEL_RESULT_WAIT_MS = 8_000;
 
 const SGR_OR_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 const SURVEY_OPTIONS = /^\s*1: Bad\s+2: Fine\s+3: Good\s+0: Dismiss\s*$/m;
@@ -415,7 +461,253 @@ export function createInputDelivery(deps: InputDeliveryDeps): InputDelivery {
         }
     }
 
+    /** Reads the screen until `read` gives a value, for up to `ms`; null when it never does. */
+    async function waitFor<T>(terminal: AttachTerminal, read: (screen: string) => T | null, ms: number): Promise<T | null> {
+        const deadline = Date.now() + ms;
+        for (;;) {
+            const value = read(await terminal.screen());
+            if (value !== null) {
+                return value;
+            }
+            if (Date.now() >= deadline) {
+                return null;
+            }
+            await sleep(pollIntervalMs);
+        }
+    }
+
+    /**
+     * Presses Shift+Tab until the mode line shows `target`. Only over the input box: an open
+     * dialog takes Shift+Tab as one of its answers. Each press waits for the mode line to change,
+     * and a cycle that comes back to where it started means the session does not offer `target`.
+     */
+    async function switchPermissionMode(terminal: AttachTerminal, target: MacPermissionMode): Promise<'ok' | 'busy' | 'unsupported' | 'failed'> {
+        let start: MacPermissionMode | null = null;
+        for (let presses = 0; presses <= MODE_CYCLE_MAX; presses++) {
+            const screen = await terminal.screen();
+            const mode = classifyScreen(screen) === 'none' ? readPermissionMode(screen) : null;
+            if (mode === null) {
+                return 'busy';
+            }
+            if (mode === target) {
+                return 'ok';
+            }
+            if (start === null) {
+                start = mode;
+            } else if (mode === start) {
+                return 'unsupported';
+            }
+            await terminal.press(['shift-tab']);
+            const moved = await waitFor(terminal, (next) => {
+                const now = readPermissionMode(next);
+                return now !== null && now !== mode ? now : null;
+            }, submitWaitMs);
+            if (moved === null) {
+                return 'failed';
+            }
+        }
+        return 'unsupported';
+    }
+
+    /** Closes the picker with Escape, but only while it shows: Escape over the input box stops the turn. */
+    async function closePicker(terminal: AttachTerminal): Promise<void> {
+        try {
+            if (readModelPicker(await terminal.screen()) !== null) {
+                await terminal.press(['escape']);
+            }
+        } catch {
+            // The terminal is going away; a picker left open closes with it.
+        }
+    }
+
+    /** Moves the picker's cursor to `row` one key at a time, each key checked; null when it would not move. */
+    async function moveCursor(terminal: AttachTerminal, picker: ModelPicker, row: number): Promise<ModelPicker | null> {
+        let current = picker;
+        for (let steps = 0; steps <= picker.rows.length; steps++) {
+            const at = current.rows.findIndex((candidate) => candidate.cursor);
+            if (at === row) {
+                return current;
+            }
+            await terminal.press([at < row ? 'down' : 'up']);
+            const moved = await waitFor(terminal, (screen) => {
+                const next = readModelPicker(screen);
+                return next !== null && next.rows.findIndex((candidate) => candidate.cursor) !== at ? next : null;
+            }, submitWaitMs);
+            if (moved === null) {
+                return null;
+            }
+            current = moved;
+        }
+        return null;
+    }
+
+    /** Steps the picker's effort with ←/→ to `target`; 'unsupported' when it shows none or will not get there. */
+    async function moveEffort(terminal: AttachTerminal, picker: ModelPicker, target: MacEffortLevel): Promise<ModelPicker | 'unsupported' | 'failed'> {
+        let current = picker;
+        for (let steps = 0; steps < MAC_EFFORT_LEVELS.length; steps++) {
+            const effort = current.effort;
+            if (effort === null) {
+                return 'unsupported';
+            }
+            if (effort === target) {
+                return current;
+            }
+            await terminal.press([MAC_EFFORT_LEVELS.indexOf(effort) < MAC_EFFORT_LEVELS.indexOf(target) ? 'right' : 'left']);
+            const moved = await waitFor(terminal, (screen) => {
+                const next = readModelPicker(screen);
+                return next !== null && next.effort !== effort ? next : null;
+            }, submitWaitMs);
+            if (moved === null) {
+                // The level did not move: the model stops short of `target`.
+                return 'unsupported';
+            }
+            current = moved;
+        }
+        return 'unsupported';
+    }
+
+    /**
+     * Opens `/model`, picks the row and effort and applies them with `s`, "use this session only",
+     * confirming "Switch model?" when it asks. Enter is never pressed in the picker itself: there
+     * it saves the pick as the default for every new session. Fills `seen` from the picker.
+     */
+    async function pickModel(terminal: AttachTerminal, change: MacSettingsChange, seen: MacSettings): Promise<'ok' | 'unsupported' | 'failed'> {
+        await terminal.typeText('/model');
+        const shown = await waitForTypedText(terminal);
+        if (shown !== 'text') {
+            if (shown === 'empty') {
+                await clearUnsent(terminal, '/model');
+            }
+            return 'failed';
+        }
+        const before = await terminal.screen();
+        await terminal.press(['enter']);
+        const picker = await waitFor(terminal, readModelPicker, PICKER_WAIT_MS);
+        if (picker === null) {
+            if (inputBoxHasText(await terminal.screen())) {
+                await clearUnsent(terminal, '/model');
+            }
+            return 'failed';
+        }
+        seen.models = picker.rows.map((row) => ({ code: modelKeyOf(row.label), value: row.label.replace(/\s*\(recommended\)$/, '') }));
+        const running = picker.rows.find((row) => row.current);
+        if (running !== undefined) {
+            seen.model = modelKeyOf(running.label);
+        }
+        if (picker.effort !== null) {
+            seen.effort = picker.effort;
+        }
+        const row = change.model === undefined ? picker.rows.findIndex((candidate) => candidate.current) : pickerRowFor(picker, change.model);
+        if (row < 0) {
+            await closePicker(terminal);
+            return 'unsupported';
+        }
+        const placed = await moveCursor(terminal, picker, row);
+        if (placed === null) {
+            await closePicker(terminal);
+            return 'failed';
+        }
+        const ready = change.effort === undefined ? placed : await moveEffort(terminal, placed, change.effort);
+        if (typeof ready === 'string') {
+            await closePicker(terminal);
+            return ready;
+        }
+        const label = ready.rows[row].label;
+        const resultLabel = /^Default\b/.test(label) ? null : label;
+        // Already on the screen from an earlier switch: then only a closed picker tells it went.
+        const shownBefore = resultLabel !== null && readModelResult(before, resultLabel) === 'session';
+        await terminal.typeText('s');
+        let confirmed = false;
+        const deadline = Date.now() + MODEL_RESULT_WAIT_MS;
+        for (;;) {
+            const screen = await terminal.screen();
+            if (isSwitchConfirmation(screen) && !confirmed) {
+                confirmed = true;
+                await terminal.press(['enter']);
+            } else {
+                const result = resultLabel === null ? null : readModelResult(screen, resultLabel);
+                if (result === 'saved') {
+                    // Never expected from `s`: say so rather than report a session-only switch.
+                    return 'failed';
+                }
+                const closed = readModelPicker(screen) === null && !isSwitchConfirmation(screen) && classifyScreen(screen) === 'none';
+                const reported = resultLabel === null || shownBefore || result === 'session';
+                if (closed && reported) {
+                    seen.model = modelKeyOf(label);
+                    if (ready.effort !== null) {
+                        seen.effort = ready.effort;
+                    }
+                    return 'ok';
+                }
+            }
+            if (Date.now() >= deadline) {
+                await closePicker(terminal);
+                return 'failed';
+            }
+            await sleep(pollIntervalMs);
+        }
+    }
+
+    /** Model and effort through the picker, with a Mac draft set aside while `/model` is typed. */
+    async function switchModel(terminal: AttachTerminal, change: MacSettingsChange, seen: MacSettings): Promise<'ok' | 'busy' | 'unsupported' | 'failed'> {
+        const box = await waitForInputBox(terminal);
+        if (box.kind === 'blocked') {
+            return 'busy';
+        }
+        const draft = box.kind === 'draft' ? box.text : null;
+        if (draft !== null && !(await setDraftAside(terminal))) {
+            return 'busy';
+        }
+        try {
+            return await pickModel(terminal, change, seen);
+        } finally {
+            // Running `/model` brings the draft back by itself ("Draft restored"); a cancelled one may not.
+            if (draft !== null && (await waitFor(terminal, (screen) => (inputBoxText(screen) === draft ? true : null), submitWaitMs).catch(() => null)) === null) {
+                await bringDraftBack(terminal);
+            }
+        }
+    }
+
+    async function configure(change: MacSettingsChange): Promise<ConfigureResult> {
+        const seen: MacSettings = {};
+        const terminal = await deps.openTerminal();
+        try {
+            if (change.permissionMode !== undefined) {
+                const moved = await switchPermissionMode(terminal, change.permissionMode);
+                if (moved !== 'ok') {
+                    return { ok: false, reason: moved, settings: seen };
+                }
+            }
+            if (change.model !== undefined || change.effort !== undefined) {
+                const picked = await switchModel(terminal, change, seen);
+                if (picked !== 'ok') {
+                    return { ok: false, reason: picked, settings: seen };
+                }
+            }
+            return { ok: true, settings: seen };
+        } finally {
+            const mode = await waitFor(terminal, readPermissionMode, submitWaitMs).catch(() => null);
+            if (mode !== null) {
+                seen.permissionMode = mode;
+            }
+            await closeQuietly(terminal);
+        }
+    }
+
     return {
+        configure(change) {
+            return enqueue(() => configure(change).catch((): ConfigureResult => ({ ok: false, reason: 'failed', settings: {} })));
+        },
+        readPermissionMode() {
+            return enqueue(async () => {
+                const terminal = await deps.openTerminal();
+                try {
+                    return await waitFor(terminal, readPermissionMode, submitWaitMs);
+                } finally {
+                    await closeQuietly(terminal);
+                }
+            }).catch(() => null);
+        },
         send(text) {
             const clean = sanitizeTypedText(text);
             if (clean.trim().length === 0) {

@@ -801,3 +801,263 @@ describe('createInputDelivery with the user pane guarded by the session name', (
         expect(second.log).toEqual(['open#1', 'press#1:escape', 'close#1']);
     });
 });
+
+/** A capture without its colour codes, so the simulated session can edit the text it shows. */
+const uncoloured = (screen: string): string => screen.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+
+const MODE_SCREENS: Record<string, string> = {
+    default: uncoloured(fixture('mode-manual')),
+    acceptEdits: uncoloured(fixture('mode-accept-edits')),
+    plan: uncoloured(fixture('mode-plan')),
+    auto: uncoloured(fixture('mode-auto')),
+};
+const PICKER_SCREEN = uncoloured(fixture('model-picker'));
+const CONFIRM_SCREEN = uncoloured(fixture('model-switch-confirm'));
+const PICKER_LABELS = ['Default (recommended)', 'Opus 5.5', 'Fable 5.2', 'Sonnet 5.5', 'Haiku 5.5'];
+const EFFORT_WORDS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'xHigh', max: 'Max' };
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+type MacSessionOptions = {
+    mode?: string;
+    /** The modes Shift+Tab steps through, in order. */
+    cycle?: string[];
+    /** Index of the running model in PICKER_LABELS. */
+    running?: number;
+    effort?: string;
+    /** "Switch model?" shows after `s`. */
+    confirm?: boolean;
+    /** The Mac user's half-written line in the input box. */
+    draft?: string;
+};
+
+/**
+ * A Mac background session driven only by the keys the delivery sends: Shift+Tab cycles the mode,
+ * `/model` + Enter opens the picker, ↑/↓ and ←/→ move it, `s` applies the pick for this session,
+ * Enter on "Switch model?" confirms. The screen is rebuilt by replaying the log on every read.
+ * `violations` collects keys that would have done harm, such as Enter inside the picker.
+ */
+function macSession(options: MacSessionOptions = {}) {
+    const cycle = options.cycle ?? ['default', 'acceptEdits', 'plan', 'auto'];
+    const violations: string[] = [];
+    const render = (log: Call[]): string => {
+        let mode = options.mode ?? 'default';
+        let running = options.running ?? 4;
+        let effort = options.effort ?? 'medium';
+        let box = options.draft ?? '';
+        let stashed: string | null = null;
+        let picker: { cursor: number; effort: string } | null = null;
+        let confirming = false;
+        let result: string | null = null;
+        violations.length = 0;
+        const apply = (): void => {
+            running = picker!.cursor;
+            effort = picker!.effort;
+            result = running === 0 ? null : `Set model to ${PICKER_LABELS[running]} for this session only with ${effort} effort`;
+            picker = null;
+            confirming = false;
+            if (stashed !== null) {
+                box = stashed;
+                stashed = null;
+            }
+        };
+        for (const call of log) {
+            const typed = /^type#\d+:(.*)$/s.exec(call);
+            if (typed !== null) {
+                if (picker !== null && !confirming && typed[1] === 's') {
+                    if (options.confirm) {
+                        confirming = true;
+                    } else {
+                        apply();
+                    }
+                } else if (picker === null) {
+                    box += typed[1];
+                }
+                continue;
+            }
+            const pressed = /^press#\d+:(.*)$/.exec(call);
+            for (const key of pressed === null ? [] : pressed[1].split(',')) {
+                if (confirming) {
+                    if (key === 'enter') {
+                        apply();
+                    } else if (key === 'escape') {
+                        confirming = false;
+                    }
+                } else if (picker !== null) {
+                    if (key === 'enter') {
+                        violations.push('enter in the picker');
+                    } else if (key === 'escape') {
+                        picker = null;
+                    } else if (key === 'down' || key === 'up') {
+                        picker.cursor = Math.max(0, Math.min(PICKER_LABELS.length - 1, picker.cursor + (key === 'down' ? 1 : -1)));
+                    } else if (key === 'left' || key === 'right') {
+                        picker.effort = EFFORTS[Math.max(0, Math.min(EFFORTS.length - 1, EFFORTS.indexOf(picker.effort) + (key === 'right' ? 1 : -1)))];
+                    } else {
+                        violations.push(`${key} in the picker`);
+                    }
+                } else if (key === 'shift-tab') {
+                    mode = cycle[(cycle.indexOf(mode) + 1) % cycle.length];
+                } else if (key === 'enter') {
+                    if (box === '/model') {
+                        picker = { cursor: running, effort };
+                    }
+                    box = '';
+                } else if (key === 'stash') {
+                    if (stashed === null) {
+                        stashed = box;
+                        box = '';
+                    } else {
+                        box = stashed;
+                        stashed = null;
+                    }
+                } else if (key === 'backspace') {
+                    box = box.slice(0, -1);
+                } else if (key === 'escape') {
+                    violations.push('escape over the input box');
+                }
+            }
+        }
+        if (confirming) {
+            return CONFIRM_SCREEN.replaceAll('Sonnet 5.5', PICKER_LABELS[picker!.cursor]);
+        }
+        if (picker !== null) {
+            const open = picker;
+            const lines = PICKER_SCREEN.split('\n').map((line) => {
+                const row = /^\s*(?:❯\s+)?(\d)\.\s+/.exec(line);
+                if (row === null) {
+                    return line.replace(/◐ Medium effort \(default\)/, `◐ ${EFFORT_WORDS[open.effort]} effort`);
+                }
+                const index = Number(row[1]) - 1;
+                return `   ${index === open.cursor ? '❯' : ' '} ${index + 1}.  ${PICKER_LABELS[index]}${index === running ? ' ✔' : ''}  About this model`;
+            });
+            return lines.join('\n');
+        }
+        const lines = MODE_SCREENS[mode].split('\n').map((line) => (/^❯\s*$/.test(line) ? `❯ ${box}` : line));
+        if (result !== null) {
+            lines[0] = `  ⎿  ${result}`;
+        }
+        return lines.join('\n');
+    };
+    return { render, violations };
+}
+
+describe('createInputDelivery configure', () => {
+    const settle = { draftSettleMs: 10, submitWaitMs: 50, ...fast };
+
+    it('steps the permission mode with Shift+Tab over the input box', async () => {
+        const mac = macSession({ mode: 'default' });
+        const { log, openTerminal } = createHarness(mac.render);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...settle });
+        const result = await delivery.configure({ permissionMode: 'plan' });
+        expect(result).toEqual({ ok: true, settings: { permissionMode: 'plan' } });
+        expect(log).toEqual(['open#1', 'press#1:shift-tab', 'press#1:shift-tab', 'close#1']);
+    });
+
+    it('presses nothing over a dialog and reports busy', async () => {
+        const { log, openTerminal } = createHarness([fixture('permission-bash')]);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...settle });
+        const result = await delivery.configure({ permissionMode: 'auto', model: 'claude-opus-5-5' });
+        expect(result).toEqual({ ok: false, reason: 'busy', settings: {} });
+        expect(log).toEqual(['open#1', 'close#1']);
+    });
+
+    it('reports a mode the cycle never reaches as unsupported, back where it started', async () => {
+        const mac = macSession({ mode: 'acceptEdits' });
+        const { log, openTerminal } = createHarness(mac.render);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...settle });
+        const result = await delivery.configure({ permissionMode: 'bypassPermissions' });
+        expect(result).toEqual({ ok: false, reason: 'unsupported', settings: { permissionMode: 'acceptEdits' } });
+        expect(log.filter((line) => line.endsWith(':shift-tab'))).toHaveLength(4);
+    });
+
+    it('picks a model and effort with s for this session only, never Enter in the picker', async () => {
+        const mac = macSession({ running: 4, effort: 'medium' });
+        const { log, openTerminal } = createHarness(mac.render);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...settle });
+        const result = await delivery.configure({ model: 'claude-opus-5-5', effort: 'high' });
+        expect(result).toEqual({
+            ok: true,
+            settings: {
+                model: 'claude-opus-5-5',
+                effort: 'high',
+                permissionMode: 'default',
+                models: [
+                    { code: 'default', value: 'Default' },
+                    { code: 'claude-opus-5-5', value: 'Opus 5.5' },
+                    { code: 'claude-fable-5-2', value: 'Fable 5.2' },
+                    { code: 'claude-sonnet-5-5', value: 'Sonnet 5.5' },
+                    { code: 'claude-haiku-5-5', value: 'Haiku 5.5' },
+                ],
+            },
+        });
+        expect(log).toEqual([
+            'open#1',
+            'type#1:/model',
+            'press#1:enter',
+            'press#1:up',
+            'press#1:up',
+            'press#1:up',
+            'press#1:right',
+            'type#1:s',
+            'close#1',
+        ]);
+        expect(mac.violations).toEqual([]);
+    });
+
+    it('changes only the effort on the running model', async () => {
+        const mac = macSession({ running: 3, effort: 'medium' });
+        const { log, openTerminal } = createHarness(mac.render);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...settle });
+        const result = await delivery.configure({ effort: 'max' });
+        expect(result.ok).toBe(true);
+        expect(result.settings).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'max' });
+        expect(log.filter((line) => line.startsWith('press#'))).toEqual(['press#1:enter', 'press#1:right', 'press#1:right', 'press#1:right']);
+        expect(mac.violations).toEqual([]);
+    });
+
+    it('answers "Switch model?" with Enter, once', async () => {
+        const mac = macSession({ running: 4, confirm: true });
+        const { log, openTerminal } = createHarness(mac.render);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...settle });
+        const result = await delivery.configure({ model: 'claude-sonnet-5-5' });
+        expect(result.ok).toBe(true);
+        expect(result.settings.model).toBe('claude-sonnet-5-5');
+        expect(log.slice(log.indexOf('type#1:s'))).toEqual(['type#1:s', 'press#1:enter', 'close#1']);
+        expect(mac.violations).toEqual([]);
+    });
+
+    it('closes the picker with Escape for a model it does not offer, and still reports what it saw', async () => {
+        const mac = macSession({ running: 4 });
+        const { log, openTerminal } = createHarness(mac.render);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...settle });
+        const result = await delivery.configure({ model: 'claude-fable-5-1' });
+        expect(result).toMatchObject({ ok: false, reason: 'unsupported', settings: { model: 'claude-haiku-5-5', effort: 'medium', permissionMode: 'default' } });
+        expect(log).toEqual(['open#1', 'type#1:/model', 'press#1:enter', 'press#1:escape', 'close#1']);
+        expect(mac.violations).toEqual([]);
+    });
+
+    it('sets a Mac draft aside for /model and leaves it restored', async () => {
+        const mac = macSession({ running: 4, draft: 'half written mac line' });
+        const { log, openTerminal } = createHarness(mac.render);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...settle });
+        expect((await delivery.configure({ model: 'claude-opus-5-5' })).ok).toBe(true);
+        expect(log.filter((line) => line.endsWith(':stash'))).toEqual(['press#1:stash']);
+        expect(mac.render(log)).toContain('❯ half written mac line');
+    });
+
+    it('brings a Mac draft back when the picker was cancelled', async () => {
+        const mac = macSession({ running: 4, draft: 'half written mac line' });
+        const { log, openTerminal } = createHarness(mac.render);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...settle });
+        expect((await delivery.configure({ model: 'claude-fable-5-1' })).ok).toBe(false);
+        expect(log.filter((line) => line.endsWith(':stash'))).toEqual(['press#1:stash', 'press#1:stash']);
+        expect(mac.render(log)).toContain('❯ half written mac line');
+    });
+
+    it('reads the permission mode on its own terminal', async () => {
+        const mac = macSession({ mode: 'auto' });
+        const { log, openTerminal } = createHarness(mac.render);
+        const delivery = createInputDelivery({ openTerminal, echo: createEchoFilter(), ...settle });
+        expect(await delivery.readPermissionMode()).toBe('auto');
+        expect(log).toEqual(['open#1', 'close#1']);
+    });
+});

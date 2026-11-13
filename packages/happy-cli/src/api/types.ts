@@ -324,6 +324,12 @@ export type Metadata = {
   claudeSessionId?: string, // Claude Code session ID
   /** Set on a mirror of a `claude agents` background session: the agent id. */
   claudeAgentId?: string,
+  /**
+   * Set by a mirror that answers the `claude-agent-settings` RPC (version 1): the phone may then
+   * switch the Mac session's permission mode, model and effort, and reads them from
+   * `currentOperatingModeCode`, `currentModelCode` and `currentThoughtLevelCode`.
+   */
+  claudeAgentSettings?: number,
   codexThreadId?: string, // Codex app-server thread ID
   tools?: string[],
   slashCommands?: string[],
