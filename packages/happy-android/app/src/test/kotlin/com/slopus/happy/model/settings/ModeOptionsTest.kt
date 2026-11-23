@@ -41,7 +41,7 @@ class ModeOptionsTest {
     @Test
     fun modelModesPerHarness() {
         assertEquals(
-            listOf("claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-haiku-5-5"),
+            listOf("claude-fable-5-2", "claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-haiku-5-5"),
             ModeOptions.modelModes("claude").map { it.key },
         )
         assertEquals("1M context", ModeOptions.modelModes("claude")[0].description)

@@ -99,7 +99,8 @@ object ModeOptions {
 
     // The current generation by full model ID, one row each: every one is 1M-native.
     private val claudeModelModes = listOf(
-        ModeOption("claude-fable-5-1", "Fable 5.1", "1M context"),
+        ModeOption("claude-fable-5-2", "Fable 5.2", "1M context"),
+        ModeOption("claude-fable-5-1", "Fable 5.1"),
         ModeOption("claude-fable-5", "Fable 5"),
         ModeOption("claude-opus-5-5", "Opus 5.5"),
         ModeOption("claude-opus-5", "Opus 5"),
