@@ -10,6 +10,11 @@
  *   folders. It judges the real (symlink-resolved) name, so Claude's
  *   screenshot or page in /tmp opens on the phone while a link named
  *   `x.png` pointing at a key does not.
+ * - `jobScratchReadPolicy` lets both reads open any file Claude wrote in a
+ *   background job's scratch folder (`~/.claude/jobs/<id>/tmp/`, the
+ *   `$CLAUDE_JOB_DIR/tmp` a job is told to use), though it is hidden and
+ *   outside the working directory. The job's own state files beside it stay
+ *   refused.
  * - `captureScreen` runs macOS `screencapture` into the happy home's captures folder for
  *   a screenshot or a short recording. Nothing is captured until the phone
  *   asks; the first capture needs Screen Recording permission for the
@@ -17,6 +22,7 @@
  */
 import { execFile } from 'child_process';
 import { mkdir, open, realpath, stat } from 'fs/promises';
+import { homedir } from 'os';
 import { extname, join, sep } from 'path';
 import { promisify } from 'util';
 import { configuration } from '@/configuration';
@@ -51,14 +57,50 @@ export interface FileChunk {
     error?: string;
 }
 
+/** Claude Code's folder of background jobs (`$CLAUDE_CONFIG_DIR/jobs`, else `~/.claude/jobs`). */
+export function claudeJobsDir(): string {
+    return join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'jobs');
+}
+
+/** Whether real path [real] is a file under some job's `tmp/` in [jobsReal], with no hidden name below it. */
+function isJobScratchFile(real: string, jobsReal: string): boolean {
+    if (!real.startsWith(jobsReal + sep)) return false;
+    const [job, tmp, ...rest] = real.slice(jobsReal.length + 1).split(sep);
+    return !!job && !job.startsWith('.') && tmp === 'tmp' && rest.length > 0 && rest.every((segment) => segment !== '' && !segment.startsWith('.'));
+}
+
 /**
- * Where a chunk read may go: wherever [checkPath] allows, and otherwise a
- * picture or recording anywhere, or a page file outside hidden folders,
- * by its real name.
+ * Where a whole-file read may go: wherever [checkPath] allows, and
+ * otherwise a file in a background job's scratch folder, by its real name.
  */
-export async function mediaReadPolicy(path: string, checkPath: (path: string) => PathValidationResult): Promise<PathValidationResult> {
+export async function jobScratchReadPolicy(
+    path: string,
+    checkPath: (path: string) => PathValidationResult,
+    jobsDir: string = claudeJobsDir(),
+): Promise<PathValidationResult> {
     const inside = checkPath(path);
     if (inside.valid) return inside;
+    try {
+        const real = await realpath(path);
+        if (isJobScratchFile(real, await realpath(jobsDir))) return { valid: true, resolvedPath: real };
+    } catch {
+        // A missing file (or no jobs folder) falls through to the working directory's refusal.
+    }
+    return inside;
+}
+
+/**
+ * Where a chunk read may go: wherever [jobScratchReadPolicy] allows, and
+ * otherwise a picture or recording anywhere, or a page file outside hidden
+ * folders, by its real name.
+ */
+export async function mediaReadPolicy(
+    path: string,
+    checkPath: (path: string) => PathValidationResult,
+    jobsDir: string = claudeJobsDir(),
+): Promise<PathValidationResult> {
+    const allowed = await jobScratchReadPolicy(path, checkPath, jobsDir);
+    if (allowed.valid) return allowed;
     try {
         const real = await realpath(path);
         const extension = extname(real).toLowerCase();
@@ -67,7 +109,7 @@ export async function mediaReadPolicy(path: string, checkPath: (path: string) =>
     } catch {
         // A missing file falls through to the working directory's refusal.
     }
-    return inside;
+    return allowed;
 }
 
 /** Up to [length] bytes of [path] from [offset] (capped at [MAX_CHUNK_BYTES]). */

@@ -8,7 +8,7 @@ import { run as runRipgrep } from '@/modules/ripgrep/index';
 import { run as runDifftastic } from '@/modules/difftastic/index';
 import { RpcHandlerManager } from '../../api/rpc/RpcHandlerManager';
 import { validatePath, PathValidationResult } from './pathSecurity';
-import { captureScreen, captureStatus, mediaReadPolicy, readFileChunk, CaptureKind, CaptureResult, FileChunk } from './mediaFiles';
+import { captureScreen, captureStatus, jobScratchReadPolicy, mediaReadPolicy, readFileChunk, CaptureKind, CaptureResult, FileChunk } from './mediaFiles';
 import { screenFrame, startScreenStream, stopScreenStream, ScreenFrame, ScreenStreamStart } from './screenStream';
 import { listSavedWorkflows, ListWorkflowsResponse } from './workflows';
 import { homedir } from 'os';
@@ -278,8 +278,8 @@ export function registerCommonHandlers(rpcHandlerManager: RpcHandlerManager, wor
     rpcHandlerManager.registerHandler<ReadFileRequest, ReadFileResponse>('readFile', async (data) => {
         logger.debug('Read file request:', data.path);
 
-        // Validate path is within working directory
-        const validation = checkPath(data.path);
+        // Within the working directory, or a file a background job wrote in its scratch folder
+        const validation = await jobScratchReadPolicy(data.path, checkPath);
         if (!validation.valid) {
             return { success: false, error: validation.error };
         }
@@ -295,7 +295,7 @@ export function registerCommonHandlers(rpcHandlerManager: RpcHandlerManager, wor
     });
 
     // Chunked read for pictures and recordings larger than one relay message.
-    // Inside the working directory as readFile; outside it, media files only.
+    // Wherever readFile may go; outside that, media and page files only.
     rpcHandlerManager.registerHandler<ReadFileChunkRequest, FileChunk>('readFileChunk', async (data) => {
         const validation = await mediaReadPolicy(data.path, checkPath);
         if (!validation.valid) {
